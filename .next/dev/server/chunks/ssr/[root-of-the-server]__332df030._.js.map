@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 28, "column": 0}, "map": {"version":3,"sources":["file:///home/theh/Desktop/MES%20PROJETS/B-Stock/components/providers/session-provider.tsx"],"sourcesContent":["'use client'\n\nimport { SessionProvider } from 'next-auth/react'\n\ninterface Props {\n  children: React.ReactNode\n}\n\nexport function AuthProvider({ children }: Props) {\n  return <SessionProvider>{children}</SessionProvider>\n}\n"],"names":[],"mappings":";;;;;AAEA;AAFA;;;AAQO,SAAS,aAAa,EAAE,QAAQ,EAAS;IAC9C,qBAAO,6WAAC,2VAAe;kBAAE;;;;;;AAC3B"}}]
+}
