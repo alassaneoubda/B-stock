@@ -1,1 +1,15 @@
-{}
+{
+  "/(dashboard)/dashboard/invoices/page": "app/(dashboard)/dashboard/invoices/page.js",
+  "/(dashboard)/dashboard/sales/[id]/page": "app/(dashboard)/dashboard/sales/[id]/page.js",
+  "/(dashboard)/dashboard/sales/new/page": "app/(dashboard)/dashboard/sales/new/page.js",
+  "/(dashboard)/dashboard/sales/page": "app/(dashboard)/dashboard/sales/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/api/clients/route": "app/api/clients/route.js",
+  "/api/depots/route": "app/api/depots/route.js",
+  "/api/packaging/route": "app/api/packaging/route.js",
+  "/api/sales/[id]/route": "app/api/sales/[id]/route.js",
+  "/api/sales/route": "app/api/sales/route.js",
+  "/api/stock/route": "app/api/stock/route.js",
+  "/page": "app/page.js"
+}

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { LayoutDashboard, LogOut, ChevronDown, Menu, X } from 'lucide-react'
+import Image from 'next/image'
 
 export function Header() {
   const { data: session, status } = useSession()
@@ -26,9 +27,7 @@ export function Header() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-zinc-200/60">
       <nav className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="h-8 w-8 rounded-lg bg-zinc-950 flex items-center justify-center">
-            <span className="text-white text-sm font-black">B</span>
-          </div>
+          <Image src="/images/B-stock.png" alt="B-Stock" width={36} height={36} className="rounded-lg" />
           <span className="text-lg font-bold tracking-tight text-zinc-950">B-Stock</span>
         </Link>
 

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowRight } from 'lucide-react'
 
 export function Footer() {
@@ -27,9 +28,7 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 mb-4">
-              <div className="h-7 w-7 rounded-md bg-zinc-950 flex items-center justify-center">
-                <span className="text-white text-xs font-bold">B</span>
-              </div>
+              <Image src="/images/B-stock.png" alt="B-Stock" width={28} height={28} className="rounded-md" />
               <span className="text-sm font-bold text-zinc-950">B-Stock</span>
             </div>
             <p className="text-sm text-zinc-500 leading-relaxed max-w-xs">

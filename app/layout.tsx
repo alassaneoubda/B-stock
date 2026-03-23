@@ -11,21 +11,8 @@ export const metadata: Metadata = {
   title: 'B-Stock - Gestion de Distribution de Boissons',
   description: 'La solution complète pour la gestion de distribution et de stock de boissons en Afrique. Gérez votre stock, vos clients, vos ventes et vos livraisons.',
   icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+    icon: '/images/B-stock.png',
+    apple: '/images/B-stock.png',
   },
 }
 
