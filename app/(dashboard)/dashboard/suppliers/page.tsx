@@ -57,7 +57,8 @@ async function getSuppliers(companyId: string): Promise<Supplier[]> {
       ORDER BY s.name
     `
         return suppliers as Supplier[]
-    } catch {
+    } catch (error) {
+        console.error('Error fetching suppliers:', error)
         return []
     }
 }

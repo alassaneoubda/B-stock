@@ -69,9 +69,9 @@ export async function POST(request: NextRequest) {
     const packagingName = `Emballage - ${data.name} ${data.baseUnit === 'bouteille' ? '' : data.baseUnit}`.trim()
     const packagingTypes = await sql`
       INSERT INTO packaging_types (
-        company_id, name, description, units_per_case, is_returnable, deposit_price
+        company_id, name, units_per_case, is_returnable, deposit_price
       ) VALUES (
-        ${companyId}, ${packagingName}, 'Emballage créé automatiquement pour ${data.name}', 1, true, 0
+        ${companyId}, ${packagingName}, 1, true, 0
       )
       RETURNING id
     `

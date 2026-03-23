@@ -171,7 +171,7 @@ function isActive(pathname: string, href: string, exact?: boolean) {
 
 export function DashboardSidebar() {
   const pathname = usePathname()
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
 
   const getInitials = (name: string) => {
     return name
@@ -193,6 +193,8 @@ export function DashboardSidebar() {
   }
 
   const canSee = (item: { requiredPermission?: string }) => {
+    // While session is loading, show all items (auth is already verified server-side in layout)
+    if (status === 'loading') return true
     if (!session?.user) return false
     if (session.user.role === 'owner') return true
     if (!item.requiredPermission) return true

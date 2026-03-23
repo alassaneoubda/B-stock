@@ -297,7 +297,6 @@
     --leading-relaxed: 1.625;
     --radius-xs: .125rem;
     --radius-2xl: 1rem;
-    --radius-3xl: 1.5rem;
     --ease-out: cubic-bezier(0, 0, .2, 1);
     --ease-in-out: cubic-bezier(.4, 0, .2, 1);
     --animate-spin: spin 1s linear infinite;
@@ -1048,6 +1047,10 @@
 
   .mr-1 {
     margin-right: calc(var(--spacing) * 1);
+  }
+
+  .mr-1\.5 {
+    margin-right: calc(var(--spacing) * 1.5);
   }
 
   .mr-2 {
@@ -2087,12 +2090,6 @@
     margin-block-end: calc(calc(var(--spacing) * 8) * calc(1 - var(--tw-space-y-reverse)));
   }
 
-  :where(.space-y-10 > :not(:last-child)) {
-    --tw-space-y-reverse: 0;
-    margin-block-start: calc(calc(var(--spacing) * 10) * var(--tw-space-y-reverse));
-    margin-block-end: calc(calc(var(--spacing) * 10) * calc(1 - var(--tw-space-y-reverse)));
-  }
-
   :where(.space-y-12 > :not(:last-child)) {
     --tw-space-y-reverse: 0;
     margin-block-start: calc(calc(var(--spacing) * 12) * var(--tw-space-y-reverse));
@@ -2179,14 +2176,6 @@
 
   .rounded-2xl {
     border-radius: var(--radius-2xl);
-  }
-
-  .rounded-3xl {
-    border-radius: var(--radius-3xl);
-  }
-
-  .rounded-\[2\.5rem\] {
-    border-radius: 2.5rem;
   }
 
   .rounded-\[2px\] {
@@ -2625,10 +2614,6 @@
 
   .bg-\(--color-bg\) {
     background-color: var(--color-bg);
-  }
-
-  .bg-\[\#F8FAFC\] {
-    background-color: #f8fafc;
   }
 
   .bg-accent {
@@ -3073,16 +3058,6 @@
     background-color: var(--color-slate-100);
   }
 
-  .bg-slate-100\/50 {
-    background-color: #f1f5f980;
-  }
-
-  @supports (color: color-mix(in lab, red, red)) {
-    .bg-slate-100\/50 {
-      background-color: color-mix(in oklab, var(--color-slate-100) 50%, transparent);
-    }
-  }
-
   .bg-slate-500\/10 {
     background-color: #62748e1a;
   }
@@ -3478,6 +3453,10 @@
     padding-right: calc(var(--spacing) * 3);
   }
 
+  .pr-4 {
+    padding-right: calc(var(--spacing) * 4);
+  }
+
   .pr-6 {
     padding-right: calc(var(--spacing) * 6);
   }
@@ -3512,10 +3491,6 @@
 
   .pb-24 {
     padding-bottom: calc(var(--spacing) * 24);
-  }
-
-  .pl-0\.5 {
-    padding-left: calc(var(--spacing) * .5);
   }
 
   .pl-2 {
@@ -3693,11 +3668,6 @@
   .tracking-\[0\.1em\] {
     --tw-tracking: .1em;
     letter-spacing: .1em;
-  }
-
-  .tracking-\[0\.2em\] {
-    --tw-tracking: .2em;
-    letter-spacing: .2em;
   }
 
   .tracking-\[0\.3em\] {
@@ -3891,16 +3861,6 @@
 
   .text-rose-500 {
     color: var(--color-rose-500);
-  }
-
-  .text-rose-500\/60 {
-    color: #ff235799;
-  }
-
-  @supports (color: color-mix(in lab, red, red)) {
-    .text-rose-500\/60 {
-      color: color-mix(in oklab, var(--color-rose-500) 60%, transparent);
-    }
   }
 
   .text-rose-600 {
@@ -4457,10 +4417,6 @@
 
   .fade-in {
     --tw-enter-opacity: 0;
-  }
-
-  .slide-in-from-bottom-4 {
-    --tw-enter-translate-y: calc(4 * var(--spacing));
   }
 
   .slide-in-from-top-2 {
@@ -5416,13 +5372,6 @@
   }
 
   @media (hover: hover) {
-    .hover\:shadow-2xl:hover {
-      --tw-shadow: 0 25px 50px -12px var(--tw-shadow-color, #00000040);
-      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
-    }
-  }
-
-  @media (hover: hover) {
     .hover\:shadow-\[0_0_0_1px_hsl\(var\(--sidebar-accent\)\)\]:hover {
       --tw-shadow: 0 0 0 1px var(--tw-shadow-color, hsl(var(--sidebar-accent)));
       box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
@@ -5446,13 +5395,6 @@
   @media (hover: hover) {
     .hover\:shadow-sm:hover {
       --tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, #0000001a), 0 1px 2px -1px var(--tw-shadow-color, #0000001a);
-      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
-    }
-  }
-
-  @media (hover: hover) {
-    .hover\:shadow-xl:hover {
-      --tw-shadow: 0 20px 25px -5px var(--tw-shadow-color, #0000001a), 0 8px 10px -6px var(--tw-shadow-color, #0000001a);
       box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
     }
   }
