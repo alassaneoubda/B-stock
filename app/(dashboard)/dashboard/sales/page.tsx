@@ -221,7 +221,7 @@ export default async function SalesPage() {
                     </div>
 
                     {orders.length === 0 ? (
-                        <div className="text-center py-16 flex flex-col items-center">
+                        <div className="text-center py-16 flex flex-col items-center px-4">
                             <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
                                 <ShoppingCart className="h-6 w-6 text-zinc-400" />
                             </div>
@@ -229,7 +229,7 @@ export default async function SalesPage() {
                             <p className="mt-1 text-sm text-zinc-500 max-w-xs">
                                 Enregistrez des ventes pour voir votre historique ici.
                             </p>
-                            <Button size="sm" className="mt-4" asChild>
+                            <Button size="sm" className="mt-4 h-11 px-6" asChild>
                                 <Link href="/dashboard/sales/new">
                                     <Plus className="h-3.5 w-3.5 mr-1.5" />
                                     Créer une vente
@@ -237,100 +237,153 @@ export default async function SalesPage() {
                             </Button>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="hover:bg-transparent">
-                                        <TableHead className="text-xs font-medium text-zinc-500 pl-4">Référence</TableHead>
-                                        <TableHead className="text-xs font-medium text-zinc-500">Client</TableHead>
-                                        <TableHead className="text-xs font-medium text-zinc-500">Paiement</TableHead>
-                                        <TableHead className="text-xs font-medium text-zinc-500 text-right">Montant</TableHead>
-                                        <TableHead className="text-xs font-medium text-zinc-500 text-right">Reste</TableHead>
-                                        <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
-                                        <TableHead className="pr-4"></TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {orders.map((order) => {
-                                        const remaining = Number(order.total_amount) - Number(order.paid_amount)
-                                        const status = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const }
-                                        const payment = paymentConfig[order.payment_method ?? ''] || { label: order.payment_method || '-' }
+                        <>
+                            {/* Desktop table */}
+                            <div className="hidden md:block overflow-x-auto">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="text-xs font-medium text-zinc-500 pl-4">Référence</TableHead>
+                                            <TableHead className="text-xs font-medium text-zinc-500">Client</TableHead>
+                                            <TableHead className="text-xs font-medium text-zinc-500">Paiement</TableHead>
+                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Montant</TableHead>
+                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Reste</TableHead>
+                                            <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
+                                            <TableHead className="pr-4"></TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {orders.map((order) => {
+                                            const remaining = Number(order.total_amount) - Number(order.paid_amount)
+                                            const status = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const }
+                                            const payment = paymentConfig[order.payment_method ?? ''] || { label: order.payment_method || '-' }
 
-                                        return (
-                                            <TableRow key={order.id} className="group">
-                                                <TableCell className="pl-4">
-                                                    <div>
-                                                        <span className="text-sm font-medium text-zinc-950 font-mono">{order.order_number}</span>
-                                                        <p className="text-xs text-zinc-400">
-                                                            {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                                                        </p>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Link
-                                                        href={`/dashboard/clients/${order.client_id}`}
-                                                        className="text-sm font-medium text-zinc-700 hover:text-zinc-950 transition-colors"
-                                                    >
+                                            return (
+                                                <TableRow key={order.id} className="group">
+                                                    <TableCell className="pl-4">
+                                                        <div>
+                                                            <span className="text-sm font-medium text-zinc-950 font-mono">{order.order_number}</span>
+                                                            <p className="text-xs text-zinc-400">
+                                                                {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                                                            </p>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Link
+                                                            href={`/dashboard/clients/${order.client_id}`}
+                                                            className="text-sm font-medium text-zinc-700 hover:text-zinc-950 transition-colors"
+                                                        >
+                                                            {order.client_name || 'Client passager'}
+                                                        </Link>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+                                                            {payment.label}
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        <span className="text-sm font-semibold text-zinc-950">
+                                                            {formatCurrency(Number(order.total_amount))}
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {remaining > 0 ? (
+                                                            <span className="text-sm font-medium text-red-600">{formatCurrency(remaining)}</span>
+                                                        ) : (
+                                                            <span className="text-xs font-medium text-emerald-600">Soldé</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge
+                                                            variant={status.variant}
+                                                            className={`text-[10px] font-medium ${status.variant === 'secondary' ? 'bg-zinc-100 text-zinc-600' :
+                                                                status.variant === 'destructive' ? 'bg-red-50 text-red-600' :
+                                                                    'bg-blue-50 text-blue-600'
+                                                                } border-none`}
+                                                        >
+                                                            {status.label}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="pr-4 text-right">
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                                                    <MoreHorizontal className="h-4 w-4 text-zinc-400" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="w-48">
+                                                                <DropdownMenuItem asChild className="cursor-pointer">
+                                                                    <Link href={`/dashboard/sales/${order.id}`} className="flex items-center gap-2">
+                                                                        <Eye className="h-4 w-4 text-zinc-500" />
+                                                                        <span className="text-sm">Voir le détail</span>
+                                                                    </Link>
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem asChild className="cursor-pointer">
+                                                                    <Link href={`/dashboard/invoices/${order.id}`} className="flex items-center gap-2">
+                                                                        <FileText className="h-4 w-4 text-zinc-500" />
+                                                                        <span className="text-sm">Facture</span>
+                                                                    </Link>
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </div>
+
+                            {/* Mobile cards */}
+                            <div className="md:hidden divide-y divide-zinc-100">
+                                {orders.map((order) => {
+                                    const remaining = Number(order.total_amount) - Number(order.paid_amount)
+                                    const status = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const }
+                                    const payment = paymentConfig[order.payment_method ?? ''] || { label: order.payment_method || '-' }
+
+                                    return (
+                                        <Link
+                                            key={order.id}
+                                            href={`/dashboard/sales/${order.id}`}
+                                            className="block p-4 active:bg-zinc-50 transition-colors"
+                                        >
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-semibold text-zinc-950 truncate">
                                                         {order.client_name || 'Client passager'}
-                                                    </Link>
-                                                </TableCell>
-                                                <TableCell>
+                                                    </p>
+                                                    <p className="text-xs text-zinc-400 font-mono">
+                                                        {order.order_number} · {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                    </p>
+                                                </div>
+                                                <Badge
+                                                    variant={status.variant}
+                                                    className={`text-[10px] font-medium ml-2 shrink-0 ${status.variant === 'secondary' ? 'bg-zinc-100 text-zinc-600' :
+                                                        status.variant === 'destructive' ? 'bg-red-50 text-red-600' :
+                                                            'bg-blue-50 text-blue-600'
+                                                        } border-none`}
+                                                >
+                                                    {status.label}
+                                                </Badge>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
                                                     <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
                                                         {payment.label}
                                                     </span>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <span className="text-sm font-semibold text-zinc-950">
-                                                        {formatCurrency(Number(order.total_amount))}
-                                                    </span>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    {remaining > 0 ? (
-                                                        <span className="text-sm font-medium text-red-600">{formatCurrency(remaining)}</span>
-                                                    ) : (
-                                                        <span className="text-xs font-medium text-emerald-600">Soldé</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-sm font-bold text-zinc-950">{formatCurrency(Number(order.total_amount))}</p>
+                                                    {remaining > 0 && (
+                                                        <p className="text-xs font-medium text-red-500">Reste: {formatCurrency(remaining)}</p>
                                                     )}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge
-                                                        variant={status.variant}
-                                                        className={`text-[10px] font-medium ${status.variant === 'secondary' ? 'bg-zinc-100 text-zinc-600' :
-                                                            status.variant === 'destructive' ? 'bg-red-50 text-red-600' :
-                                                                'bg-blue-50 text-blue-600'
-                                                            } border-none`}
-                                                    >
-                                                        {status.label}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="pr-4 text-right">
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
-                                                                <MoreHorizontal className="h-4 w-4 text-zinc-400" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-48">
-                                                            <DropdownMenuItem asChild className="cursor-pointer">
-                                                                <Link href={`/dashboard/sales/${order.id}`} className="flex items-center gap-2">
-                                                                    <Eye className="h-4 w-4 text-zinc-500" />
-                                                                    <span className="text-sm">Voir le détail</span>
-                                                                </Link>
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem asChild className="cursor-pointer">
-                                                                <Link href={`/dashboard/invoices/${order.id}`} className="flex items-center gap-2">
-                                                                    <FileText className="h-4 w-4 text-zinc-500" />
-                                                                    <span className="text-sm">Facture</span>
-                                                                </Link>
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                </TableCell>
-                                            </TableRow>
-                                        )
-                                    })}
-                                </TableBody>
-                            </Table>
-                        </div>
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    )
+                                })}
+                            </div>
+                        </>
                     )}
                 </div>
             </main>

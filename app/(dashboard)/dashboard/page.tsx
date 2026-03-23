@@ -85,7 +85,7 @@ export default async function DashboardPage() {
               <span className="text-xs font-medium text-zinc-500">CA du jour</span>
               <DollarSign className="h-3.5 w-3.5 text-zinc-400" />
             </div>
-            <p className="text-xl font-bold text-zinc-950 tracking-tight">{formatCurrency(stats.todaySalesTotal)}</p>
+            <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight truncate">{formatCurrency(stats.todaySalesTotal)}</p>
             <p className="text-xs text-zinc-500 mt-1">{stats.todaySalesCount} vente{stats.todaySalesCount !== 1 ? 's' : ''}</p>
           </div>
 

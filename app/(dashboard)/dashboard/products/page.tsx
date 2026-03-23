@@ -114,7 +114,7 @@ export default async function ProductsPage() {
 
       <main className="flex-1 p-4 lg:p-6 space-y-6">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {statsData.map((stat) => (
             <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
               <div className="flex items-center justify-between mb-3">
@@ -150,84 +150,119 @@ export default async function ProductsPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="text-xs font-medium text-zinc-500 pl-4">Produit</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500">SKU</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500">Catégorie</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500 text-right">Prix de vente</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500 text-right">Stock</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500">État</TableHead>
-                    <TableHead className="pr-4"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {products.map((product) => (
-                    <TableRow key={product.id} className="group">
-                      <TableCell className="pl-4">
-                        <div>
-                          <p className="text-sm font-medium text-zinc-950">{product.name}</p>
-                          <p className="text-xs text-zinc-400">
-                            {product.variants_count} variante{Number(product.variants_count) > 1 ? 's' : ''}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-mono text-xs text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
-                          {product.sku}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-zinc-500">{product.category || '—'}</span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className="text-sm font-semibold text-zinc-950">
-                          {formatCurrency(Number(product.selling_price))}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className={`text-sm font-medium ${Number(product.total_stock) < 10 ? 'text-red-600' : 'text-zinc-950'}`}>
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="text-xs font-medium text-zinc-500 pl-4">Produit</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500">SKU</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500">Catégorie</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Prix de vente</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Stock</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500">État</TableHead>
+                      <TableHead className="pr-4"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {products.map((product) => (
+                      <TableRow key={product.id} className="group">
+                        <TableCell className="pl-4">
+                          <div>
+                            <p className="text-sm font-medium text-zinc-950">{product.name}</p>
+                            <p className="text-xs text-zinc-400">
+                              {product.variants_count} variante{Number(product.variants_count) > 1 ? 's' : ''}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-mono text-xs text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+                            {product.sku}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-zinc-500">{product.category || '—'}</span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className="text-sm font-semibold text-zinc-950">
+                            {formatCurrency(Number(product.selling_price))}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={`text-sm font-medium ${Number(product.total_stock) < 10 ? 'text-red-600' : 'text-zinc-950'}`}>
+                            {product.total_stock} {product.base_unit || 'unit'}
+                          </span>
+                          {Number(product.total_stock) < 10 && (
+                            <p className="text-[10px] text-red-500">Stock bas</p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`text-[10px] font-medium ${product.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
+                            {product.is_active ? 'Actif' : 'Masqué'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="pr-4 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                <MoreHorizontal className="h-4 w-4 text-zinc-400" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuItem asChild className="cursor-pointer">
+                                <Link href={`/dashboard/products/${product.id}`} className="flex items-center gap-2">
+                                  <Eye className="h-4 w-4 text-zinc-500" />
+                                  <span className="text-sm">Fiche produit</span>
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild className="cursor-pointer">
+                                <Link href={`/dashboard/products/${product.id}/edit`} className="flex items-center gap-2">
+                                  <Edit className="h-4 w-4 text-zinc-500" />
+                                  <span className="text-sm">Modifier</span>
+                                </Link>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="md:hidden divide-y divide-zinc-100">
+                {products.map((product) => (
+                  <Link
+                    key={product.id}
+                    href={`/dashboard/products/${product.id}`}
+                    className="block p-4 active:bg-zinc-50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-1.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-zinc-950 truncate">{product.name}</p>
+                        <p className="text-xs text-zinc-400 font-mono">{product.sku}</p>
+                      </div>
+                      <Badge className={`text-[10px] font-medium ml-2 shrink-0 ${product.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
+                        {product.is_active ? 'Actif' : 'Masqué'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-zinc-400">{product.category || 'Sans catégorie'}</span>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs font-medium ${Number(product.total_stock) < 10 ? 'text-red-600' : 'text-zinc-600'}`}>
                           {product.total_stock} {product.base_unit || 'unit'}
                         </span>
-                        {Number(product.total_stock) < 10 && (
-                          <p className="text-[10px] text-red-500">Stock bas</p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`text-[10px] font-medium ${product.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
-                          {product.is_active ? 'Actif' : 'Masqué'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="pr-4 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
-                              <MoreHorizontal className="h-4 w-4 text-zinc-400" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem asChild className="cursor-pointer">
-                              <Link href={`/dashboard/products/${product.id}`} className="flex items-center gap-2">
-                                <Eye className="h-4 w-4 text-zinc-500" />
-                                <span className="text-sm">Fiche produit</span>
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild className="cursor-pointer">
-                              <Link href={`/dashboard/products/${product.id}/edit`} className="flex items-center gap-2">
-                                <Edit className="h-4 w-4 text-zinc-500" />
-                                <span className="text-sm">Modifier</span>
-                              </Link>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                        <span className="text-sm font-bold text-zinc-950">
+                          {formatCurrency(Number(product.selling_price))}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </main>

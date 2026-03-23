@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { DashboardSidebar } from '@/components/dashboard/sidebar-nav'
+import { MobileBottomNav } from '@/components/dashboard/mobile-bottom-nav'
 import { AuthProvider } from '@/components/providers/session-provider'
 
 export default async function DashboardLayout({
@@ -19,9 +20,10 @@ export default async function DashboardLayout({
     <AuthProvider>
       <SidebarProvider>
         <DashboardSidebar />
-        <SidebarInset>
+        <SidebarInset className="has-bottom-nav">
           {children}
         </SidebarInset>
+        <MobileBottomNav />
       </SidebarProvider>
     </AuthProvider>
   )

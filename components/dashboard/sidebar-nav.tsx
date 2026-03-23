@@ -69,6 +69,12 @@ const mainNavItems = [
     requiredPermission: 'sales',
   },
   {
+    title: 'Factures',
+    href: '/dashboard/invoices',
+    icon: FileText,
+    requiredPermission: 'sales',
+  },
+  {
     title: 'Livraisons',
     href: '/dashboard/deliveries',
     icon: Truck,

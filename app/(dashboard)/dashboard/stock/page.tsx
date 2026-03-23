@@ -149,40 +149,35 @@ export default function StockPage() {
 
       <main className="flex-1 p-4 lg:p-6 space-y-6 ">
         {/* Stats */}
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {statCards.map((stat) => (
             <div
               key={stat.title}
-              className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
+              className="bg-white rounded-lg border border-zinc-200/80 p-4"
             >
-              <div className="relative z-10 flex flex-col gap-6">
-                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color}`}>
-                  <stat.icon className="h-7 w-7" />
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                  <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
-                  <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
-                </div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
+                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
               </div>
-              <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
+              <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight truncate">{stat.value}</p>
+              <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
             </div>
           ))}
         </div>
 
         {/* Search + Tabs */}
         <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-          <div className="px-8 py-8 border-b border-slate-100">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+          <div className="px-4 sm:px-6 py-4 sm:py-6 border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h3 className="text-2xl font-semibold text-slate-950 tracking-tight">Inventaire</h3>
-                <p className="text-sm font-medium text-slate-400 mt-1">Stock par produit et emballage</p>
+                <h3 className="text-base sm:text-lg font-semibold text-slate-950">Inventaire</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Stock par produit et emballage</p>
               </div>
-              <div className="relative w-full sm:w-80">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
                   placeholder="Rechercher un produit..."
-                  className="pl-11 h-12 rounded-md bg-slate-50 border-transparent focus:bg-white focus:ring-blue-500"
+                  className="pl-9 h-9 text-sm rounded-md bg-slate-50 border-transparent focus:bg-white"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -191,27 +186,27 @@ export default function StockPage() {
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="px-8 pt-4">
-              <TabsList className="bg-slate-100 rounded-md p-1 h-12">
+            <div className="px-4 sm:px-6 pt-3 overflow-x-auto">
+              <TabsList className="bg-slate-100 rounded-md p-1 h-9 sm:h-10 w-full sm:w-auto">
                 <TabsTrigger
                   value="products"
-                  className="rounded-xl px-6 font-bold text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                  className="rounded-lg px-3 sm:px-5 font-semibold text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
                 >
-                  <Package className="h-4 w-4 mr-2" />
+                  <Package className="h-3.5 w-3.5 mr-1 sm:mr-2" />
                   Produits ({totalProducts})
                 </TabsTrigger>
                 <TabsTrigger
                   value="packaging"
-                  className="rounded-xl px-6 font-bold text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                  className="rounded-lg px-3 sm:px-5 font-semibold text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
                 >
-                  <BoxesIcon className="h-4 w-4 mr-2" />
-                  Emballages ({packagingStock.length})
+                  <BoxesIcon className="h-3.5 w-3.5 mr-1 sm:mr-2" />
+                  Emball. ({packagingStock.length})
                 </TabsTrigger>
                 <TabsTrigger
                   value="alerts"
-                  className="rounded-xl px-6 font-bold text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
+                  className="rounded-lg px-3 sm:px-5 font-semibold text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm"
                 >
-                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  <AlertTriangle className="h-3.5 w-3.5 mr-1 sm:mr-2" />
                   Alertes ({lowStockItems.length + expiringItems.length})
                 </TabsTrigger>
               </TabsList>
@@ -232,78 +227,95 @@ export default function StockPage() {
                   </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader className="bg-slate-50/50">
-                      <TableRow className="border-none hover:bg-transparent">
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Produit</TableHead>
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Format</TableHead>
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Dépôt</TableHead>
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Quantité</TableHead>
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Prix</TableHead>
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Valeur</TableHead>
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Lot</TableHead>
-                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pr-8">Statut</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {stockItems.map((item) => {
-                        const isLow = item.quantity <= item.min_stock_alert
-                        const isExpiring = item.expiry_date && Math.ceil(
-                          (new Date(item.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-                        ) <= 30
-
-                        return (
-                          <TableRow key={item.id} className="group border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                            <TableCell className="py-6 pl-8">
-                              <div className="flex flex-col">
-                                <span className="font-semibold text-slate-950">{item.product_name}</span>
-                                {item.brand && (
-                                  <span className="text-[11px] font-bold text-slate-400 mt-1">{item.brand}</span>
+                <>
+                  {/* Desktop table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-slate-50/50">
+                        <TableRow className="border-none hover:bg-transparent">
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 pl-4">Produit</TableHead>
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Format</TableHead>
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Dépôt</TableHead>
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Qté</TableHead>
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Prix</TableHead>
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Valeur</TableHead>
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Lot</TableHead>
+                          <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 pr-4">Statut</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {stockItems.map((item) => {
+                          const isLow = item.quantity <= item.min_stock_alert
+                          const isExpiring = item.expiry_date && Math.ceil(
+                            (new Date(item.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                          ) <= 30
+                          return (
+                            <TableRow key={item.id} className="group border-b border-slate-50 hover:bg-slate-50/50">
+                              <TableCell className="py-3 pl-4">
+                                <span className="font-semibold text-sm text-slate-950">{item.product_name}</span>
+                                {item.brand && <span className="text-[11px] text-slate-400 ml-1">{item.brand}</span>}
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-[10px] font-semibold text-blue-600">
+                                  {item.packaging_name || 'Standard'}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-3 text-sm text-slate-600">{item.depot_name}</TableCell>
+                              <TableCell className="py-3 text-right">
+                                <span className={`font-semibold ${isLow ? 'text-rose-600' : 'text-slate-950'}`}>{item.quantity}</span>
+                              </TableCell>
+                              <TableCell className="py-3 text-right text-sm text-slate-600">{formatCurrency(item.price)}</TableCell>
+                              <TableCell className="py-3 text-right text-sm font-semibold text-slate-950">{formatCurrency(item.quantity * item.price)}</TableCell>
+                              <TableCell className="py-3 text-xs font-mono text-slate-500">{item.lot_number || '—'}</TableCell>
+                              <TableCell className="py-3 pr-4">
+                                {isLow ? (
+                                  <Badge className="text-[10px] font-medium bg-rose-50 text-rose-600 border-none">Stock bas</Badge>
+                                ) : isExpiring ? (
+                                  <Badge className="text-[10px] font-medium bg-amber-50 text-amber-600 border-none">Expire</Badge>
+                                ) : (
+                                  <Badge className="text-[10px] font-medium bg-emerald-50 text-emerald-600 border-none">OK</Badge>
                                 )}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {/* Mobile cards */}
+                  <div className="md:hidden divide-y divide-zinc-100">
+                    {stockItems.map((item) => {
+                      const isLow = item.quantity <= item.min_stock_alert
+                      const isExpiring = item.expiry_date && Math.ceil(
+                        (new Date(item.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                      ) <= 30
+                      return (
+                        <div key={item.id} className="p-4">
+                          <div className="flex items-start justify-between mb-1.5">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-zinc-950 truncate">{item.product_name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{item.packaging_name || 'Standard'}</span>
+                                <span className="text-xs text-zinc-400">{item.depot_name}</span>
                               </div>
-                            </TableCell>
-                            <TableCell className="py-6">
-                              <span className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50 text-[10px] font-semibold text-blue-600 uppercase tracking-wider">
-                                {item.packaging_name || 'Standard'}
-                              </span>
-                            </TableCell>
-                            <TableCell className="py-6 font-bold text-slate-600">{item.depot_name}</TableCell>
-                            <TableCell className="py-6 text-right">
-                              <span className={`font-semibold text-base ${isLow ? 'text-rose-600' : 'text-slate-950'}`}>
-                                {item.quantity}
-                              </span>
-                            </TableCell>
-                            <TableCell className="py-6 text-right font-bold text-slate-600">
-                              {formatCurrency(item.price)}
-                            </TableCell>
-                            <TableCell className="py-6 text-right font-semibold text-slate-950">
-                              {formatCurrency(item.quantity * item.price)}
-                            </TableCell>
-                            <TableCell className="py-6 text-slate-500 text-sm font-mono">
-                              {item.lot_number || '—'}
-                            </TableCell>
-                            <TableCell className="py-6 pr-8">
-                              {isLow ? (
-                                <Badge className="rounded-xl px-4 py-1 font-semibold uppercase text-[10px] tracking-wider bg-rose-50 text-rose-600 border-none shadow-none">
-                                  Stock bas
-                                </Badge>
-                              ) : isExpiring ? (
-                                <Badge className="rounded-xl px-4 py-1 font-semibold uppercase text-[10px] tracking-wider bg-amber-50 text-amber-600 border-none shadow-none">
-                                  Expire bientôt
-                                </Badge>
-                              ) : (
-                                <Badge className="rounded-xl px-4 py-1 font-semibold uppercase text-[10px] tracking-wider bg-emerald-50 text-emerald-600 border-none shadow-none">
-                                  OK
-                                </Badge>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+                            </div>
+                            {isLow ? (
+                              <Badge className="text-[10px] font-medium bg-rose-50 text-rose-600 border-none ml-2 shrink-0">Bas</Badge>
+                            ) : isExpiring ? (
+                              <Badge className="text-[10px] font-medium bg-amber-50 text-amber-600 border-none ml-2 shrink-0">Expire</Badge>
+                            ) : (
+                              <Badge className="text-[10px] font-medium bg-emerald-50 text-emerald-600 border-none ml-2 shrink-0">OK</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className={`text-sm font-bold ${isLow ? 'text-rose-600' : 'text-zinc-950'}`}>{item.quantity} unités</span>
+                            <span className="text-sm font-semibold text-zinc-950">{formatCurrency(item.quantity * item.price)}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
               )}
             </TabsContent>
 

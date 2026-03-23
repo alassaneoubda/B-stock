@@ -159,7 +159,7 @@ export default async function ClientsPage() {
           </div>
 
           {clients.length === 0 ? (
-            <div className="text-center py-16 flex flex-col items-center">
+            <div className="text-center py-16 flex flex-col items-center px-4">
               <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
                 <Users className="h-6 w-6 text-zinc-400" />
               </div>
@@ -167,7 +167,7 @@ export default async function ClientsPage() {
               <p className="mt-1 text-sm text-zinc-500 max-w-xs">
                 Ajoutez vos premiers partenaires pour commencer.
               </p>
-              <Button size="sm" className="mt-4" asChild>
+              <Button size="sm" className="mt-4 h-11 px-6" asChild>
                 <Link href="/dashboard/clients/new">
                   <Plus className="h-3.5 w-3.5 mr-1.5" />
                   Ajouter un client
@@ -175,103 +175,151 @@ export default async function ClientsPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="text-xs font-medium text-zinc-500 pl-4">Client</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500">Contact</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500">Type / Zone</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500 text-right">Dette produits</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500 text-right">Dette emballages</TableHead>
-                    <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
-                    <TableHead className="pr-4"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {clients.map((client) => (
-                    <TableRow key={client.id} className="group">
-                      <TableCell className="pl-4">
-                        <div>
-                          <Link href={`/dashboard/clients/${client.id}`} className="text-sm font-medium text-zinc-950 hover:underline">
-                            {client.name}
-                          </Link>
-                          {client.address && (
-                            <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
-                              <MapPin className="h-3 w-3" />
-                              {client.address}
-                            </p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <span className="text-sm text-zinc-700">{client.contact_name || '—'}</span>
-                          {client.phone && (
-                            <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
-                              <Phone className="h-3 w-3" />
-                              {client.phone}
-                            </p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded w-fit">
-                            {client.client_type}
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="text-xs font-medium text-zinc-500 pl-4">Client</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500">Contact</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500">Type / Zone</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Dette produits</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Dette emballages</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
+                      <TableHead className="pr-4"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {clients.map((client) => (
+                      <TableRow key={client.id} className="group">
+                        <TableCell className="pl-4">
+                          <div>
+                            <Link href={`/dashboard/clients/${client.id}`} className="text-sm font-medium text-zinc-950 hover:underline">
+                              {client.name}
+                            </Link>
+                            {client.address && (
+                              <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
+                                <MapPin className="h-3 w-3" />
+                                {client.address}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <span className="text-sm text-zinc-700">{client.contact_name || '—'}</span>
+                            {client.phone && (
+                              <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
+                                <Phone className="h-3 w-3" />
+                                {client.phone}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded w-fit">
+                              {client.client_type}
+                            </span>
+                            <span className="text-xs text-zinc-400">{client.zone || '—'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={`text-sm font-medium ${Number(client.product_balance) > 0 ? 'text-red-600' : 'text-zinc-950'}`}>
+                            {formatCurrency(Number(client.product_balance))}
                           </span>
-                          <span className="text-xs text-zinc-400">{client.zone || '—'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className={`text-sm font-medium ${Number(client.product_balance) > 0 ? 'text-red-600' : 'text-zinc-950'}`}>
-                          {formatCurrency(Number(client.product_balance))}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={`text-sm font-medium ${Number(client.packaging_balance) > 0 ? 'text-amber-600' : 'text-zinc-950'}`}>
+                            {formatCurrency(Number(client.packaging_balance))}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
+                            {client.is_active ? 'Actif' : 'Bloqué'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="pr-4 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                <MoreHorizontal className="h-4 w-4 text-zinc-400" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuItem asChild className="cursor-pointer">
+                                <Link href={`/dashboard/clients/${client.id}`} className="flex items-center gap-2">
+                                  <Eye className="h-4 w-4 text-zinc-500" />
+                                  <span className="text-sm">Voir le compte</span>
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild className="cursor-pointer">
+                                <Link href={`/dashboard/sales/new?client=${client.id}`} className="flex items-center gap-2">
+                                  <Plus className="h-4 w-4 text-zinc-500" />
+                                  <span className="text-sm">Nouvelle vente</span>
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild className="cursor-pointer">
+                                <Link href={`/dashboard/clients/${client.id}/edit`} className="flex items-center gap-2">
+                                  <Edit className="h-4 w-4 text-zinc-500" />
+                                  <span className="text-sm">Modifier</span>
+                                </Link>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="md:hidden divide-y divide-zinc-100">
+                {clients.map((client) => (
+                  <Link
+                    key={client.id}
+                    href={`/dashboard/clients/${client.id}`}
+                    className="block p-4 active:bg-zinc-50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-zinc-950 truncate">{client.name}</p>
+                        {client.phone && (
+                          <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
+                            <Phone className="h-3 w-3" /> {client.phone}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 ml-2 shrink-0">
+                        <span className="text-[10px] font-medium text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">
+                          {client.client_type}
                         </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className={`text-sm font-medium ${Number(client.packaging_balance) > 0 ? 'text-amber-600' : 'text-zinc-950'}`}>
-                          {formatCurrency(Number(client.packaging_balance))}
-                        </span>
-                      </TableCell>
-                      <TableCell>
                         <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
                           {client.is_active ? 'Actif' : 'Bloqué'}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="pr-4 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
-                              <MoreHorizontal className="h-4 w-4 text-zinc-400" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuItem asChild className="cursor-pointer">
-                              <Link href={`/dashboard/clients/${client.id}`} className="flex items-center gap-2">
-                                <Eye className="h-4 w-4 text-zinc-500" />
-                                <span className="text-sm">Voir le compte</span>
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild className="cursor-pointer">
-                              <Link href={`/dashboard/sales/new?client=${client.id}`} className="flex items-center gap-2">
-                                <Plus className="h-4 w-4 text-zinc-500" />
-                                <span className="text-sm">Nouvelle vente</span>
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild className="cursor-pointer">
-                              <Link href={`/dashboard/clients/${client.id}/edit`} className="flex items-center gap-2">
-                                <Edit className="h-4 w-4 text-zinc-500" />
-                                <span className="text-sm">Modifier</span>
-                              </Link>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-400">{client.zone || 'Sans zone'}</span>
+                      <div className="flex items-center gap-3">
+                        {Number(client.product_balance) > 0 && (
+                          <span className="text-red-600 font-medium">
+                            {formatCurrency(Number(client.product_balance))}
+                          </span>
+                        )}
+                        {Number(client.packaging_balance) > 0 && (
+                          <span className="text-amber-600 font-medium">
+                            Emb: {formatCurrency(Number(client.packaging_balance))}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </main>

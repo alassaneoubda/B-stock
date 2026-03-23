@@ -283,6 +283,49 @@ export async function POST(request: NextRequest) {
       `
     }
 
+    // 11. Auto-generate invoice for this sale
+    try {
+      const invPrefix = 'FC'
+      const invDate = new Date()
+      const invY = invDate.getFullYear().toString().slice(-2)
+      const invM = (invDate.getMonth() + 1).toString().padStart(2, '0')
+      const invRand = Math.random().toString(36).substring(2, 6).toUpperCase()
+      const invoiceNumber = `${invPrefix}-${invY}${invM}-${invRand}`
+      const invPaid = Number(data.paidAmount)
+      const invRemaining = totalAmount - invPaid
+      const invStatus = invPaid >= totalAmount ? 'paid' : invPaid > 0 ? 'partial' : 'draft'
+
+      const invResult = await sql`
+        INSERT INTO invoices (
+          invoice_number, type, company_id, client_id,
+          order_id, total_ht, total_ttc, total_amount,
+          amount_paid, remaining_amount, status
+        ) VALUES (
+          ${invoiceNumber}, 'client', ${companyId}, ${data.clientId},
+          ${order.id}, ${totalAmount}, ${totalAmount}, ${totalAmount},
+          ${invPaid}, ${invRemaining}, ${invStatus}
+        )
+        RETURNING id
+      `
+
+      if (invResult[0]?.id) {
+        for (const item of data.items) {
+          const lineTotal = item.quantity * item.unitPrice
+          await sql`
+            INSERT INTO invoice_items (
+              invoice_id, product_id, description,
+              quantity, unit_price, total_price, item_type
+            ) VALUES (
+              ${invResult[0].id}, ${item.productVariantId}, ${'Produit'},
+              ${item.quantity}, ${item.unitPrice}, ${lineTotal}, 'product'
+            )
+          `
+        }
+      }
+    } catch (invError) {
+      console.error('Error auto-generating invoice (non-blocking):', invError)
+    }
+
     return NextResponse.json({
       success: true,
       data: order,

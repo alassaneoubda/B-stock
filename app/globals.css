@@ -129,5 +129,57 @@
 
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Touch-friendly defaults */
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
+
+  input, textarea, select {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+
+  @media (min-width: 768px) {
+    input, textarea, select {
+      font-size: inherit;
+    }
+  }
+}
+
+/* Mobile bottom nav spacer */
+.has-bottom-nav {
+  padding-bottom: 4.5rem;
+}
+
+@media (min-width: 768px) {
+  .has-bottom-nav {
+    padding-bottom: 0;
+  }
+}
+
+/* Responsive table to cards on mobile */
+@media (max-width: 767px) {
+  .responsive-table-wrapper table {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .responsive-cards-mobile {
+    display: none;
+  }
+}
+
+/* Print styles for invoices */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
   }
 }
