@@ -28,7 +28,7 @@ export function MobileBottomNav() {
   const { toggleSidebar } = useSidebar()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-zinc-200 md:hidden">
+    <nav data-mobile-bottom-nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-zinc-200 md:hidden">
       <div className="flex items-center justify-around h-16 px-2 safe-area-bottom">
         {navItems.map((item) => {
           const active = isActive(pathname, item.href, item.exact)

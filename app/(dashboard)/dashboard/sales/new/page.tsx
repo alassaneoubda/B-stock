@@ -138,7 +138,7 @@ export default function NewSalePage() {
         fetch('/api/depots')
             .then(r => r.json())
             .then(d => {
-                const list = d.depots || []
+                const list = d.data || d.depots || []
                 setDepots(list)
                 const main = list.find((dp: any) => dp.is_main)
                 if (main) setSelectedDepotId(main.id)

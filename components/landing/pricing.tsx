@@ -3,23 +3,23 @@ import Link from 'next/link'
 
 const plans = [
   {
-    name: 'Essentiel',
-    price: '15 000',
-    description: 'Pour les dépôts uniques en démarrage.',
-    features: ['3 Utilisateurs', '1 Dépôt principal', 'Jusqu\'à 50 produits actifs', 'Support par email'],
+    name: 'Pack Essentiel',
+    price: '25 000',
+    description: 'Pour les petits commerces et dépôts.',
+    features: ['Gestion des ventes', 'Gestion du stock', 'Gestion des clients', 'Factures automatiques', 'Support email'],
   },
   {
-    name: 'Business',
-    price: '35 000',
-    description: 'La référence pour les distributeurs en croissance.',
-    features: ['10 Utilisateurs', '3 Dépôts gérés', 'Produits illimités', 'Rapports détaillés', 'Support prioritaire'],
+    name: 'Pack Business',
+    price: '45 000',
+    description: 'Pour les distributeurs et grossistes.',
+    features: ['Tout du Pack Essentiel', 'Multi-dépôts', 'Rapports avancés', 'Gestion des tournées', 'Support prioritaire', 'Accès API'],
     popular: true,
   },
   {
-    name: 'Entreprise',
+    name: 'Pack Entreprise',
     price: 'Sur devis',
-    description: 'Pour les réseaux de distribution complexes.',
-    features: ['Utilisateurs illimités', 'Dépôts illimités', 'Multi-sociétés', 'Portes-monnaie virtuels', 'Accès API'],
+    description: 'Pour les grandes entreprises — accès complet.',
+    features: ['Tout du Pack Business', 'Utilisateurs illimités', 'Dépôts illimités', 'Branding personnalisé', 'Formation dédiée', 'Support dédié 24/7'],
   },
 ]
 

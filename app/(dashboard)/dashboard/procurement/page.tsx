@@ -160,39 +160,29 @@ export default async function ProcurementPage() {
 
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
                 {/* Stats Grid */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {statsData.map((stat) => (
-                        <div
-                            key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
-                        >
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <stat.icon className="h-7 w-7" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
-                                    <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
-                                </div>
+                        <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
+                                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
                             </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
+                            <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight">{stat.value}</p>
+                            <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
                         </div>
                     ))}
                 </div>
 
                 {/* Procurement Table */}
                 <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="px-8 py-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+                    <div className="px-4 sm:px-6 py-4 sm:py-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
-                            <h3 className="text-2xl font-semibold text-slate-950 tracking-tight">Commandes Fournisseurs</h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Suivez les transactions et états de réception</p>
+                            <h3 className="text-base sm:text-lg font-semibold text-slate-950">Commandes Fournisseurs</h3>
+                            <p className="text-xs text-slate-400 mt-0.5">Suivez les transactions et états de réception</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <Button variant="outline" size="sm" className="rounded-xl h-10 px-4 font-bold border-slate-200 text-slate-600" asChild>
-                                <Link href="/dashboard/suppliers">Gérer les fournisseurs</Link>
-                            </Button>
-                        </div>
+                        <Button variant="outline" size="sm" className="h-8 text-xs font-medium" asChild>
+                            <Link href="/dashboard/suppliers">Fournisseurs</Link>
+                        </Button>
                     </div>
 
                     <div className="p-2">
@@ -213,17 +203,19 @@ export default async function ProcurementPage() {
                                 </Button>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
+                            <>
+                              {/* Desktop table */}
+                              <div className="hidden md:block overflow-x-auto">
                                 <Table>
                                     <TableHeader className="bg-slate-50/50">
                                         <TableRow className="border-none hover:bg-transparent">
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Référence & Date</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Fournisseur</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Livraison Prévue</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Articles</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Montant Total</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Statut</TableHead>
-                                            <TableHead className="py-5 pr-8"></TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 pl-4">Réf. & Date</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Fournisseur</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Livraison</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Articles</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Montant</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Statut</TableHead>
+                                            <TableHead className="py-3 pr-4"></TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -231,70 +223,57 @@ export default async function ProcurementPage() {
                                             const statusInfo = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const, icon: Clock, color: 'bg-slate-100 text-slate-500' }
                                             const StatusIcon = statusInfo.icon
                                             return (
-                                                <TableRow key={order.id} className="group border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                    <TableCell className="py-6 pl-8">
-                                                        <div className="flex flex-col">
-                                                            <span className="font-semibold text-slate-950 font-mono tracking-tight">{order.order_number}</span>
-                                                            <span className="text-[11px] font-bold text-slate-400 mt-1 flex items-center gap-1.5 uppercase tracking-wider">
-                                                                <ArrowDownLeft className="h-3 w-3 text-emerald-500" />
-                                                                {new Date(order.ordered_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                                                            </span>
-                                                        </div>
+                                                <TableRow key={order.id} className="group border-b border-slate-50 hover:bg-slate-50/50">
+                                                    <TableCell className="py-3 pl-4">
+                                                        <span className="text-sm font-medium text-slate-950 font-mono">{order.order_number}</span>
+                                                        <p className="text-xs text-slate-400 mt-0.5">
+                                                            {new Date(order.ordered_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                                                        </p>
                                                     </TableCell>
-                                                    <TableCell className="py-6">
-                                                        <span className="font-semibold text-slate-700 text-sm italic group-hover:text-blue-600 transition-colors">
-                                                            {order.supplier_name || 'Fournisseur inconnu'}
+                                                    <TableCell className="py-3">
+                                                        <span className="text-sm text-slate-700">{order.supplier_name || 'Inconnu'}</span>
+                                                    </TableCell>
+                                                    <TableCell className="py-3">
+                                                        <span className="text-xs text-slate-500">
+                                                            {order.expected_delivery_at
+                                                                ? new Date(order.expected_delivery_at).toLocaleDateString('fr-FR')
+                                                                : '—'}
                                                         </span>
                                                     </TableCell>
-                                                    <TableCell className="py-6">
-                                                        <div className="flex items-center gap-2">
-                                                            <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                                                            <span className="text-sm font-bold text-slate-500">
-                                                                {order.expected_delivery_at
-                                                                    ? new Date(order.expected_delivery_at).toLocaleDateString('fr-FR')
-                                                                    : '-'}
-                                                            </span>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="py-6">
-                                                        <span className="inline-flex px-2.5 py-1 rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-600 uppercase tracking-wider">
-                                                            {order.items_count} article{Number(order.items_count) > 1 ? 's' : ''}
+                                                    <TableCell className="py-3">
+                                                        <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                                                            {order.items_count} art.
                                                         </span>
                                                     </TableCell>
-                                                    <TableCell className="py-6 text-right">
-                                                        <span className="font-semibold text-slate-950 text-base">
-                                                            {order.total_amount ? formatCurrency(Number(order.total_amount)) : '-'}
+                                                    <TableCell className="py-3 text-right">
+                                                        <span className="text-sm font-semibold text-slate-950">
+                                                            {order.total_amount ? formatCurrency(Number(order.total_amount)) : '—'}
                                                         </span>
                                                     </TableCell>
-                                                    <TableCell className="py-6">
-                                                        <Badge className={`rounded-full px-4 py-1 font-semibold uppercase text-[10px] tracking-wider ${statusInfo.color} border-none shadow-none gap-2`}>
-                                                            <StatusIcon className="h-3 w-3" />
+                                                    <TableCell className="py-3">
+                                                        <Badge className={`text-[10px] font-medium ${statusInfo.color} border-none`}>
                                                             {statusInfo.label}
                                                         </Badge>
                                                     </TableCell>
-                                                    <TableCell className="py-6 pr-8 text-right">
+                                                    <TableCell className="py-3 pr-4 text-right">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 transition-all">
-                                                                    <MoreHorizontal className="h-5 w-5 text-slate-400 group-hover:text-slate-950" />
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                                                    <MoreHorizontal className="h-4 w-4 text-slate-400" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-60 p-2 rounded-md border-slate-100 shadow-lg">
-                                                                <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-blue-50 focus:bg-blue-50">
-                                                                    <Link href={`/dashboard/procurement/${order.id}`} className="flex items-center gap-3">
-                                                                        <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
-                                                                            <Eye className="h-4 w-4" />
-                                                                        </div>
-                                                                        <span className="font-bold text-sm">Détail Commande</span>
+                                                            <DropdownMenuContent align="end" className="w-48">
+                                                                <DropdownMenuItem asChild className="cursor-pointer">
+                                                                    <Link href={`/dashboard/procurement/${order.id}`} className="flex items-center gap-2">
+                                                                        <Eye className="h-4 w-4 text-zinc-500" />
+                                                                        <span className="text-sm">Détail</span>
                                                                     </Link>
                                                                 </DropdownMenuItem>
                                                                 {['pending', 'confirmed', 'partial'].includes(order.status) && (
-                                                                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-emerald-50 focus:bg-emerald-50">
-                                                                        <Link href={`/dashboard/procurement/${order.id}/receive`} className="flex items-center gap-3">
-                                                                            <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
-                                                                                <ArchiveRestore className="h-4 w-4" />
-                                                                            </div>
-                                                                            <span className="font-bold text-sm text-emerald-700">Réceptionner</span>
+                                                                    <DropdownMenuItem asChild className="cursor-pointer">
+                                                                        <Link href={`/dashboard/procurement/${order.id}/receive`} className="flex items-center gap-2">
+                                                                            <ArchiveRestore className="h-4 w-4 text-zinc-500" />
+                                                                            <span className="text-sm">Réceptionner</span>
                                                                         </Link>
                                                                     </DropdownMenuItem>
                                                                 )}
@@ -306,7 +285,42 @@ export default async function ProcurementPage() {
                                         })}
                                     </TableBody>
                                 </Table>
-                            </div>
+                              </div>
+
+                              {/* Mobile cards */}
+                              <div className="md:hidden divide-y divide-zinc-100">
+                                {orders.map((order) => {
+                                    const statusInfo = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const, icon: Clock, color: 'bg-slate-100 text-slate-500' }
+                                    return (
+                                        <Link
+                                            key={order.id}
+                                            href={`/dashboard/procurement/${order.id}`}
+                                            className="block p-4 active:bg-zinc-50 transition-colors"
+                                        >
+                                            <div className="flex items-start justify-between mb-1.5">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-semibold text-zinc-950 truncate">
+                                                        {order.supplier_name || 'Fournisseur inconnu'}
+                                                    </p>
+                                                    <p className="text-xs text-zinc-400 font-mono">
+                                                        {order.order_number} · {new Date(order.ordered_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                                                    </p>
+                                                </div>
+                                                <Badge className={`text-[10px] font-medium ml-2 shrink-0 ${statusInfo.color} border-none`}>
+                                                    {statusInfo.label}
+                                                </Badge>
+                                            </div>
+                                            <div className="flex items-center justify-between mt-2">
+                                                <span className="text-xs text-zinc-400">{order.items_count} article{Number(order.items_count) > 1 ? 's' : ''}</span>
+                                                <span className="text-sm font-bold text-zinc-950">
+                                                    {order.total_amount ? formatCurrency(Number(order.total_amount)) : '—'}
+                                                </span>
+                                            </div>
+                                        </Link>
+                                    )
+                                })}
+                              </div>
+                            </>
                         )}
                     </div>
                 </div>

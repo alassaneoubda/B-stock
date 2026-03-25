@@ -626,39 +626,42 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$ne
 ;
 const plans = [
     {
-        name: 'Essentiel',
-        price: '15 000',
-        description: 'Pour les dépôts uniques en démarrage.',
+        name: 'Pack Essentiel',
+        price: '25 000',
+        description: 'Pour les petits commerces et dépôts.',
         features: [
-            '3 Utilisateurs',
-            '1 Dépôt principal',
-            'Jusqu\'à 50 produits actifs',
-            'Support par email'
+            'Gestion des ventes',
+            'Gestion du stock',
+            'Gestion des clients',
+            'Factures automatiques',
+            'Support email'
         ]
     },
     {
-        name: 'Business',
-        price: '35 000',
-        description: 'La référence pour les distributeurs en croissance.',
+        name: 'Pack Business',
+        price: '45 000',
+        description: 'Pour les distributeurs et grossistes.',
         features: [
-            '10 Utilisateurs',
-            '3 Dépôts gérés',
-            'Produits illimités',
-            'Rapports détaillés',
-            'Support prioritaire'
+            'Tout du Pack Essentiel',
+            'Multi-dépôts',
+            'Rapports avancés',
+            'Gestion des tournées',
+            'Support prioritaire',
+            'Accès API'
         ],
         popular: true
     },
     {
-        name: 'Entreprise',
+        name: 'Pack Entreprise',
         price: 'Sur devis',
-        description: 'Pour les réseaux de distribution complexes.',
+        description: 'Pour les grandes entreprises — accès complet.',
         features: [
+            'Tout du Pack Business',
             'Utilisateurs illimités',
             'Dépôts illimités',
-            'Multi-sociétés',
-            'Portes-monnaie virtuels',
-            'Accès API'
+            'Branding personnalisé',
+            'Formation dédiée',
+            'Support dédié 24/7'
         ]
     }
 ];

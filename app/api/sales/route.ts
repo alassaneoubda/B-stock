@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { sql } from '@/lib/db'
+import { createCashMovementFromSale, hasExistingCashMovement } from '@/lib/cash-automation'
 
 const salesOrderSchema = z.object({
   clientId: z.string().uuid(),
@@ -324,6 +325,25 @@ export async function POST(request: NextRequest) {
       }
     } catch (invError) {
       console.error('Error auto-generating invoice (non-blocking):', invError)
+    }
+
+    // 12. Créer automatiquement le mouvement de caisse pour les paiements en espèces
+    if (data.paidAmount > 0 && (data.paymentMethod === 'cash' || data.paymentMethod === 'mixed')) {
+      try {
+        // Vérifier si le mouvement existe déjà
+        const existingMovement = await hasExistingCashMovement(companyId, 'sales_order', order.id)
+        if (!existingMovement) {
+          await createCashMovementFromSale(
+            companyId,
+            order.id,
+            data.paidAmount,
+            'cash',
+            session.user.id
+          )
+        }
+      } catch (cashError) {
+        console.error('Error creating cash movement (non-blocking):', cashError)
+      }
     }
 
     return NextResponse.json({

@@ -69,7 +69,28 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$
 if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL environment variable is not set');
 }
-const sql = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$neondatabase$2b$serverless$40$0$2e$10$2e$4$2f$node_modules$2f40$neondatabase$2f$serverless$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__["neon"])(process.env.DATABASE_URL);
+const rawSql = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$neondatabase$2b$serverless$40$0$2e$10$2e$4$2f$node_modules$2f40$neondatabase$2f$serverless$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__["neon"])(process.env.DATABASE_URL);
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 500;
+async function withRetry(fn) {
+    for(let attempt = 1; attempt <= MAX_RETRIES; attempt++){
+        try {
+            return await fn();
+        } catch (error) {
+            const isNetworkError = error?.sourceError?.code === 'ETIMEDOUT' || error?.sourceError?.message === 'fetch failed' || error?.message?.includes('fetch failed') || error?.message?.includes('ETIMEDOUT');
+            if (isNetworkError && attempt < MAX_RETRIES) {
+                console.warn(`[DB] Retry ${attempt}/${MAX_RETRIES} after network error`);
+                await new Promise((r)=>setTimeout(r, RETRY_DELAY_MS * attempt));
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw new Error('Unreachable');
+}
+const sql = (stringsOrQuery, ...values)=>{
+    return withRetry(()=>rawSql(stringsOrQuery, ...values));
+};
 async function query(queryText, ...values) {
     const result = await sql(queryText, ...values);
     return result;
@@ -339,9 +360,9 @@ async function POST(request) {
         const packagingName = `Emballage - ${data.name} ${data.baseUnit === 'bouteille' ? '' : data.baseUnit}`.trim();
         const packagingTypes = await __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$db$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["sql"]`
       INSERT INTO packaging_types (
-        company_id, name, description, units_per_case, is_returnable, deposit_price
+        company_id, name, units_per_case, is_returnable, deposit_price
       ) VALUES (
-        ${companyId}, ${packagingName}, 'Emballage créé automatiquement pour ${data.name}', 1, true, 0
+        ${companyId}, ${packagingName}, 1, true, 0
       )
       RETURNING id
     `;

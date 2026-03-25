@@ -269,9 +269,9 @@ const __TURBOPACK__default__export__ = (0, __TURBOPACK__imported__module__$5b$pr
         '/reset-password',
         '/pricing'
     ];
-    const isPublicRoute = publicRoutes.some((route)=>pathname === route || pathname.startsWith('/api/auth'));
+    const isPublicRoute = publicRoutes.some((route)=>pathname === route || pathname.startsWith(route + '/')) || pathname.startsWith('/api/auth') || pathname.startsWith('/api/webhooks');
     // API routes that require authentication
-    const isProtectedApiRoute = pathname.startsWith('/api/') && !pathname.startsWith('/api/auth');
+    const isProtectedApiRoute = pathname.startsWith('/api/') && !pathname.startsWith('/api/auth') && !pathname.startsWith('/api/webhooks');
     // Dashboard routes
     const isDashboardRoute = pathname.startsWith('/dashboard');
     // Redirect to login if accessing protected routes without auth

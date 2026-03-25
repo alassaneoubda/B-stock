@@ -23,7 +23,7 @@ export async function GET() {
       ORDER BY name ASC
     `
 
-        return NextResponse.json({ packagingTypes })
+        return NextResponse.json({ success: true, data: packagingTypes })
     } catch (error) {
         console.error('Error fetching packaging types:', error)
         return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

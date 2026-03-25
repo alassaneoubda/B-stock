@@ -47,6 +47,16 @@ import {
   BoxesIcon,
   Building2,
   UserCog,
+  Wallet,
+  CreditCard as CreditIcon,
+  RotateCcw,
+  ArrowLeftRight,
+  Users as UsersIcon,
+  AlertTriangle,
+  Tag,
+  FileSearch,
+  TrendingUp,
+  Shield,
 } from 'lucide-react'
 
 const mainNavItems = [
@@ -55,6 +65,18 @@ const mainNavItems = [
     href: '/dashboard',
     icon: LayoutDashboard,
     exact: true,
+  },
+  {
+    title: 'Caisse',
+    href: '/dashboard/cash',
+    icon: Wallet,
+    requiredPermission: 'sales',
+  },
+  {
+    title: 'Validation Caisse',
+    href: '/dashboard/cash/validation',
+    icon: Shield,
+    requiredPermission: 'manager',
   },
   {
     title: 'Ventes',
@@ -66,6 +88,12 @@ const mainNavItems = [
     title: 'Clients',
     href: '/dashboard/clients',
     icon: Users,
+    requiredPermission: 'sales',
+  },
+  {
+    title: 'Crédits',
+    href: '/dashboard/credits',
+    icon: CreditIcon,
     requiredPermission: 'sales',
   },
   {
@@ -102,6 +130,30 @@ const stockNavItems = [
     requiredPermission: 'products',
   },
   {
+    title: 'Inventaire',
+    href: '/dashboard/inventory',
+    icon: ClipboardList,
+    requiredPermission: 'products',
+  },
+  {
+    title: 'Transferts',
+    href: '/dashboard/transfers',
+    icon: ArrowLeftRight,
+    requiredPermission: 'products',
+  },
+  {
+    title: 'Retours',
+    href: '/dashboard/returns',
+    icon: RotateCcw,
+    requiredPermission: 'products',
+  },
+  {
+    title: 'Casse & Pertes',
+    href: '/dashboard/breakage',
+    icon: AlertTriangle,
+    requiredPermission: 'products',
+  },
+  {
     title: 'Approvisionnement',
     href: '/dashboard/procurement',
     icon: ArchiveRestore,
@@ -129,13 +181,13 @@ const reportNavItems = [
     requiredPermission: 'reports',
   },
   {
-    title: 'Factures',
-    href: '/dashboard/invoices',
-    icon: FileText,
+    title: 'Journal d\'audit',
+    href: '/dashboard/audit-logs',
+    icon: FileSearch,
     requiredPermission: 'reports',
   },
   {
-    title: 'Vehicules',
+    title: 'Véhicules',
     href: '/dashboard/vehicles',
     icon: Car,
     requiredPermission: 'vehicles',
@@ -143,6 +195,18 @@ const reportNavItems = [
 ]
 
 const settingsNavItems = [
+  {
+    title: 'Commerciaux',
+    href: '/dashboard/agents',
+    icon: UsersIcon,
+    requiredPermission: 'settings',
+  },
+  {
+    title: 'Tarification',
+    href: '/dashboard/pricing',
+    icon: Tag,
+    requiredPermission: 'settings',
+  },
   {
     title: 'Dépôts',
     href: '/dashboard/depots',
@@ -164,7 +228,7 @@ const settingsNavItems = [
   },
   {
     title: 'Abonnement',
-    href: '/dashboard/settings/subscription',
+    href: '/dashboard/plans',
     icon: CreditCard,
     requiredPermission: 'settings',
   },

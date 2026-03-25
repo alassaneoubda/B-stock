@@ -174,12 +174,43 @@
   }
 }
 
-/* Print styles for invoices */
+/* Print styles for invoices & stock export */
 @media print {
-  .no-print {
+  .no-print,
+  nav,
+  aside,
+  header,
+  [data-sidebar],
+  [data-mobile-bottom-nav] {
     display: none !important;
   }
+
   body {
-    background: white;
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .has-bottom-nav {
+    padding-bottom: 0 !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  @page {
+    margin: 1cm;
+    size: A4;
   }
 }

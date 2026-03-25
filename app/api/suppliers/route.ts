@@ -29,7 +29,7 @@ export async function GET() {
       ORDER BY s.name
     `
 
-        return NextResponse.json({ suppliers })
+        return NextResponse.json({ success: true, data: suppliers })
     } catch (error) {
         console.error('Error fetching suppliers:', error)
         return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })

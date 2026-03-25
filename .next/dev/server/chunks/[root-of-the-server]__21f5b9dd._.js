@@ -320,7 +320,8 @@ async function GET() {
       ORDER BY name ASC
     `;
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$1$2e$6_react$2d$dom$40$19$2e$2$2e$4_react$40$19$2e$2$2e$4_$5f$react$40$19$2e$2$2e$4$2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-            packagingTypes
+            success: true,
+            data: packagingTypes
         });
     } catch (error) {
         console.error('Error fetching packaging types:', error);

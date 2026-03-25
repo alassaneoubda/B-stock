@@ -69,7 +69,28 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$
 if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL environment variable is not set');
 }
-const sql = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$neondatabase$2b$serverless$40$0$2e$10$2e$4$2f$node_modules$2f40$neondatabase$2f$serverless$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__["neon"])(process.env.DATABASE_URL);
+const rawSql = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f40$neondatabase$2b$serverless$40$0$2e$10$2e$4$2f$node_modules$2f40$neondatabase$2f$serverless$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__["neon"])(process.env.DATABASE_URL);
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 500;
+async function withRetry(fn) {
+    for(let attempt = 1; attempt <= MAX_RETRIES; attempt++){
+        try {
+            return await fn();
+        } catch (error) {
+            const isNetworkError = error?.sourceError?.code === 'ETIMEDOUT' || error?.sourceError?.message === 'fetch failed' || error?.message?.includes('fetch failed') || error?.message?.includes('ETIMEDOUT');
+            if (isNetworkError && attempt < MAX_RETRIES) {
+                console.warn(`[DB] Retry ${attempt}/${MAX_RETRIES} after network error`);
+                await new Promise((r)=>setTimeout(r, RETRY_DELAY_MS * attempt));
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw new Error('Unreachable');
+}
+const sql = (stringsOrQuery, ...values)=>{
+    return withRetry(()=>rawSql(stringsOrQuery, ...values));
+};
 async function query(queryText, ...values) {
     const result = await sql(queryText, ...values);
     return result;
@@ -309,7 +330,8 @@ async function GET() {
       ORDER BY s.name
     `;
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f2e$pnpm$2f$next$40$16$2e$1$2e$6_react$2d$dom$40$19$2e$2$2e$4_react$40$19$2e$2$2e$4_$5f$react$40$19$2e$2$2e$4$2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-            suppliers
+            success: true,
+            data: suppliers
         });
     } catch (error) {
         console.error('Error fetching suppliers:', error);

@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { SubscriptionBanner } from '@/components/dashboard/subscription-banner'
 import {
   DollarSign,
   TrendingUp,
@@ -77,6 +78,9 @@ export default async function DashboardPage() {
       <DashboardHeader title="Tableau de bord" />
 
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
+
+        {/* Subscription Banner */}
+        <SubscriptionBanner />
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

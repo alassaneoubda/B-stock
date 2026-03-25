@@ -124,34 +124,24 @@ export default async function PackagingPage() {
 
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
                 {/* Stats Grid */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {statsData.map((stat) => (
-                        <div
-                            key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
-                        >
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <stat.icon className="h-7 w-7" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
-                                    <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
-                                </div>
+                        <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
+                                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
                             </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
+                            <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight">{stat.value}</p>
+                            <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
                         </div>
                     ))}
                 </div>
 
                 {/* Packaging Table */}
                 <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="px-8 py-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-                        <div>
-                            <h3 className="text-2xl font-semibold text-slate-950 tracking-tight">Catalogue Formats</h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Spécifications techniques et valeurs de consigne</p>
-                        </div>
+                    <div className="px-4 sm:px-6 py-4 sm:py-6 border-b border-slate-100">
+                        <h3 className="text-base sm:text-lg font-semibold text-slate-950">Catalogue Formats</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Spécifications techniques et valeurs de consigne</p>
                     </div>
 
                     <div className="p-2">
@@ -172,99 +162,77 @@ export default async function PackagingPage() {
                                 </Button>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
+                            <>
+                              {/* Desktop table */}
+                              <div className="hidden md:block overflow-x-auto">
                                 <Table>
                                     <TableHeader className="bg-slate-50/50">
                                         <TableRow className="border-none hover:bg-transparent">
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Type de Conditionnement</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-center">Contenance</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Statut Consigne</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Valeur Unitaire</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Stock Actuel</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Équivalences Directes</TableHead>
-                                            <TableHead className="py-5 pr-8"></TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 pl-4">Emballage</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-center">Contenance</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Consigne</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Valeur</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Stock</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Équivalences</TableHead>
+                                            <TableHead className="py-3 pr-4"></TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {packagingTypes.map((pt) => (
-                                            <TableRow key={pt.id} className="group border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                <TableCell className="py-6 pl-8">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="h-12 w-12 rounded-md bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100 group-hover:bg-white group-hover:shadow group-hover:scale-105 transition-all">
-                                                            <Box className="h-6 w-6" />
-                                                        </div>
-                                                        <span className="font-semibold text-slate-950 text-base tracking-tight leading-tight">
-                                                            {pt.name}
-                                                        </span>
-                                                    </div>
+                                            <TableRow key={pt.id} className="group border-b border-slate-50 hover:bg-slate-50/50">
+                                                <TableCell className="py-3 pl-4">
+                                                    <span className="text-sm font-semibold text-slate-950">{pt.name}</span>
                                                 </TableCell>
-                                                <TableCell className="py-6 text-center">
-                                                    <span className="font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl text-xs">
-                                                        {pt.units_per_case || '—'} unités
+                                                <TableCell className="py-3 text-center">
+                                                    <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                                        {pt.units_per_case || '—'} u.
                                                     </span>
                                                 </TableCell>
-                                                <TableCell className="py-6">
-                                                    <Badge className={`rounded-full px-4 py-1 font-semibold uppercase text-[9px] tracking-wider border-none shadow-none ${pt.is_returnable ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-400'
-                                                        }`}>
+                                                <TableCell className="py-3">
+                                                    <Badge className={`text-[10px] font-medium border-none ${pt.is_returnable ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
                                                         {pt.is_returnable ? 'Consigné' : 'Perdu'}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell className="py-6 text-right">
+                                                <TableCell className="py-3 text-right">
                                                     {pt.deposit_price && Number(pt.deposit_price) > 0 ? (
-                                                        <span className="font-semibold text-blue-600">
+                                                        <span className="text-sm font-semibold text-blue-600">
                                                             {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(Number(pt.deposit_price))}
                                                         </span>
-                                                    ) : <span className="text-slate-300 font-bold">—</span>}
+                                                    ) : <span className="text-slate-300">—</span>}
                                                 </TableCell>
-                                                <TableCell className="py-6 text-right font-semibold text-slate-950 text-base">
+                                                <TableCell className="py-3 text-right text-sm font-semibold text-slate-950">
                                                     {pt.stock_quantity}
                                                 </TableCell>
-                                                <TableCell className="py-6">
+                                                <TableCell className="py-3">
                                                     {pt.equivalences.length > 0 ? (
-                                                        <div className="flex flex-wrap gap-1.5">
+                                                        <div className="flex flex-wrap gap-1">
                                                             {pt.equivalences.map((eq) => (
-                                                                <span key={eq} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-50 text-[10px] font-semibold text-blue-600 uppercase tracking-tight">
-                                                                    <ArrowLeftRight className="h-2.5 w-2.5" />
-                                                                    {eq}
-                                                                </span>
+                                                                <span key={eq} className="px-2 py-0.5 rounded bg-blue-50 text-[10px] font-medium text-blue-600">{eq}</span>
                                                             ))}
                                                         </div>
                                                     ) : (
-                                                        <span className="text-slate-300 text-xs font-bold font-italic">Aucune correspondance</span>
+                                                        <span className="text-slate-300 text-xs">—</span>
                                                     )}
                                                 </TableCell>
-                                                <TableCell className="py-6 pr-8 text-right">
+                                                <TableCell className="py-3 pr-4 text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 transition-all">
-                                                                <MoreHorizontal className="h-5 w-5 text-slate-400 group-hover:text-slate-950" />
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                                                <MoreHorizontal className="h-4 w-4 text-slate-400" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-60 p-2 rounded-md border-slate-100 shadow-lg">
-                                                            <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-slate-50 focus:bg-slate-50 transition-colors">
-                                                                <Link href={`/dashboard/packaging/${pt.id}/edit`} className="flex items-center gap-3">
-                                                                    <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-                                                                        <Edit className="h-4 w-4" />
-                                                                    </div>
-                                                                    <span className="font-bold text-sm">Modifier Détails</span>
+                                                        <DropdownMenuContent align="end" className="w-48">
+                                                            <DropdownMenuItem asChild className="cursor-pointer">
+                                                                <Link href={`/dashboard/packaging/${pt.id}/edit`} className="flex items-center gap-2">
+                                                                    <Edit className="h-4 w-4 text-zinc-500" />
+                                                                    <span className="text-sm">Modifier</span>
                                                                 </Link>
                                                             </DropdownMenuItem>
-                                                            <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-blue-50 focus:bg-blue-50 transition-colors">
-                                                                <Link href={`/dashboard/packaging/equivalences?add=${pt.id}`} className="flex items-center gap-3">
-                                                                    <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
-                                                                        <ArrowLeftRight className="h-4 w-4" />
-                                                                    </div>
-                                                                    <span className="font-bold text-sm">Lier Équivalence</span>
+                                                            <DropdownMenuItem asChild className="cursor-pointer">
+                                                                <Link href={`/dashboard/packaging/equivalences?add=${pt.id}`} className="flex items-center gap-2">
+                                                                    <ArrowLeftRight className="h-4 w-4 text-zinc-500" />
+                                                                    <span className="text-sm">Équivalence</span>
                                                                 </Link>
-                                                            </DropdownMenuItem>
-                                                            <div className="h-px bg-slate-100 my-1 mx-2" />
-                                                            <DropdownMenuItem className="rounded-xl cursor-pointer py-3 hover:bg-rose-50 focus:bg-rose-50 text-rose-600 group/del transition-colors">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="h-8 w-8 rounded-lg bg-rose-100 flex items-center justify-center text-rose-600">
-                                                                        <Trash2 className="h-4 w-4" />
-                                                                    </div>
-                                                                    <span className="font-bold text-sm">Supprimer l'Entrée</span>
-                                                                </div>
                                                             </DropdownMenuItem>
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
@@ -273,7 +241,44 @@ export default async function PackagingPage() {
                                         ))}
                                     </TableBody>
                                 </Table>
-                            </div>
+                              </div>
+
+                              {/* Mobile cards */}
+                              <div className="md:hidden divide-y divide-zinc-100">
+                                {packagingTypes.map((pt) => (
+                                    <Link
+                                        key={pt.id}
+                                        href={`/dashboard/packaging/${pt.id}/edit`}
+                                        className="block p-4 active:bg-zinc-50 transition-colors"
+                                    >
+                                        <div className="flex items-start justify-between mb-1.5">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-sm font-semibold text-zinc-950 truncate">{pt.name}</p>
+                                                <p className="text-xs text-zinc-400">{pt.units_per_case || '—'} unités/casier</p>
+                                            </div>
+                                            <Badge className={`text-[10px] font-medium ml-2 shrink-0 border-none ${pt.is_returnable ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                {pt.is_returnable ? 'Consigné' : 'Perdu'}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex items-center justify-between mt-2">
+                                            <div className="flex flex-wrap gap-1">
+                                                {pt.equivalences.length > 0 ? pt.equivalences.map((eq) => (
+                                                    <span key={eq} className="px-1.5 py-0.5 rounded bg-blue-50 text-[10px] font-medium text-blue-600">{eq}</span>
+                                                )) : <span className="text-xs text-zinc-300">Pas d&apos;équivalence</span>}
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-sm font-bold text-zinc-950">{pt.stock_quantity} en stock</p>
+                                                {pt.deposit_price && Number(pt.deposit_price) > 0 && (
+                                                    <p className="text-xs text-blue-600 font-medium">
+                                                        {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(Number(pt.deposit_price))}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </Link>
+                                ))}
+                              </div>
+                            </>
                         )}
                     </div>
                 </div>

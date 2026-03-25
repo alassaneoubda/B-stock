@@ -899,7 +899,7 @@ function NewSalePage() {
                 "NewSalePage.useEffect": (r)=>r.json()
             }["NewSalePage.useEffect"]).then({
                 "NewSalePage.useEffect": (d)=>{
-                    const list = d.depots || [];
+                    const list = d.data || d.depots || [];
                     setDepots(list);
                     const main = list.find({
                         "NewSalePage.useEffect.main": (dp)=>dp.is_main

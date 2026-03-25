@@ -23,7 +23,7 @@ export async function GET() {
       ORDER BY is_main DESC, name ASC
     `
 
-        return NextResponse.json({ depots })
+        return NextResponse.json({ success: true, data: depots })
     } catch (error) {
         console.error('Error fetching depots:', error)
         return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
