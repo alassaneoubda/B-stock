@@ -127,6 +127,19 @@ export async function getSubscriptionInfo(companyId: string): Promise<Subscripti
 }
 
 /**
+ * Idempotency guard: returns true if a payment reference has already been
+ * applied to any company (prevents double activation on webhook retries
+ * or repeated redirect-based activation calls).
+ */
+export async function isReferenceApplied(reference: string): Promise<boolean> {
+  if (!reference) return false
+  const rows = await sql`
+    SELECT 1 FROM companies WHERE stripe_subscription_id = ${reference} LIMIT 1
+  `
+  return rows.length > 0
+}
+
+/**
  * Activate a paid subscription for a company after successful payment.
  */
 export async function activateSubscription(

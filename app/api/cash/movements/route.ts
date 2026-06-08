@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/cash/movements — List movements for current or specified session
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('cash.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const { searchParams } = new URL(request.url)
     const sessionId = searchParams.get('session_id')
     const requiresValidation = searchParams.get('requires_validation')
@@ -60,13 +58,10 @@ export async function GET(request: NextRequest) {
 // POST /api/cash/movements — Add a cash movement (entry or exit)
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('cash.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-    const companyId = session.user.companyId
-    const userId = session.user.id
     const body = await request.json()
     const { movement_type, category, amount, description, reference_type, reference_id } = body
 

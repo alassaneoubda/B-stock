@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { hash } from 'bcryptjs'
-import { sql } from '@/lib/db'
+import { sql, sqlRaw, transaction } from '@/lib/db'
 
 export async function POST(request: Request) {
   try {
@@ -41,26 +42,24 @@ export async function POST(request: Request) {
     const trialEndsAt = new Date()
     trialEndsAt.setDate(trialEndsAt.getDate() + 30)
 
-    // Create company
-    const companies = await sql`
-      INSERT INTO companies (name, slug, email, phone, subscription_status, trial_ends_at)
-      VALUES (${companyName}, ${slug}, ${email}, ${phone || null}, 'trialing', ${trialEndsAt.toISOString()})
-      RETURNING id
-    `
+    // Pre-generate the company id so all rows can be created atomically
+    const companyId = randomUUID()
 
-    const companyId = companies[0].id
-
-    // Create user (owner role)
-    await sql`
-      INSERT INTO users (company_id, email, password_hash, full_name, phone, role)
-      VALUES (${companyId}, ${email}, ${passwordHash}, ${fullName}, ${phone || null}, 'owner')
-    `
-
-    // Create default depot
-    await sql`
-      INSERT INTO depots (company_id, name, is_main)
-      VALUES (${companyId}, 'Depot Principal', true)
-    `
+    // Create company + owner user + default depot ATOMICALLY (tout ou rien)
+    await transaction([
+      sqlRaw`
+        INSERT INTO companies (id, name, slug, email, phone, subscription_status, trial_ends_at)
+        VALUES (${companyId}, ${companyName}, ${slug}, ${email}, ${phone || null}, 'trialing', ${trialEndsAt.toISOString()})
+      `,
+      sqlRaw`
+        INSERT INTO users (company_id, email, password_hash, full_name, phone, role)
+        VALUES (${companyId}, ${email}, ${passwordHash}, ${fullName}, ${phone || null}, 'owner')
+      `,
+      sqlRaw`
+        INSERT INTO depots (company_id, name, is_main)
+        VALUES (${companyId}, 'Depot Principal', true)
+      `,
+    ])
 
     return NextResponse.json(
       { message: 'Compte cree avec succes' },

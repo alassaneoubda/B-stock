@@ -64,6 +64,8 @@ export async function POST(request: NextRequest) {
       description: `${plan.name} — ${planPrice.label}`,
       customerName: session.user.name || undefined,
       customerEmail: session.user.email || undefined,
+      // NB : GeniusPay ajoute la référence de transaction à l'URL de retour
+      // (?reference=MTX-...), lue par la page /dashboard/plans pour l'activation vérifiée.
       successUrl: `${origin}/dashboard/plans?success=true&plan=${plan.id}&interval=${planPrice.interval}&months=${planPrice.months}`,
       errorUrl: `${origin}/dashboard/plans?canceled=true`,
       metadata: {

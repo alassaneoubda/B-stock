@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 const returnSchema = z.object({
@@ -17,15 +17,13 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('purchases.write')
+        if (!authz.ok) return authz.response
+        const { session, companyId } = authz
 
         const { id } = await params
         const body = await request.json()
         const data = returnSchema.parse(body)
-        const { companyId } = session.user
 
         // 1. Get procurement details
         const orders = await sql`

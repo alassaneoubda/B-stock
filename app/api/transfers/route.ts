@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/transfers — List depot transfers
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
-
-    const companyId = session.user.companyId
+    const authz = await requirePermission('transfers.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     const transfers = await sql`
       SELECT dt.*,
@@ -39,13 +36,10 @@ export async function GET(request: NextRequest) {
 // POST /api/transfers — Create a depot transfer
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('transfers.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-    const companyId = session.user.companyId
-    const userId = session.user.id
     const body = await request.json()
     const { source_depot_id, destination_depot_id, notes, items } = body
 

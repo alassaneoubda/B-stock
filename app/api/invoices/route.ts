@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 function generateInvoiceNumber(type: string): string {
@@ -14,10 +14,9 @@ function generateInvoiceNumber(type: string): string {
 // GET /api/invoices — List invoices with filters
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('invoices.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type')
@@ -25,8 +24,6 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
-
-    const companyId = session.user.companyId
 
     let invoices
     if (type && status) {
@@ -104,12 +101,10 @@ export async function GET(request: NextRequest) {
 // POST /api/invoices — Create a new invoice (or auto-generate from order)
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('invoices.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const body = await request.json()
 
     const {

@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/pricing — List price rules and promotions
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
-
-    const companyId = session.user.companyId
+    const authz = await requirePermission('pricing.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     const priceRules = await sql`
       SELECT pr.*,
@@ -46,12 +43,10 @@ export async function GET(request: NextRequest) {
 // POST /api/pricing — Create a price rule or promotion
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('pricing.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const body = await request.json()
     const { type } = body // 'price_rule' or 'promotion'
 

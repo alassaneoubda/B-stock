@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
-import { sql } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { sql, sqlRaw, transaction } from '@/lib/db'
 import { createCashMovementFromSale, hasExistingCashMovement } from '@/lib/cash-automation'
 
 const salesOrderSchema = z.object({
@@ -47,14 +48,12 @@ function formatCurrency(amount: number): string {
 // POST /api/sales — Create a new sales order
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('sales.write')
+    if (!authz.ok) return authz.response
+    const { session, companyId } = authz
 
     const body = await request.json()
     const data = salesOrderSchema.parse(body)
-    const { companyId } = session.user
 
     // 1. Verify client belongs to company
     const clients = await sql`
@@ -116,92 +115,91 @@ export async function POST(request: NextRequest) {
     )
     const totalAmount = subtotal + packagingTotal
 
-    // 4. Generate order number
+    // 4. Generate order number + id (id pré-généré pour l'atomicité, pas de RETURNING)
     const orderNumber = generateOrderNumber()
+    const orderId = randomUUID()
 
     // 5. Allocate payment: products first, then packaging
     const paidForProducts = Math.min(subtotal, data.paidAmount)
     const paidForPackaging = Math.min(packagingTotal, Math.max(0, data.paidAmount - subtotal))
 
-    // 6. Create sales order
-    const orders = await sql`
+    // Debt changes (negative balance = client owes money)
+    const productDebtChange = subtotal - paidForProducts
+    const packagingDebtChange = packagingTotal - paidForPackaging
+
+    // 6. Build all writes and execute them ATOMICALLY (tout ou rien)
+    const writes: unknown[] = []
+
+    // 6a. Sales order
+    writes.push(sqlRaw`
       INSERT INTO sales_orders (
-        company_id, client_id, depot_id, order_number, status,
+        id, company_id, client_id, depot_id, order_number, status,
         order_source, subtotal, packaging_total, total_amount,
         paid_amount, paid_amount_products, paid_amount_packaging,
         payment_method, notes, created_by
       ) VALUES (
-        ${companyId}, ${data.clientId}, ${data.depotId}, ${orderNumber},
+        ${orderId}, ${companyId}, ${data.clientId}, ${data.depotId}, ${orderNumber},
         'confirmed', ${data.orderSource || 'in_person'}, ${subtotal},
         ${packagingTotal}, ${totalAmount}, ${data.paidAmount},
         ${paidForProducts}, ${paidForPackaging},
         ${data.paymentMethod}, ${data.notes || null}, ${session.user.id}
       )
-      RETURNING *
-    `
-    const order = orders[0]
+    `)
 
-    // 7. Create order items + deduct stock
+    // 6b. Order items + stock deduction + movements
     for (const item of data.items) {
-      // Insert order item
-      await sql`
+      writes.push(sqlRaw`
         INSERT INTO sales_order_items (
           sales_order_id, product_variant_id, quantity,
           unit_price, total_price, lot_number
         ) VALUES (
-          ${order.id}, ${item.productVariantId}, ${item.quantity},
+          ${orderId}, ${item.productVariantId}, ${item.quantity},
           ${item.unitPrice}, ${item.quantity * item.unitPrice},
           ${item.lotNumber || null}
         )
-      `
-
-      // Deduct stock
-      await sql`
+      `)
+      writes.push(sqlRaw`
         UPDATE stock
         SET quantity = quantity - ${item.quantity}, updated_at = NOW()
         WHERE depot_id = ${data.depotId}
           AND product_variant_id = ${item.productVariantId}
           AND quantity >= ${item.quantity}
-      `
-
-      // Record stock movement
-      await sql`
+      `)
+      writes.push(sqlRaw`
         INSERT INTO stock_movements (
           company_id, depot_id, product_variant_id,
           movement_type, quantity, reference_type, reference_id,
           lot_number, created_by
         ) VALUES (
           ${companyId}, ${data.depotId}, ${item.productVariantId},
-          'sale', ${-item.quantity}, 'sales_order', ${order.id},
+          'sale', ${-item.quantity}, 'sales_order', ${orderId},
           ${item.lotNumber || null}, ${session.user.id}
         )
-      `
+      `)
     }
 
-    // 8. Handle packaging items
+    // 6c. Packaging items
     if (data.packagingItems && data.packagingItems.length > 0) {
       for (const pkg of data.packagingItems) {
-        // Insert into sales_order_packaging_items
-        await sql`
+        writes.push(sqlRaw`
           INSERT INTO sales_order_packaging_items (
             sales_order_id, packaging_type_id,
             quantity_out, quantity_in, unit_price
           ) VALUES (
-            ${order.id}, ${pkg.packagingTypeId},
+            ${orderId}, ${pkg.packagingTypeId},
             ${pkg.quantityOut}, ${pkg.quantityIn}, ${pkg.unitPrice}
           )
-        `
+        `)
 
-        // Log packaging transaction
         const netOut = pkg.quantityOut - pkg.quantityIn
         if (netOut !== 0) {
-          await sql`
+          writes.push(sqlRaw`
             INSERT INTO packaging_transactions (
               company_id, client_id, sales_order_id,
               packaging_type_id, transaction_type, quantity,
               unit_price, total_amount, created_by
             ) VALUES (
-              ${companyId}, ${data.clientId}, ${order.id},
+              ${companyId}, ${data.clientId}, ${orderId},
               ${pkg.packagingTypeId},
               ${netOut > 0 ? 'given' : 'returned'},
               ${Math.abs(netOut)},
@@ -209,80 +207,80 @@ export async function POST(request: NextRequest) {
               ${Math.abs(netOut) * pkg.unitPrice},
               ${session.user.id}
             )
-          `
+          `)
         }
 
-        // Update packaging stock
         if (pkg.quantityOut > 0) {
-          await sql`
+          writes.push(sqlRaw`
             UPDATE packaging_stock
             SET quantity = quantity - ${pkg.quantityOut}, updated_at = NOW()
             WHERE depot_id = ${data.depotId}
               AND packaging_type_id = ${pkg.packagingTypeId}
-          `
+          `)
         }
         if (pkg.quantityIn > 0) {
-          await sql`
+          writes.push(sqlRaw`
             UPDATE packaging_stock
             SET quantity = quantity + ${pkg.quantityIn}, updated_at = NOW()
             WHERE depot_id = ${data.depotId}
               AND packaging_type_id = ${pkg.packagingTypeId}
-          `
+          `)
         }
       }
     }
 
-    // 9. Update client accounts (debt = amount owed minus what was paid)
-    const productDebtChange = subtotal - paidForProducts
-    const packagingDebtChange = packagingTotal - paidForPackaging
-
-    // Update product account (negative balance = client owes money)
+    // 6d. Client accounts
     if (productDebtChange !== 0) {
-      await sql`
+      writes.push(sqlRaw`
         UPDATE client_accounts
         SET balance = balance - ${productDebtChange},
             last_transaction_at = NOW(),
             updated_at = NOW()
         WHERE client_id = ${data.clientId} AND account_type = 'product'
-      `
+      `)
     }
-
-    // Update packaging account
     if (packagingDebtChange !== 0) {
-      await sql`
+      writes.push(sqlRaw`
         UPDATE client_accounts
         SET balance = balance - ${packagingDebtChange},
             last_transaction_at = NOW(),
             updated_at = NOW()
         WHERE client_id = ${data.clientId} AND account_type = 'packaging'
-      `
+      `)
     }
 
-    // 10. Record payment(s) — separate records for product and packaging portions
+    // 6e. Payments (separate records for product and packaging portions)
     if (paidForProducts > 0) {
-      await sql`
+      writes.push(sqlRaw`
         INSERT INTO payments (
           company_id, client_id, sales_order_id,
           amount, payment_method, payment_type, status, received_by
         ) VALUES (
-          ${companyId}, ${data.clientId}, ${order.id},
+          ${companyId}, ${data.clientId}, ${orderId},
           ${paidForProducts}, ${data.paymentMethod}, 'product',
           'completed', ${session.user.id}
         )
-      `
+      `)
     }
     if (paidForPackaging > 0) {
-      await sql`
+      writes.push(sqlRaw`
         INSERT INTO payments (
           company_id, client_id, sales_order_id,
           amount, payment_method, payment_type, status, received_by
         ) VALUES (
-          ${companyId}, ${data.clientId}, ${order.id},
+          ${companyId}, ${data.clientId}, ${orderId},
           ${paidForPackaging}, ${data.paymentMethod}, 'packaging',
           'completed', ${session.user.id}
         )
-      `
+      `)
     }
+
+    // Execute the whole sale atomically
+    await transaction(writes)
+
+    // Fetch the created order for the response
+    const orders = await sql`SELECT * FROM sales_orders WHERE id = ${orderId}`
+    const order = orders[0]
 
     // 11. Auto-generate invoice for this sale
     try {
@@ -366,10 +364,9 @@ export async function POST(request: NextRequest) {
 // GET /api/sales — List sales orders
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('sales.read')
+    if (!authz.ok) return authz.response
+    const { session } = authz
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')

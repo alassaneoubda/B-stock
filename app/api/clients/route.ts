@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 const clientSchema = z.object({
@@ -21,14 +21,12 @@ const clientSchema = z.object({
 // POST /api/clients — Create a new client
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('clients.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     const body = await request.json()
     const data = clientSchema.parse(body)
-    const { companyId } = session.user
 
     const clients = await sql`
       INSERT INTO clients (
@@ -79,10 +77,9 @@ export async function POST(request: NextRequest) {
 // GET /api/clients — List clients with accounts
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('clients.read')
+    if (!authz.ok) return authz.response
+    const { session } = authz
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')

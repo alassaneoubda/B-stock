@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 function formatCurrency(amount: number): string {
@@ -46,12 +46,10 @@ function generateHTMLHeader(title: string, companyName: string, subtitle?: strin
 // GET /api/export/pdf?type=invoice|delivery_note|inventory|stock|cash_report&id=xxx
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('reports.export')
+    if (!authz.ok) return authz.response
+    const { session, companyId } = authz
 
-    const companyId = session.user.companyId
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type')
     const id = searchParams.get('id')

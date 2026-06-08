@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/agents/[id] — Agent detail with performance
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('agents.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const agentId = params.id
 
     const agents = await sql`
@@ -70,12 +68,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // PUT /api/agents/[id] — Update agent
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('agents.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const agentId = params.id
     const body = await request.json()
     const { full_name, phone, email, zone, commission_rate, is_active } = body

@@ -49,6 +49,38 @@ export async function query<T>(
 }
 
 /**
+ * Raw Neon tagged-template function.
+ *
+ * Use it to BUILD queries that will be passed to `transaction([...])`.
+ * Unlike the retry-wrapped `sql`, queries built with `sqlRaw` are NOT
+ * executed individually — they are collected and run atomically by
+ * `transaction()`.
+ */
+export const sqlRaw = rawSql
+
+/**
+ * Execute an array of queries ATOMICALLY in a single HTTP transaction.
+ * All statements commit together or roll back together.
+ *
+ * Build each statement with `sqlRaw`:
+ *
+ *   await transaction([
+ *     sqlRaw`INSERT INTO ... VALUES (...)`,
+ *     sqlRaw`UPDATE ... SET ...`,
+ *   ])
+ *
+ * Because there are no intermediate reads inside the batch, pre-generate
+ * any required IDs in JS (crypto.randomUUID()) instead of relying on
+ * RETURNING between statements.
+ */
+export async function transaction<T = unknown>(
+  queries: unknown[],
+  options?: Record<string, unknown>
+): Promise<T> {
+  return withRetry(() => (rawSql as any).transaction(queries, options)) as Promise<T>
+}
+
+/**
  * Execute multiple SQL statements sequentially.
  * Since Neon HTTP driver doesn't support real transactions,
  * we execute statements in order and handle errors gracefully.

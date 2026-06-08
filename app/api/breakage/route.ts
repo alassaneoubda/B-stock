@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/breakage — List breakage/loss records
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('breakage.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const { searchParams } = new URL(request.url)
     const recordType = searchParams.get('type')
 
@@ -59,13 +57,10 @@ export async function GET(request: NextRequest) {
 // POST /api/breakage — Report breakage/loss
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('breakage.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-    const companyId = session.user.companyId
-    const userId = session.user.id
     const body = await request.json()
     const { depot_id, record_type, product_variant_id, packaging_type_id, item_type, quantity, unit_value, reason, delivery_tour_id } = body
 

@@ -1,18 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
-import { sql } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { sql, sqlRaw, transaction } from '@/lib/db'
 import { createCashMovementFromCreditPayment, hasExistingCashMovement } from '@/lib/cash-automation'
 
 // POST /api/credits/[id]/pay — Record a payment against a credit note
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('credits.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-    const companyId = session.user.companyId
-    const userId = session.user.id
     const creditId = params.id
     const body = await request.json()
     const { amount, payment_method, reference, notes } = body
@@ -36,33 +33,32 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: `Le montant dépasse le solde restant (${remaining} FCFA)` }, { status: 400 })
     }
 
-    // Record payment
-    await sql`
-      INSERT INTO credit_payments (credit_note_id, amount, payment_method, reference, notes, received_by)
-      VALUES (${creditId}, ${amount}, ${payment_method || 'cash'}, ${reference || null}, ${notes || null}, ${userId})
-    `
-
-    // Update credit note
     const newPaid = Number(credit.paid_amount) + amount
     const newStatus = newPaid >= Number(credit.total_amount) ? 'paid' : 'partial'
 
-    const result = await sql`
-      UPDATE credit_notes SET
-        paid_amount = ${newPaid},
-        status = ${newStatus},
-        updated_at = NOW()
-      WHERE id = ${creditId}
-      RETURNING *
-    `
+    // Record payment + update credit note + update client balance ATOMICALLY
+    await transaction([
+      sqlRaw`
+        INSERT INTO credit_payments (credit_note_id, amount, payment_method, reference, notes, received_by)
+        VALUES (${creditId}, ${amount}, ${payment_method || 'cash'}, ${reference || null}, ${notes || null}, ${userId})
+      `,
+      sqlRaw`
+        UPDATE credit_notes SET
+          paid_amount = ${newPaid},
+          status = ${newStatus},
+          updated_at = NOW()
+        WHERE id = ${creditId}
+      `,
+      sqlRaw`
+        UPDATE client_accounts SET
+          balance = balance + ${amount},
+          last_transaction_at = NOW(),
+          updated_at = NOW()
+        WHERE client_id = ${credit.client_id} AND account_type = 'product'
+      `,
+    ])
 
-    // Update client account balance
-    await sql`
-      UPDATE client_accounts SET
-        balance = balance + ${amount},
-        last_transaction_at = NOW(),
-        updated_at = NOW()
-      WHERE client_id = ${credit.client_id} AND account_type = 'product'
-    `
+    const result = await sql`SELECT * FROM credit_notes WHERE id = ${creditId}`
 
     // Record cash movement if session open and payment is cash
     if (payment_method === 'cash') {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 const equivalenceSchema = z.object({
@@ -11,10 +11,9 @@ const equivalenceSchema = z.object({
 // GET /api/packaging/equivalences — List all equivalences
 export async function GET() {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('packaging.read')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const equivalences = await sql`
             SELECT pe.id, pe.packaging_type_a, pe.packaging_type_b, pe.created_at,
@@ -40,14 +39,12 @@ export async function GET() {
 // POST /api/packaging/equivalences — Create a new equivalence
 export async function POST(request: NextRequest) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('packaging.write')
+        if (!authz.ok) return authz.response
+        const { companyId } = authz
 
         const body = await request.json()
         const data = equivalenceSchema.parse(body)
-        const { companyId } = session.user
 
         if (data.packagingTypeA === data.packagingTypeB) {
             return NextResponse.json(
@@ -114,10 +111,9 @@ export async function POST(request: NextRequest) {
 // DELETE /api/packaging/equivalences — Delete an equivalence
 export async function DELETE(request: NextRequest) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('packaging.write')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const { searchParams } = new URL(request.url)
         const equivalenceId = searchParams.get('id')

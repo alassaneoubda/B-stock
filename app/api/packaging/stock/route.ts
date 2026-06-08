@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/packaging/stock — List packaging stock with depot info
 export async function GET(request: NextRequest) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('packaging.read')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const { searchParams } = new URL(request.url)
         const depotId = searchParams.get('depotId')

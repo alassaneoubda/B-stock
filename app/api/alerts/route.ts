@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/alerts — List alerts
 export async function GET(request: NextRequest) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('alerts.read')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const { searchParams } = new URL(request.url)
         const unreadOnly = searchParams.get('unreadOnly') === 'true'
@@ -41,10 +40,9 @@ export async function GET(request: NextRequest) {
 // PATCH /api/alerts — Mark alerts as read
 export async function PATCH(request: NextRequest) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('alerts.manage')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const body = await request.json()
         const { alertIds, markAllRead } = body

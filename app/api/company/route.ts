@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/company — Get current company info
 export async function GET() {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('settings.read')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const companies = await sql`
       SELECT * FROM companies WHERE id = ${session.user.companyId}
@@ -28,10 +27,9 @@ export async function GET() {
 // PATCH /api/company — Update company info
 export async function PATCH(request: NextRequest) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('settings.write')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         // Only owner can update company
         if (session.user.role !== 'owner') {

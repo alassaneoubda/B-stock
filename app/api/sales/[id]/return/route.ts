@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
-import { sql } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { sql, sqlRaw, transaction } from '@/lib/db'
 
 const returnSchema = z.object({
     items: z.array(z.object({
@@ -22,15 +22,13 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('returns.write')
+        if (!authz.ok) return authz.response
+        const { session, companyId } = authz
 
         const { id } = await params
         const body = await request.json()
         const data = returnSchema.parse(body)
-        const { companyId } = session.user
 
         // 1. Get order details to find client and depot
         const orders = await sql`
@@ -42,21 +40,20 @@ export async function POST(
         }
         const { client_id: clientId, depot_id: depotId } = orders[0]
 
+        const writes: unknown[] = []
+
         // 2. Process product returns
         let totalProductCredit = 0
         for (const item of data.items) {
             const amount = item.quantity * item.unitPrice
             totalProductCredit += amount
 
-            // Increase stock
-            await sql`
+            writes.push(sqlRaw`
                 UPDATE stock
                 SET quantity = quantity + ${item.quantity}, updated_at = NOW()
                 WHERE depot_id = ${depotId} AND product_variant_id = ${item.productVariantId}
-            `
-
-            // Record movement
-            await sql`
+            `)
+            writes.push(sqlRaw`
                 INSERT INTO stock_movements (
                     company_id, depot_id, product_variant_id,
                     movement_type, quantity, reference_type, reference_id,
@@ -66,7 +63,7 @@ export async function POST(
                     'return', ${item.quantity}, 'sales_order', ${id},
                     ${data.reason || 'Retour de vente'}, ${session.user.id}
                 )
-            `
+            `)
         }
 
         // 3. Process packaging returns
@@ -76,15 +73,12 @@ export async function POST(
                 const amount = pkg.quantityIn * pkg.unitPrice
                 totalPackagingCredit += amount
 
-                // Increase packaging stock
-                await sql`
+                writes.push(sqlRaw`
                     UPDATE packaging_stock
                     SET quantity = quantity + ${pkg.quantityIn}, updated_at = NOW()
                     WHERE depot_id = ${depotId} AND packaging_type_id = ${pkg.packagingTypeId}
-                `
-
-                // Log packaging transaction
-                await sql`
+                `)
+                writes.push(sqlRaw`
                     INSERT INTO packaging_transactions (
                         company_id, client_id, sales_order_id,
                         packaging_type_id, transaction_type, quantity,
@@ -94,25 +88,28 @@ export async function POST(
                         ${pkg.packagingTypeId}, 'returned', ${pkg.quantityIn},
                         ${pkg.unitPrice}, ${amount}, ${session.user.id}
                     )
-                `
+                `)
             }
         }
 
         // 4. Update client accounts (credit the balances)
         if (totalProductCredit > 0) {
-            await sql`
+            writes.push(sqlRaw`
                 UPDATE client_accounts
                 SET balance = balance + ${totalProductCredit}, last_transaction_at = NOW(), updated_at = NOW()
                 WHERE client_id = ${clientId} AND account_type = 'product'
-            `
+            `)
         }
         if (totalPackagingCredit > 0) {
-            await sql`
+            writes.push(sqlRaw`
                 UPDATE client_accounts
                 SET balance = balance + ${totalPackagingCredit}, last_transaction_at = NOW(), updated_at = NOW()
                 WHERE client_id = ${clientId} AND account_type = 'packaging'
-            `
+            `)
         }
+
+        // Execute the whole return atomically
+        await transaction(writes)
 
         return NextResponse.json({
             success: true,

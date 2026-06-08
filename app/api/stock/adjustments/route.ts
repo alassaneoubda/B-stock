@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 const adjustmentSchema = z.object({
@@ -15,10 +15,9 @@ const adjustmentSchema = z.object({
 // POST /api/stock/adjustments — Create a stock adjustment
 export async function POST(request: NextRequest) {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('stock.adjust')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const body = await request.json()
         const data = adjustmentSchema.parse(body)

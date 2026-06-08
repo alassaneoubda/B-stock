@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // POST /api/cash/close — Close the current cash session
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('cash.manage')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-    const companyId = session.user.companyId
-    const userId = session.user.id
     const body = await request.json()
     const { closing_amount, notes } = body
 

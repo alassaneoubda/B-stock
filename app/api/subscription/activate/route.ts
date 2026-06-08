@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { getPlan, getPlanPrice, type PlanInterval } from '@/lib/geniuspay'
-import { activateSubscription } from '@/lib/subscription'
+import {
+  getPayment,
+  getPlan,
+  getPlanPrice,
+  isGeniusPayConfigured,
+  type PlanInterval,
+} from '@/lib/geniuspay'
+import { activateSubscription, isReferenceApplied } from '@/lib/subscription'
 
 const activateSchema = z.object({
   planId: z.string(),
@@ -19,10 +25,12 @@ const intervalLabels: Record<string, string> = {
 
 /**
  * POST /api/subscription/activate
- * Fallback activation after successful payment redirect.
- * In production, the webhook handles this. But for localhost dev
- * (and as a safety net), this endpoint activates the subscription
- * when the user is redirected back with success params.
+ * Activation après redirection de paiement.
+ *
+ * SÉCURITÉ : pour tout plan payant, le paiement est VÉRIFIÉ auprès de GeniusPay
+ * (statut réel, société, plan, montant) avant activation. Cette route ne fait
+ * plus confiance aux paramètres envoyés par le client. Le webhook signé reste
+ * le chemin nominal ; ceci en est le filet de sécurité (et le flux localhost).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -53,11 +61,101 @@ export async function POST(request: NextRequest) {
 
     const fullPlanName = `${plan.name} — ${intervalLabels[interval] || interval}`
 
+    // --- Plan gratuit (ex. Pack Entreprise 0 XOF) : pas de paiement à vérifier ---
+    if (planPrice.price === 0) {
+      await activateSubscription(session.user.companyId, fullPlanName, planPrice.months)
+      return NextResponse.json({
+        success: true,
+        planName: fullPlanName,
+        months: planPrice.months,
+      })
+    }
+
+    // --- Plan payant : une référence de paiement est obligatoire ---
+    if (!reference) {
+      return NextResponse.json(
+        { error: 'Référence de paiement manquante' },
+        { status: 400 }
+      )
+    }
+
+    if (!isGeniusPayConfigured()) {
+      return NextResponse.json(
+        { error: 'GeniusPay non configuré, impossible de vérifier le paiement' },
+        { status: 503 }
+      )
+    }
+
+    // Idempotence : référence déjà appliquée → ne pas ré-étendre l'abonnement
+    if (await isReferenceApplied(reference)) {
+      return NextResponse.json({
+        success: true,
+        alreadyActive: true,
+        planName: fullPlanName,
+      })
+    }
+
+    // Vérification réelle du paiement auprès de GeniusPay
+    let payment
+    try {
+      payment = await getPayment(reference)
+    } catch (err) {
+      console.error('GeniusPay payment verification failed:', err)
+      return NextResponse.json(
+        { error: 'Impossible de vérifier le paiement auprès de GeniusPay' },
+        { status: 502 }
+      )
+    }
+
+    if (payment.status !== 'completed') {
+      return NextResponse.json(
+        { error: `Paiement non confirmé (statut: ${payment.status})` },
+        { status: 402 }
+      )
+    }
+
+    // Le paiement doit appartenir à la société de la session (anti cross-tenant)
+    if (payment.metadata?.companyId && payment.metadata.companyId !== session.user.companyId) {
+      return NextResponse.json(
+        { error: "Ce paiement n'est pas associé à votre société" },
+        { status: 403 }
+      )
+    }
+
+    // Cohérence plan / intervalle si présents dans les métadonnées
+    if (payment.metadata?.planId && payment.metadata.planId !== planId) {
+      return NextResponse.json(
+        { error: 'Incohérence entre le paiement et le plan demandé' },
+        { status: 400 }
+      )
+    }
+    if (payment.metadata?.interval && payment.metadata.interval !== interval) {
+      return NextResponse.json(
+        { error: 'Incohérence entre le paiement et la périodicité demandée' },
+        { status: 400 }
+      )
+    }
+
+    // Montant et devise
+    if (Number(payment.amount) < planPrice.price) {
+      return NextResponse.json(
+        { error: 'Montant payé insuffisant pour ce plan' },
+        { status: 400 }
+      )
+    }
+    if (payment.currency && payment.currency !== 'XOF') {
+      return NextResponse.json(
+        { error: 'Devise de paiement invalide' },
+        { status: 400 }
+      )
+    }
+
+    // Tout est validé → activation
     await activateSubscription(
       session.user.companyId,
       fullPlanName,
       planPrice.months,
-      reference || undefined
+      reference
     )
 
     return NextResponse.json({

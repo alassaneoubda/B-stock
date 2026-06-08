@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
-import { sql } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { sql, sqlRaw, transaction } from '@/lib/db'
 
 const paymentSchema = z.object({
   amount: z.number().positive('Le montant doit être positif'),
@@ -24,15 +24,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('payments.write')
+    if (!authz.ok) return authz.response
+    const { session, companyId } = authz
 
     const { id: clientId } = await params
     const body = await request.json()
     const data = paymentSchema.parse(body)
-    const { companyId } = session.user
 
     // 1. Verify client belongs to company
     const clients = await sql`
@@ -70,29 +68,9 @@ export async function POST(
     const paidForProducts = Math.min(productDebt, data.amount)
     const paidForPackaging = Math.min(packagingDebt, Math.max(0, data.amount - productDebt))
 
-    // 4. Update client accounts
-    if (paidForProducts > 0) {
-      await sql`
-        UPDATE client_accounts
-        SET balance = balance + ${paidForProducts},
-            last_transaction_at = NOW(),
-            updated_at = NOW()
-        WHERE client_id = ${clientId} AND account_type = 'product'
-      `
-    }
-
-    if (paidForPackaging > 0) {
-      await sql`
-        UPDATE client_accounts
-        SET balance = balance + ${paidForPackaging},
-            last_transaction_at = NOW(),
-            updated_at = NOW()
-        WHERE client_id = ${clientId} AND account_type = 'packaging'
-      `
-    }
-
-    // 5. Find unpaid orders to allocate payment to (oldest first)
-    // Allocate product payment to oldest unpaid product debts
+    // 4. Find unpaid orders to allocate payment to (oldest first) — READS first
+    // Product allocations
+    const productAllocations: { id: string; allocate: number }[] = []
     let remainingProductPayment = paidForProducts
     if (remainingProductPayment > 0) {
       const unpaidOrders = await sql`
@@ -103,25 +81,17 @@ export async function POST(
           AND subtotal > COALESCE(paid_amount_products, 0)
         ORDER BY created_at ASC
       `
-
       for (const order of unpaidOrders) {
         if (remainingProductPayment <= 0) break
         const orderProductDebt = Number(order.subtotal) - Number(order.paid_amount_products || 0)
         const allocate = Math.min(orderProductDebt, remainingProductPayment)
-
-        await sql`
-          UPDATE sales_orders
-          SET paid_amount_products = COALESCE(paid_amount_products, 0) + ${allocate},
-              paid_amount = paid_amount + ${allocate},
-              updated_at = NOW()
-          WHERE id = ${order.id}
-        `
-
+        productAllocations.push({ id: order.id, allocate })
         remainingProductPayment -= allocate
       }
     }
 
-    // Allocate packaging payment to oldest unpaid packaging debts
+    // Packaging allocations
+    const packagingAllocations: { id: string; allocate: number }[] = []
     let remainingPackagingPayment = paidForPackaging
     if (remainingPackagingPayment > 0) {
       const unpaidOrders = await sql`
@@ -132,27 +102,58 @@ export async function POST(
           AND packaging_total > COALESCE(paid_amount_packaging, 0)
         ORDER BY created_at ASC
       `
-
       for (const order of unpaidOrders) {
         if (remainingPackagingPayment <= 0) break
         const orderPkgDebt = Number(order.packaging_total) - Number(order.paid_amount_packaging || 0)
         const allocate = Math.min(orderPkgDebt, remainingPackagingPayment)
-
-        await sql`
-          UPDATE sales_orders
-          SET paid_amount_packaging = COALESCE(paid_amount_packaging, 0) + ${allocate},
-              paid_amount = paid_amount + ${allocate},
-              updated_at = NOW()
-          WHERE id = ${order.id}
-        `
-
+        packagingAllocations.push({ id: order.id, allocate })
         remainingPackagingPayment -= allocate
       }
     }
 
-    // 6. Record payment(s)
+    // 5. Build all writes and execute ATOMICALLY
+    const writes: unknown[] = []
+
     if (paidForProducts > 0) {
-      await sql`
+      writes.push(sqlRaw`
+        UPDATE client_accounts
+        SET balance = balance + ${paidForProducts},
+            last_transaction_at = NOW(),
+            updated_at = NOW()
+        WHERE client_id = ${clientId} AND account_type = 'product'
+      `)
+    }
+    if (paidForPackaging > 0) {
+      writes.push(sqlRaw`
+        UPDATE client_accounts
+        SET balance = balance + ${paidForPackaging},
+            last_transaction_at = NOW(),
+            updated_at = NOW()
+        WHERE client_id = ${clientId} AND account_type = 'packaging'
+      `)
+    }
+
+    for (const alloc of productAllocations) {
+      writes.push(sqlRaw`
+        UPDATE sales_orders
+        SET paid_amount_products = COALESCE(paid_amount_products, 0) + ${alloc.allocate},
+            paid_amount = paid_amount + ${alloc.allocate},
+            updated_at = NOW()
+        WHERE id = ${alloc.id}
+      `)
+    }
+    for (const alloc of packagingAllocations) {
+      writes.push(sqlRaw`
+        UPDATE sales_orders
+        SET paid_amount_packaging = COALESCE(paid_amount_packaging, 0) + ${alloc.allocate},
+            paid_amount = paid_amount + ${alloc.allocate},
+            updated_at = NOW()
+        WHERE id = ${alloc.id}
+      `)
+    }
+
+    if (paidForProducts > 0) {
+      writes.push(sqlRaw`
         INSERT INTO payments (
           company_id, client_id, amount,
           payment_method, payment_type, status,
@@ -164,11 +165,10 @@ export async function POST(
           ${data.notes || `Encaissement dette produits - ${clients[0].name}`},
           ${session.user.id}
         )
-      `
+      `)
     }
-
     if (paidForPackaging > 0) {
-      await sql`
+      writes.push(sqlRaw`
         INSERT INTO payments (
           company_id, client_id, amount,
           payment_method, payment_type, status,
@@ -180,8 +180,10 @@ export async function POST(
           ${data.notes || `Encaissement dette emballages - ${clients[0].name}`},
           ${session.user.id}
         )
-      `
+      `)
     }
+
+    await transaction(writes)
 
     // 7. Get updated balances
     const updatedAccounts = await sql`
@@ -224,10 +226,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('payments.read')
+    if (!authz.ok) return authz.response
+    const { session } = authz
 
     const { id: clientId } = await params
 

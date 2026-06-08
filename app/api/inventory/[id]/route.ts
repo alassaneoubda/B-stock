@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/inventory/[id] — Get inventory session with items
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('inventory.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const inventoryId = params.id
 
     const sessions = await sql`
@@ -47,13 +45,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 // PUT /api/inventory/[id] — Update counted quantities
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('inventory.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-    const companyId = session.user.companyId
-    const userId = session.user.id
     const inventoryId = params.id
     const body = await request.json()
     const { items } = body // [{ id, counted_quantity, notes }]

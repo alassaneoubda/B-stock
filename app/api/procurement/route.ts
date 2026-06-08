@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 const purchaseOrderSchema = z.object({
@@ -42,13 +42,11 @@ function generatePONumber(): string {
 // POST /api/procurement
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('purchases.write')
+    if (!authz.ok) return authz.response
+    const { session, companyId } = authz
 
     const body = await request.json()
-    const { companyId } = session.user
 
     // Check if this is a "receive" action or "create order"
     if (body.purchaseOrderId) {
@@ -66,8 +64,8 @@ export async function POST(request: NextRequest) {
       const po = orders[0] as { id: string; depot_id: string }
 
       for (const item of data.items) {
-        // Update purchase order item
-        await sql`
+        // Update purchase order item (scoped to this PO) and get its variant
+        const updatedItems = await sql`
           UPDATE purchase_order_items
           SET quantity_received = ${item.quantityReceived},
               quantity_damaged = ${item.quantityDamaged},
@@ -76,13 +74,10 @@ export async function POST(request: NextRequest) {
               updated_at = NOW()
           WHERE id = ${item.itemId}
             AND purchase_order_id = ${data.purchaseOrderId}
+          RETURNING product_variant_id
         `
 
-        // Get the product_variant_id for this item
-        const poItems = await sql`
-          SELECT product_variant_id FROM purchase_order_items WHERE id = ${item.itemId}
-        `
-        const productVariantId = poItems[0]?.product_variant_id
+        const productVariantId = updatedItems[0]?.product_variant_id
 
         if (productVariantId && item.quantityReceived > 0) {
           // Upsert stock
@@ -211,10 +206,9 @@ export async function POST(request: NextRequest) {
 // GET /api/procurement — List purchase orders
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('purchases.read')
+    if (!authz.ok) return authz.response
+    const { session } = authz
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')

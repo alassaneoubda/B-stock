@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requireAuth } from '@/lib/api-auth'
 import { getSubscriptionInfo } from '@/lib/subscription'
 import { PLANS } from '@/lib/geniuspay'
 
 // GET /api/subscription — Get current subscription info + available plans
 export async function GET() {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requireAuth()
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const subscription = await getSubscriptionInfo(session.user.companyId)
 

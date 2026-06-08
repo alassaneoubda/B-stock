@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/cash — Get current open session + recent sessions
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
-
-    const companyId = session.user.companyId
+    const authz = await requirePermission('cash.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     // Get current open session
     const openSessions = await sql`
@@ -54,13 +51,10 @@ export async function GET(request: NextRequest) {
 // POST /api/cash — Open a new cash session
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('cash.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-    const companyId = session.user.companyId
-    const userId = session.user.id
     const body = await request.json()
     const { opening_amount, depot_id, notes } = body
 

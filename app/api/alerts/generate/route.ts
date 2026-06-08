@@ -1,16 +1,14 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // POST /api/alerts/generate — Generate automatic alerts for the company
 export async function POST() {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('alerts.manage')
+        if (!authz.ok) return authz.response
+        const { companyId } = authz
 
-        const companyId = session.user.companyId
         let alertsCreated = 0
 
         // 1. Low stock alerts

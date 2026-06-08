@@ -1,1 +1,41 @@
+# ===== Dependencies =====
 node_modules
+.pnp
+.pnp.js
+
+# ===== Next.js build output =====
+.next
+out
+build
+next-env.d.ts
+
+# ===== TypeScript =====
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# ===== Environment variables (NEVER commit secrets) =====
+.env
+.env.*
+!.env.example
+
+# ===== Logs =====
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ===== Vercel =====
+.vercel
+
+# ===== OS / Editor =====
+.DS_Store
+Thumbs.db
+*.local
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# ===== Misc =====
+coverage
+.cache

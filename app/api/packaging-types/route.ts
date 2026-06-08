@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 export async function GET() {
     try {
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('packaging.read')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const packagingTypes = await sql`
       SELECT * FROM packaging_types 

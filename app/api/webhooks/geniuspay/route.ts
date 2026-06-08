@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyWebhookSignature } from '@/lib/geniuspay'
-import { activateSubscription } from '@/lib/subscription'
+import { activateSubscription, isReferenceApplied } from '@/lib/subscription'
 import { sql } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
@@ -14,20 +14,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing webhook headers' }, { status: 400 })
   }
 
-  // Verify signature if webhook secret is configured
+  // Le secret de webhook est OBLIGATOIRE : sans lui, impossible de garantir
+  // l'authenticité de la requête → on refuse tout traitement.
   const webhookSecret = process.env.GENIUSPAY_WEBHOOK_SECRET
-  if (webhookSecret) {
-    const isValid = verifyWebhookSignature(rawBody, signature, timestamp, webhookSecret)
-    if (!isValid) {
-      console.error('[GeniusPay] Invalid webhook signature')
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
+  if (!webhookSecret) {
+    console.error('[GeniusPay] GENIUSPAY_WEBHOOK_SECRET is not configured — webhook rejected')
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
+  }
 
-    // Replay attack protection — reject timestamps older than 5 minutes
-    const now = Math.floor(Date.now() / 1000)
-    if (Math.abs(now - parseInt(timestamp, 10)) > 300) {
-      return NextResponse.json({ error: 'Timestamp too old' }, { status: 400 })
-    }
+  const isValid = verifyWebhookSignature(rawBody, signature, timestamp, webhookSecret)
+  if (!isValid) {
+    console.error('[GeniusPay] Invalid webhook signature')
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  }
+
+  // Replay attack protection — reject timestamps older than 5 minutes
+  const now = Math.floor(Date.now() / 1000)
+  if (Math.abs(now - parseInt(timestamp, 10)) > 300) {
+    return NextResponse.json({ error: 'Timestamp too old' }, { status: 400 })
   }
 
   let payload: any
@@ -51,6 +55,13 @@ export async function POST(request: NextRequest) {
         const months = parseInt(metadata.months, 10)
         if (isNaN(months) || months <= 0) {
           console.error('[GeniusPay] Invalid months:', metadata.months)
+          break
+        }
+
+        // Idempotence : éviter une double activation sur rejeu du webhook
+        const reference = data?.reference
+        if (reference && (await isReferenceApplied(reference))) {
+          console.log(`[GeniusPay] Reference ${reference} already applied — skipping`)
           break
         }
 

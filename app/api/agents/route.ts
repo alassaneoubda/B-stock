@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/agents — List sales agents with stats
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
-
-    const companyId = session.user.companyId
+    const authz = await requirePermission('agents.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     const agents = await sql`
       SELECT sa.*,
@@ -41,12 +38,10 @@ export async function GET(request: NextRequest) {
 // POST /api/agents — Create a sales agent
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('agents.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-    const companyId = session.user.companyId
     const body = await request.json()
     const { full_name, phone, email, zone, commission_rate, user_id } = body
 

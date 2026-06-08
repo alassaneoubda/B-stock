@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 export async function GET(
@@ -8,10 +8,9 @@ export async function GET(
 ) {
     try {
         const { id } = await params
-        const session = await auth()
-        if (!session?.user?.companyId) {
-            return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-        }
+        const authz = await requirePermission('purchases.read')
+        if (!authz.ok) return authz.response
+        const { session } = authz
 
         const orders = await sql`
             SELECT 

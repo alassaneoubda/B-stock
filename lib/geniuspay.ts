@@ -80,6 +80,49 @@ export async function createPayment(params: CreatePaymentParams): Promise<Genius
   return res.json()
 }
 
+// ===== Payment Retrieval (server-side verification) =====
+
+export type GeniusPayPaymentStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'expired'
+
+export interface GeniusPayPayment {
+  id: number
+  reference: string
+  amount: number
+  currency: string
+  status: GeniusPayPaymentStatus
+  payment_method?: string | null
+  metadata?: Record<string, string>
+  completed_at?: string | null
+}
+
+/**
+ * Retrieve a payment by its reference to verify its real status server-side.
+ * GET /payments/{reference} — used to confirm a payment before activating a subscription.
+ */
+export async function getPayment(reference: string): Promise<GeniusPayPayment> {
+  const res = await fetch(`${BASE_URL}/payments/${encodeURIComponent(reference)}`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': API_KEY,
+      'X-API-Secret': API_SECRET,
+    },
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const errorText = await res.text()
+    throw new Error(`GeniusPay API error (${res.status}): ${errorText}`)
+  }
+
+  const json = await res.json()
+  return json.data as GeniusPayPayment
+}
+
 // ===== Webhook Signature Verification =====
 
 import { createHmac, timingSafeEqual } from 'crypto'

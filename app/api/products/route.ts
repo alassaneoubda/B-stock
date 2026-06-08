@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 const productSchema = z.object({
@@ -26,14 +26,12 @@ const productSchema = z.object({
 // POST /api/products — Create a new product
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('products.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     const body = await request.json()
     const data = productSchema.parse(body)
-    const { companyId } = session.user
 
     // Check for duplicate SKU
     if (data.sku) {
@@ -136,10 +134,9 @@ export async function POST(request: NextRequest) {
 // GET /api/products — List products with variants
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.companyId) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-    }
+    const authz = await requirePermission('products.read')
+    if (!authz.ok) return authz.response
+    const { session } = authz
 
     const { searchParams } = new URL(request.url)
     const category = searchParams.get('category')
