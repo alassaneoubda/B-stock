@@ -288,6 +288,7 @@ export default function InvoiceDetailPage() {
               <div className="mb-6">
                 <h3 className="text-xs font-semibold text-zinc-950 uppercase tracking-wider mb-3">Produits</h3>
                 <div className="border border-zinc-200 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-zinc-50 border-b border-zinc-200">
@@ -314,6 +315,7 @@ export default function InvoiceDetailPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -322,6 +324,7 @@ export default function InvoiceDetailPage() {
               <div className="mb-6">
                 <h3 className="text-xs font-semibold text-zinc-950 uppercase tracking-wider mb-3">Emballages</h3>
                 <div className="border border-zinc-200 rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-zinc-50 border-b border-zinc-200">
@@ -348,6 +351,7 @@ export default function InvoiceDetailPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </div>
             )}

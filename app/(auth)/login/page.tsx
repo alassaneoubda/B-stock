@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { GoogleButton } from '@/components/auth/google-button'
 import { Loader2, Eye, EyeOff, ArrowRight } from 'lucide-react'
 
 const loginSchema = z.object({
@@ -18,6 +19,22 @@ const loginSchema = z.object({
 })
 
 type LoginForm = z.infer<typeof loginSchema>
+
+function mapAuthError(code: string): string {
+  switch (code) {
+    case 'Configuration':
+      return "Connexion Google indisponible : configuration OAuth invalide. Réessayez avec votre email ou contactez l'administrateur."
+    case 'AccessDenied':
+      return 'Accès refusé. Votre compte n\u2019est pas autorisé.'
+    case 'OAuthAccountNotLinked':
+      return 'Cet email est déjà utilisé avec une autre méthode de connexion.'
+    case 'OAuthSignin':
+    case 'OAuthCallback':
+      return 'Échec de la connexion Google. Veuillez réessayer.'
+    default:
+      return 'Une erreur est survenue lors de la connexion. Veuillez réessayer.'
+  }
+}
 
 export default function LoginPage() {
   return (
@@ -31,9 +48,12 @@ function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+  const urlError = searchParams.get('error')
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(
+    urlError ? mapAuthError(urlError) : null
+  )
 
   const {
     register,
@@ -115,6 +135,14 @@ function LoginContent() {
             <p className="text-sm text-zinc-500">
               Accédez à votre tableau de bord
             </p>
+          </div>
+
+          <GoogleButton label="Se connecter avec Google" callbackUrl={callbackUrl} />
+
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-zinc-200" />
+            <span className="text-xs text-zinc-400">ou avec votre email</span>
+            <div className="h-px flex-1 bg-zinc-200" />
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">

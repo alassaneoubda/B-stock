@@ -140,6 +140,43 @@ export async function isReferenceApplied(reference: string): Promise<boolean> {
 }
 
 /**
+ * Record a subscription payment / activation in the billing history.
+ * Best-effort and idempotent on `reference` (safe to call from webhook retries).
+ */
+export async function recordSubscriptionPayment(input: {
+  companyId: string
+  reference?: string | null
+  planName: string
+  amount: number
+  currency?: string
+  months: number
+  status?: 'completed' | 'failed' | 'refunded' | 'manual'
+  provider?: 'geniuspay' | 'manual' | 'admin'
+  metadata?: Record<string, unknown> | null
+}): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO subscription_payments
+        (company_id, reference, plan_name, amount, currency, months, status, provider, metadata)
+      VALUES (
+        ${input.companyId},
+        ${input.reference ?? null},
+        ${input.planName},
+        ${input.amount},
+        ${input.currency ?? 'XOF'},
+        ${input.months},
+        ${input.status ?? 'completed'},
+        ${input.provider ?? 'geniuspay'},
+        ${input.metadata ? JSON.stringify(input.metadata) : null}
+      )
+      ON CONFLICT (reference) DO NOTHING
+    `
+  } catch (e) {
+    console.error('[subscription] recordSubscriptionPayment failed:', e)
+  }
+}
+
+/**
  * Activate a paid subscription for a company after successful payment.
  */
 export async function activateSubscription(

@@ -1,8 +1,130 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
+import Google from 'next-auth/providers/google'
 import { compare } from 'bcryptjs'
-import { sql } from './db'
+import { randomUUID } from 'crypto'
+import { sql, sqlRaw, transaction } from './db'
+import { verifyImpersonationToken } from './impersonation'
+import { getSettings } from './settings'
 import type { UserRole } from './types'
+
+type NormalizedUser = {
+  id: string
+  email: string
+  name: string
+  role: UserRole
+  permissions: string[]
+  companyId: string
+  companyName: string
+  companySlug: string
+  onboardingCompleted: boolean
+  isPlatformAdmin?: boolean
+  impersonatedBy?: string | null
+}
+
+function normalizePermissions(p: string[] | string | undefined | null): string[] {
+  if (Array.isArray(p)) return p
+  if (typeof p === 'string') {
+    try {
+      return JSON.parse(p)
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+/**
+ * Map an OAuth (Google) account to a B-Stock user.
+ * - Existing email -> returns that user (account linking by verified email).
+ * - New email      -> provisions a company + owner user + main depot (30-day trial),
+ *                     exactly like the email/password sign-up, so the multi-tenant
+ *                     model stays consistent. The user can rename the company later.
+ */
+async function getOrCreateOAuthUser(
+  email: string,
+  name?: string | null,
+  image?: string | null
+): Promise<NormalizedUser | null> {
+  // Respect the global toggle for Google sign-in
+  const settings = await getSettings()
+  if (!settings.google_oauth_enabled) {
+    return null
+  }
+
+  const existing = await sql`
+    SELECT u.*, c.name as company_name, c.slug as company_slug,
+           c.onboarding_completed
+    FROM users u
+    JOIN companies c ON u.company_id = c.id
+    WHERE u.email = ${email} AND u.is_active = true
+  `
+
+  if (existing[0]) {
+    const u = existing[0] as any
+    await sql`UPDATE users SET last_login_at = NOW() WHERE id = ${u.id}`
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.full_name,
+      role: u.role,
+      permissions: normalizePermissions(u.permissions),
+      companyId: u.company_id,
+      companyName: u.company_name,
+      companySlug: u.company_slug,
+      onboardingCompleted: u.onboarding_completed !== false,
+    }
+  }
+
+  // First-time Google user -> provision a fresh tenant
+  const companyId = randomUUID()
+  const displayName = name?.trim() || email.split('@')[0]
+  const slug =
+    displayName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') +
+    '-' +
+    Date.now().toString(36)
+  const trialEndsAt = new Date()
+  trialEndsAt.setDate(trialEndsAt.getDate() + settings.trial_days)
+
+  await transaction([
+    sqlRaw`
+      INSERT INTO companies (id, name, slug, email, subscription_status, trial_ends_at, onboarding_completed)
+      VALUES (${companyId}, ${displayName}, ${slug}, ${email}, 'trialing', ${trialEndsAt.toISOString()}, false)
+    `,
+    sqlRaw`
+      INSERT INTO users (company_id, email, full_name, role, auth_provider, avatar_url)
+      VALUES (${companyId}, ${email}, ${displayName}, 'owner', 'google', ${image || null})
+    `,
+    sqlRaw`
+      INSERT INTO depots (company_id, name, is_main)
+      VALUES (${companyId}, 'Depot Principal', true)
+    `,
+  ])
+
+  const created = await sql`
+    SELECT u.*, c.name as company_name, c.slug as company_slug,
+           c.onboarding_completed
+    FROM users u
+    JOIN companies c ON u.company_id = c.id
+    WHERE u.company_id = ${companyId} AND u.email = ${email}
+  `
+  const u = created[0] as any
+  if (!u) return null
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.full_name,
+    role: u.role,
+    permissions: normalizePermissions(u.permissions),
+    companyId: u.company_id,
+    companyName: u.company_name,
+    companySlug: u.company_slug,
+    onboardingCompleted: u.onboarding_completed !== false,
+  }
+}
 
 declare module 'next-auth' {
   interface Session {
@@ -15,6 +137,9 @@ declare module 'next-auth' {
       companyId: string
       companyName: string
       companySlug: string
+      onboardingCompleted: boolean
+      isPlatformAdmin: boolean
+      impersonatedBy: string | null
     }
   }
 
@@ -27,11 +152,20 @@ declare module 'next-auth' {
     companyId: string
     companyName: string
     companySlug: string
+    onboardingCompleted: boolean
+    isPlatformAdmin?: boolean
+    impersonatedBy?: string | null
   }
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
+  debug: process.env.NODE_ENV !== 'production',
   providers: [
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    }),
     Credentials({
       name: 'credentials',
       credentials: {
@@ -43,11 +177,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           throw new Error('Email et mot de passe requis')
         }
 
+        const email = (credentials.email as string).toLowerCase()
+
+        // 1) Platform admin (back office /admin) — decoupled from tenants
+        const admins = await sql`
+          SELECT id, email, full_name, password_hash, role
+          FROM platform_admins
+          WHERE email = ${email} AND is_active = true
+        `
+        const admin = admins[0] as
+          | { id: string; email: string; full_name: string; password_hash: string; role: string }
+          | undefined
+
+        if (admin) {
+          const ok = await compare(credentials.password as string, admin.password_hash)
+          if (!ok) throw new Error('Email ou mot de passe incorrect')
+          await sql`UPDATE platform_admins SET last_login_at = NOW() WHERE id = ${admin.id}`
+          return {
+            id: admin.id,
+            email: admin.email,
+            name: admin.full_name,
+            role: 'owner' as UserRole, // sentinel — platform admins bypass tenant RBAC
+            permissions: [],
+            companyId: '',
+            companyName: 'Plateforme',
+            companySlug: '',
+            onboardingCompleted: true,
+            isPlatformAdmin: true,
+            impersonatedBy: null,
+          }
+        }
+
+        // 2) Tenant user
         const users = await sql`
-          SELECT u.*, c.name as company_name, c.slug as company_slug, c.subscription_status
+          SELECT u.*, c.name as company_name, c.slug as company_slug,
+                 c.subscription_status, c.onboarding_completed, c.is_suspended
           FROM users u
           JOIN companies c ON u.company_id = c.id
-          WHERE u.email = ${credentials.email as string}
+          WHERE u.email = ${email}
           AND u.is_active = true
         `
 
@@ -63,11 +230,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             company_name: string
             company_slug: string
             subscription_status: string
+            onboarding_completed?: boolean
+            is_suspended?: boolean
           }
           | undefined
 
         if (!user) {
           throw new Error('Email ou mot de passe incorrect')
+        }
+
+        if (user.is_suspended) {
+          throw new Error('Compte entreprise suspendu. Contactez le support.')
         }
 
         const isValid = await compare(credentials.password as string, user.password_hash)
@@ -100,12 +273,95 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           companyId: user.company_id,
           companyName: user.company_name,
           companySlug: user.company_slug,
+          onboardingCompleted: user.onboarding_completed !== false,
+          isPlatformAdmin: false,
+          impersonatedBy: null,
+        }
+      },
+    }),
+    Credentials({
+      id: 'impersonate',
+      name: 'impersonate',
+      credentials: {
+        token: { label: 'Token', type: 'text' },
+      },
+      async authorize(credentials) {
+        const token = credentials?.token as string | undefined
+        if (!token) return null
+
+        const payload = verifyImpersonationToken(token)
+        if (!payload) throw new Error("Jeton d'impersonation invalide ou expiré")
+
+        const rows = await sql`
+          SELECT u.*, c.name as company_name, c.slug as company_slug,
+                 c.onboarding_completed, c.is_suspended
+          FROM users u
+          JOIN companies c ON u.company_id = c.id
+          WHERE u.id = ${payload.uid}
+        `
+        const u = rows[0] as any
+        if (!u) throw new Error('Utilisateur cible introuvable')
+
+        return {
+          id: u.id,
+          email: u.email,
+          name: u.full_name,
+          role: u.role,
+          permissions: normalizePermissions(u.permissions),
+          companyId: u.company_id,
+          companyName: u.company_name,
+          companySlug: u.company_slug,
+          onboardingCompleted: u.onboarding_completed !== false,
+          isPlatformAdmin: false,
+          impersonatedBy: payload.adminId,
         }
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ account, profile }) {
+      // Only allow Google sign-in with a verified email address
+      if (account?.provider === 'google') {
+        return Boolean(profile?.email) && profile?.email_verified === true
+      }
+      return true
+    },
+    async jwt({ token, user, account, trigger, session }) {
+      // Client-side session.update() — e.g. after completing onboarding
+      if (trigger === 'update' && session) {
+        if (typeof session.companyName === 'string') {
+          token.companyName = session.companyName
+        }
+        if (typeof session.onboardingCompleted === 'boolean') {
+          token.onboardingCompleted = session.onboardingCompleted
+        }
+        return token
+      }
+
+      // Google: enrich (or provision) the token from our DB on first sign-in
+      if (account?.provider === 'google' && user?.email) {
+        const dbUser = await getOrCreateOAuthUser(
+          user.email,
+          user.name,
+          (user as { image?: string | null }).image
+        )
+        if (dbUser) {
+          token.id = dbUser.id
+          token.email = dbUser.email
+          token.name = dbUser.name
+          token.role = dbUser.role
+          token.permissions = dbUser.permissions
+          token.companyId = dbUser.companyId
+          token.companyName = dbUser.companyName
+          token.companySlug = dbUser.companySlug
+          token.onboardingCompleted = dbUser.onboardingCompleted
+          token.isPlatformAdmin = false
+          token.impersonatedBy = null
+        }
+        return token
+      }
+
+      // Credentials / impersonate: the user object already carries the fields
       if (user) {
         token.id = user.id as string
         token.email = user.email as string
@@ -115,6 +371,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.companyId = user.companyId as string
         token.companyName = user.companyName as string
         token.companySlug = user.companySlug as string
+        token.onboardingCompleted = user.onboardingCompleted as boolean
+        token.isPlatformAdmin = (user as { isPlatformAdmin?: boolean }).isPlatformAdmin === true
+        token.impersonatedBy = (user as { impersonatedBy?: string | null }).impersonatedBy ?? null
       }
       return token
     },
@@ -128,6 +387,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.companyId = token.companyId as string
         session.user.companyName = token.companyName as string
         session.user.companySlug = token.companySlug as string
+        // Existing tokens (issued before this field existed) default to true
+        // so only newly-provisioned Google accounts are forced into onboarding.
+        session.user.onboardingCompleted = token.onboardingCompleted !== false
+        session.user.isPlatformAdmin = token.isPlatformAdmin === true
+        session.user.impersonatedBy = (token.impersonatedBy as string | null) ?? null
       }
       return session
     },

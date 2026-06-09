@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react'
-import Link from 'next/link'
+import { AuthTrigger } from '@/components/auth/auth-trigger'
 
 const plans = [
   {
@@ -74,15 +74,15 @@ export function Pricing() {
                 ))}
               </ul>
 
-              <Link
-                href="/register"
+              <AuthTrigger
+                mode="register"
                 className={`block w-full py-3 text-sm font-semibold text-center rounded-lg transition-colors ${plan.popular
                   ? 'bg-zinc-950 text-white hover:bg-zinc-800'
                   : 'bg-zinc-800 text-white hover:bg-zinc-700'
                 }`}
               >
                 Commencer
-              </Link>
+              </AuthTrigger>
             </div>
           ))}
         </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyWebhookSignature } from '@/lib/geniuspay'
-import { activateSubscription, isReferenceApplied } from '@/lib/subscription'
+import { activateSubscription, isReferenceApplied, recordSubscriptionPayment } from '@/lib/subscription'
+import { recordWebhookEvent } from '@/lib/webhooks'
 import { sql } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
@@ -25,6 +26,12 @@ export async function POST(request: NextRequest) {
   const isValid = verifyWebhookSignature(rawBody, signature, timestamp, webhookSecret)
   if (!isValid) {
     console.error('[GeniusPay] Invalid webhook signature')
+    await recordWebhookEvent({
+      eventType,
+      signatureValid: false,
+      status: 'failed',
+      error: 'Signature invalide',
+    })
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
@@ -82,6 +89,17 @@ export async function POST(request: NextRequest) {
           data?.reference || undefined
         )
 
+        await recordSubscriptionPayment({
+          companyId: metadata.companyId,
+          reference: data?.reference || null,
+          planName: fullPlanName,
+          amount: Number(data?.amount) || 0,
+          currency: data?.currency || 'XOF',
+          months,
+          status: 'completed',
+          provider: 'geniuspay',
+        })
+
         console.log(
           `[GeniusPay] Subscription activated: company=${metadata.companyId} plan=${metadata.planName} months=${months} ref=${data?.reference}`
         )
@@ -96,6 +114,16 @@ export async function POST(request: NextRequest) {
               updated_at = NOW()
             WHERE id = ${metadata.companyId}
           `
+          await recordSubscriptionPayment({
+            companyId: metadata.companyId,
+            reference: data?.reference || null,
+            planName: metadata.planName || 'Abonnement',
+            amount: Number(data?.amount) || 0,
+            currency: data?.currency || 'XOF',
+            months: parseInt(metadata.months, 10) || 1,
+            status: 'failed',
+            provider: 'geniuspay',
+          })
           console.log(`[GeniusPay] Payment failed for company ${metadata.companyId}`)
         }
         break
@@ -111,8 +139,23 @@ export async function POST(request: NextRequest) {
         // Unhandled event
         break
     }
+
+    await recordWebhookEvent({
+      eventType,
+      reference: data?.reference || null,
+      signatureValid: true,
+      status: 'processed',
+      payload,
+    })
   } catch (error) {
     console.error(`[GeniusPay] Error handling event ${eventType}:`, error)
+    await recordWebhookEvent({
+      eventType,
+      signatureValid: true,
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Erreur de traitement',
+      payload,
+    })
     return NextResponse.json({ error: 'Webhook handler error' }, { status: 500 })
   }
 

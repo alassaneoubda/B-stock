@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { createPayment, getPlan, getPlanPrice, isGeniusPayConfigured, type PlanInterval } from '@/lib/geniuspay'
+import { createPayment, isGeniusPayConfigured } from '@/lib/geniuspay'
+import { getPlanById, getPlanPrice, type PlanInterval } from '@/lib/plans'
 
 const checkoutSchema = z.object({
   planId: z.string(),
@@ -25,12 +26,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { planId, interval } = checkoutSchema.parse(body)
 
-    const plan = getPlan(planId)
+    const plan = await getPlanById(planId)
     if (!plan) {
       return NextResponse.json({ error: 'Plan introuvable' }, { status: 404 })
     }
 
-    const planPrice = getPlanPrice(planId, interval as PlanInterval)
+    const planPrice = await getPlanPrice(planId, interval as PlanInterval)
     if (!planPrice) {
       return NextResponse.json({ error: 'Tarif introuvable' }, { status: 404 })
     }

@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import {
-  getPayment,
-  getPlan,
-  getPlanPrice,
-  isGeniusPayConfigured,
-  type PlanInterval,
-} from '@/lib/geniuspay'
-import { activateSubscription, isReferenceApplied } from '@/lib/subscription'
+import { getPayment, isGeniusPayConfigured } from '@/lib/geniuspay'
+import { getPlanById, getPlanPrice, type PlanInterval } from '@/lib/plans'
+import { activateSubscription, isReferenceApplied, recordSubscriptionPayment } from '@/lib/subscription'
 
 const activateSchema = z.object({
   planId: z.string(),
@@ -49,12 +44,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { planId, interval, reference } = activateSchema.parse(body)
 
-    const plan = getPlan(planId)
+    const plan = await getPlanById(planId)
     if (!plan) {
       return NextResponse.json({ error: 'Plan introuvable' }, { status: 404 })
     }
 
-    const planPrice = getPlanPrice(planId, interval as PlanInterval)
+    const planPrice = await getPlanPrice(planId, interval as PlanInterval)
     if (!planPrice) {
       return NextResponse.json({ error: 'Tarif introuvable' }, { status: 404 })
     }
@@ -64,6 +59,14 @@ export async function POST(request: NextRequest) {
     // --- Plan gratuit (ex. Pack Entreprise 0 XOF) : pas de paiement à vérifier ---
     if (planPrice.price === 0) {
       await activateSubscription(session.user.companyId, fullPlanName, planPrice.months)
+      await recordSubscriptionPayment({
+        companyId: session.user.companyId,
+        planName: fullPlanName,
+        amount: 0,
+        months: planPrice.months,
+        status: 'completed',
+        provider: 'manual',
+      })
       return NextResponse.json({
         success: true,
         planName: fullPlanName,
@@ -157,6 +160,17 @@ export async function POST(request: NextRequest) {
       planPrice.months,
       reference
     )
+
+    await recordSubscriptionPayment({
+      companyId: session.user.companyId,
+      reference,
+      planName: fullPlanName,
+      amount: Number(payment.amount) || planPrice.price,
+      currency: payment.currency || 'XOF',
+      months: planPrice.months,
+      status: 'completed',
+      provider: 'geniuspay',
+    })
 
     return NextResponse.json({
       success: true,

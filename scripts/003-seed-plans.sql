@@ -1,4 +1,7 @@
 -- Seed Subscription Plans
+-- Index unique sur le nom -> rend le ON CONFLICT effectif (idempotence).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_plans_name ON subscription_plans(name);
+
 INSERT INTO subscription_plans (name, price_monthly, price_yearly, max_users, max_depots, max_products, features, is_active) VALUES
   (
     'starter',

@@ -7,10 +7,12 @@ import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { LayoutDashboard, LogOut, ChevronDown, Menu, X } from 'lucide-react'
 import Image from 'next/image'
+import { useAuthModal } from '@/components/auth/auth-modal'
 
 export function Header() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const { open } = useAuthModal()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -26,19 +28,19 @@ export function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-zinc-200/60">
       <nav className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <Image src="/images/B-stock.png" alt="B-Stock" width={36} height={36} className="rounded-lg" />
-          <span className="text-lg font-bold tracking-tight text-zinc-950">B-Stock</span>
+        <Link href="/" className="flex items-center gap-2.5 group shrink-0">
+          <Image src="/images/B-stock.png" alt="B-Stock" width={36} height={36} className="rounded-lg h-8 w-8 sm:h-9 sm:w-9" />
+          <span className="text-lg font-bold tracking-tight text-zinc-950 whitespace-nowrap">B-Stock</span>
         </Link>
 
         <div className="hidden md:flex md:items-center md:gap-8">
-          <Link href="#features" className="text-sm font-medium text-zinc-500 hover:text-zinc-950 transition-colors">
+          <Link href="/#features" className="text-sm font-medium text-zinc-500 hover:text-zinc-950 transition-colors">
             Fonctionnalités
           </Link>
-          <Link href="#pricing" className="text-sm font-medium text-zinc-500 hover:text-zinc-950 transition-colors">
+          <Link href="/#pricing" className="text-sm font-medium text-zinc-500 hover:text-zinc-950 transition-colors">
             Tarifs
           </Link>
-          <Link href="#about" className="text-sm font-medium text-zinc-500 hover:text-zinc-950 transition-colors">
+          <Link href="/a-propos" className="text-sm font-medium text-zinc-500 hover:text-zinc-950 transition-colors">
             À propos
           </Link>
         </div>
@@ -86,18 +88,21 @@ export function Header() {
               )}
             </div>
           ) : (
-            <>
-              <Link href="/login">
-                <Button variant="ghost" className="text-sm font-medium text-zinc-600 hover:text-zinc-950 h-9 px-4">
-                  Se connecter
-                </Button>
-              </Link>
-              <Link href="/register">
-                <Button className="h-9 px-5 rounded-lg bg-zinc-950 text-white hover:bg-zinc-800 text-sm font-semibold">
-                  Créer un compte
-                </Button>
-              </Link>
-            </>
+            <div className="hidden md:flex items-center gap-3">
+              <Button
+                variant="ghost"
+                onClick={() => open('login')}
+                className="text-sm font-medium text-zinc-600 hover:text-zinc-950 h-9 px-4"
+              >
+                Se connecter
+              </Button>
+              <Button
+                onClick={() => open('register')}
+                className="h-9 px-5 rounded-lg bg-zinc-950 text-white hover:bg-zinc-800 text-sm font-semibold"
+              >
+                Créer un compte
+              </Button>
+            </div>
           )}
 
           {/* Mobile menu toggle */}
@@ -114,15 +119,38 @@ export function Header() {
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-zinc-100 bg-white/95 backdrop-blur-xl animate-in slide-in-from-top-2 duration-200">
           <div className="px-6 py-4 space-y-1">
-            <Link href="#features" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-950">
+            <Link href="/#features" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-950">
               Fonctionnalités
             </Link>
-            <Link href="#pricing" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-950">
+            <Link href="/#pricing" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-950">
               Tarifs
             </Link>
-            <Link href="#about" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-950">
+            <Link href="/a-propos" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-950">
               À propos
             </Link>
+            {!isLoggedIn && (
+              <div className="pt-3 mt-2 border-t border-zinc-100 flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setMobileMenuOpen(false)
+                    open('login')
+                  }}
+                  className="w-full h-10 text-sm font-medium"
+                >
+                  Se connecter
+                </Button>
+                <Button
+                  onClick={() => {
+                    setMobileMenuOpen(false)
+                    open('register')
+                  }}
+                  className="w-full h-10 bg-zinc-950 text-white hover:bg-zinc-800 text-sm font-semibold"
+                >
+                  Créer un compte
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

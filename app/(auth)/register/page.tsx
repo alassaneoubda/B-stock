@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { GoogleButton } from '@/components/auth/google-button'
 import { Loader2, Eye, EyeOff, Check } from 'lucide-react'
 
 const registerSchema = z.object({
@@ -96,6 +97,14 @@ export default function RegisterPage() {
             <p className="text-sm text-zinc-500">
               Lancez votre dépôt sur B-Stock en quelques minutes
             </p>
+          </div>
+
+          <GoogleButton label="S'inscrire avec Google" callbackUrl="/dashboard" />
+
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-zinc-200" />
+            <span className="text-xs text-zinc-400">ou avec votre email</span>
+            <div className="h-px flex-1 bg-zinc-200" />
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

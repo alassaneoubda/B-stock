@@ -23,7 +23,7 @@ const features = [
   },
   {
     icon: ShoppingCart,
-    title: 'Ventes &amp; Créances',
+    title: 'Ventes & Créances',
     desc: 'Comptes produits et emballages séparés, paiements partiels, encaissement de dettes.',
   },
   {

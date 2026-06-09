@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { hash } from 'bcryptjs'
 import { sql, sqlRaw, transaction } from '@/lib/db'
+import { getSettings } from '@/lib/settings'
 
 export async function POST(request: Request) {
   try {
@@ -13,6 +14,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Tous les champs obligatoires doivent etre remplis' },
         { status: 400 }
+      )
+    }
+
+    // Respect global platform configuration
+    const settings = await getSettings()
+    if (!settings.registrations_open) {
+      return NextResponse.json(
+        { error: 'Les inscriptions sont temporairement fermees' },
+        { status: 403 }
       )
     }
 
@@ -38,9 +48,9 @@ export async function POST(request: Request) {
     // Hash password
     const passwordHash = await hash(password, 12)
 
-    // Calculate trial end date (30 days from now)
+    // Calculate trial end date from global configuration
     const trialEndsAt = new Date()
-    trialEndsAt.setDate(trialEndsAt.getDate() + 30)
+    trialEndsAt.setDate(trialEndsAt.getDate() + settings.trial_days)
 
     // Pre-generate the company id so all rows can be created atomically
     const companyId = randomUUID()

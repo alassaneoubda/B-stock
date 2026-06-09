@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/api-auth'
 import { getSubscriptionInfo } from '@/lib/subscription'
-import { PLANS } from '@/lib/geniuspay'
+import { getPublicPlans } from '@/lib/plans'
 
 // GET /api/subscription — Get current subscription info + available plans
 export async function GET() {
@@ -11,24 +11,13 @@ export async function GET() {
         const { session } = authz
 
         const subscription = await getSubscriptionInfo(session.user.companyId)
+        const plans = await getPublicPlans()
 
         return NextResponse.json({
             success: true,
             data: {
                 subscription,
-                plans: PLANS.map((p) => ({
-                    id: p.id,
-                    name: p.name,
-                    description: p.description,
-                    popular: p.popular || false,
-                    features: p.features,
-                    prices: p.prices.map((pr) => ({
-                        interval: pr.interval,
-                        months: pr.months,
-                        price: pr.price,
-                        label: pr.label,
-                    })),
-                })),
+                plans,
             },
         })
     } catch (error) {

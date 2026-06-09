@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight } from 'lucide-react'
+import { AuthTrigger } from '@/components/auth/auth-trigger'
 
 export function Footer() {
   return (
@@ -16,10 +17,10 @@ export function Footer() {
               Essai gratuit de 30 jours. Aucune carte bancaire requise.
             </p>
           </div>
-          <Link href="/register" className="inline-flex items-center gap-2 bg-white text-zinc-950 font-semibold px-6 py-3 rounded-lg text-sm hover:bg-zinc-100 transition-colors whitespace-nowrap">
+          <AuthTrigger mode="register" className="inline-flex items-center gap-2 bg-white text-zinc-950 font-semibold px-6 py-3 rounded-lg text-sm hover:bg-zinc-100 transition-colors whitespace-nowrap">
             Commencer maintenant
             <ArrowRight className="h-4 w-4" />
-          </Link>
+          </AuthTrigger>
         </div>
       </div>
 
@@ -38,22 +39,22 @@ export function Footer() {
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-4">Plateforme</h4>
             <ul className="space-y-2.5">
-              <li><a href="#features" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Fonctionnalités</a></li>
-              <li><a href="#pricing" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Tarifs</a></li>
+              <li><Link href="/#features" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Fonctionnalités</Link></li>
+              <li><Link href="/#pricing" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Tarifs</Link></li>
             </ul>
           </div>
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-4">Ressources</h4>
             <ul className="space-y-2.5">
-              <li><a href="#" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Guide d&apos;utilisation</a></li>
-              <li><a href="#" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Support</a></li>
+              <li><Link href="/guide" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Guide d&apos;utilisation</Link></li>
+              <li><Link href="/support" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Support</Link></li>
             </ul>
           </div>
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-4">Entreprise</h4>
             <ul className="space-y-2.5">
-              <li><a href="#" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">À propos</a></li>
-              <li><a href="#" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Contact</a></li>
+              <li><Link href="/a-propos" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">À propos</Link></li>
+              <li><Link href="/contact" className="text-sm text-zinc-600 hover:text-zinc-950 transition-colors">Contact</Link></li>
             </ul>
           </div>
         </div>
@@ -61,8 +62,8 @@ export function Footer() {
         <div className="flex flex-col sm:flex-row justify-between items-center pt-6 border-t border-zinc-200 gap-4">
           <p className="text-xs text-zinc-400">&copy; {new Date().getFullYear()} B-Stock. Tous droits réservés.</p>
           <div className="flex gap-5">
-            <a href="#" className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors">C.G.U.</a>
-            <a href="#" className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors">Confidentialité</a>
+            <Link href="/cgu" className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors">C.G.U.</Link>
+            <Link href="/confidentialite" className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors">Confidentialité</Link>
           </div>
         </div>
       </div>
