@@ -61,8 +61,8 @@ export default function NewDeliveryPage() {
                 const vehiclesData = await vehiclesRes.json()
                 const depotsData = await depotsRes.json()
 
-                setVehicles(vehiclesData.data || [])
-                setDepots(depotsData.depots || [])
+                setVehicles(vehiclesData.data || vehiclesData.vehicles || [])
+                setDepots(depotsData.data || depotsData.depots || [])
             } catch (err) {
                 console.error('Error loading form data:', err)
             } finally {

@@ -86,11 +86,13 @@ export default function NewProcurementPage() {
             fetch('/api/depots').then(r => r.json()),
             fetch('/api/products?includeVariants=true').then(r => r.json())
         ]).then(([sData, dData, pData]) => {
-            setSuppliers(sData.suppliers || [])
-            setDepots(dData.depots || [])
-            if (dData.depots?.length > 0) {
-                const main = dData.depots.find((d: Depot) => d.is_main)
-                setSelectedDepot(main ? main.id : dData.depots[0].id)
+            const supplierList = sData.data || sData.suppliers || []
+            const depotList = dData.data || dData.depots || []
+            setSuppliers(supplierList)
+            setDepots(depotList)
+            if (depotList.length > 0) {
+                const main = depotList.find((d: Depot) => d.is_main)
+                setSelectedDepot(main ? main.id : depotList[0].id)
             }
 
             const flattenedVariants: ProductVariant[] = []

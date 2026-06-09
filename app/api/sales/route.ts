@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     // 1. Verify client belongs to company
     const clients = await sql`
-      SELECT id, name, credit_limit, packaging_credit_limit FROM clients
+      SELECT id, name, credit_limit, packaging_credit_limit, payment_terms_days FROM clients
       WHERE id = ${data.clientId} AND company_id = ${companyId} AND is_active = true
     `
     if (clients.length === 0) {
@@ -247,6 +247,49 @@ export async function POST(request: NextRequest) {
             updated_at = NOW()
         WHERE client_id = ${data.clientId} AND account_type = 'packaging'
       `)
+    }
+
+    // 6d-bis. Notes de crédit (créances) — une par type de dette restante.
+    // N'altère PAS client_accounts (déjà fait en 6d) pour éviter le double comptage.
+    if (productDebtChange > 0 || packagingDebtChange > 0) {
+      const cnCount = await sql`
+        SELECT COUNT(*) as count FROM credit_notes WHERE company_id = ${companyId}
+      `
+      let nextNumber = Number(cnCount[0].count)
+      const termsDays = Number(clients[0].payment_terms_days || 0)
+      const dueDate = termsDays > 0
+        ? new Date(Date.now() + termsDays * 86400000).toISOString().slice(0, 10)
+        : null
+
+      if (productDebtChange > 0) {
+        nextNumber += 1
+        const creditNumber = `CR-${String(nextNumber).padStart(5, '0')}`
+        const creditStatus = paidForProducts > 0 ? 'partial' : 'pending'
+        writes.push(sqlRaw`
+          INSERT INTO credit_notes (
+            company_id, client_id, sales_order_id, credit_number, account_type,
+            total_amount, paid_amount, due_date, status, created_by
+          ) VALUES (
+            ${companyId}, ${data.clientId}, ${orderId}, ${creditNumber}, 'product',
+            ${subtotal}, ${paidForProducts}, ${dueDate}, ${creditStatus}, ${session.user.id}
+          )
+        `)
+      }
+
+      if (packagingDebtChange > 0) {
+        nextNumber += 1
+        const creditNumber = `CR-${String(nextNumber).padStart(5, '0')}`
+        const creditStatus = paidForPackaging > 0 ? 'partial' : 'pending'
+        writes.push(sqlRaw`
+          INSERT INTO credit_notes (
+            company_id, client_id, sales_order_id, credit_number, account_type,
+            total_amount, paid_amount, due_date, status, created_by
+          ) VALUES (
+            ${companyId}, ${data.clientId}, ${orderId}, ${creditNumber}, 'packaging',
+            ${packagingTotal}, ${paidForPackaging}, ${dueDate}, ${creditStatus}, ${session.user.id}
+          )
+        `)
+      }
     }
 
     // 6e. Payments (separate records for product and packaging portions)

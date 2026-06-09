@@ -20,9 +20,9 @@ export async function GET(request: NextRequest) {
       FROM audit_logs al
       LEFT JOIN users u ON al.user_id = u.id
       WHERE al.company_id = ${companyId}
-        ${entityType ? sql`AND al.entity_type = ${entityType}` : sql``}
-        ${userId ? sql`AND al.user_id = ${userId}` : sql``}
-        ${action ? sql`AND al.action = ${action}` : sql``}
+        AND (${entityType}::text IS NULL OR al.entity_type = ${entityType}::text)
+        AND (${userId}::uuid IS NULL OR al.user_id = ${userId}::uuid)
+        AND (${action}::text IS NULL OR al.action = ${action}::text)
       ORDER BY al.created_at DESC
       LIMIT ${limit}
     `

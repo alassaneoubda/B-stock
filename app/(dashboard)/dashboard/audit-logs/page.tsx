@@ -33,16 +33,16 @@ export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [entityType, setEntityType] = useState('')
-  const [action, setAction] = useState('')
+  const [entityType, setEntityType] = useState('all')
+  const [action, setAction] = useState('all')
   const [limit, setLimit] = useState('50')
 
   const fetchData = useCallback(async () => {
     setIsLoading(true)
     try {
       const params = new URLSearchParams({
-        ...(entityType && { entity_type: entityType }),
-        ...(action && { action }),
+        ...(entityType !== 'all' && { entity_type: entityType }),
+        ...(action !== 'all' && { action }),
         limit,
       })
       const res = await fetch(`/api/audit-logs?${params}`)
@@ -99,7 +99,7 @@ export default function AuditLogsPage() {
                   <Select value={entityType} onValueChange={setEntityType}>
                     <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Toutes" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Toutes</SelectItem>
+                      <SelectItem value="all">Toutes</SelectItem>
                       {Object.entries(entityLabels).map(([key, label]) => (
                         <SelectItem key={key} value={key}>{label}</SelectItem>
                       ))}
@@ -111,7 +111,7 @@ export default function AuditLogsPage() {
                   <Select value={action} onValueChange={setAction}>
                     <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Toutes" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Toutes</SelectItem>
+                      <SelectItem value="all">Toutes</SelectItem>
                       {Object.entries(actionLabels).map(([key, label]) => (
                         <SelectItem key={key} value={key}>{label}</SelectItem>
                       ))}

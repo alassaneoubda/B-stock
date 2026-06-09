@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
             SELECT id FROM stock
             WHERE depot_id = ${po.depot_id}
               AND product_variant_id = ${productVariantId}
-              AND lot_number = ${item.lotNumber || null}
+              AND lot_number IS NOT DISTINCT FROM ${item.lotNumber || null}
           `
 
           if (existingStock.length > 0) {

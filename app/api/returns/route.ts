@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN depots d ON r.depot_id = d.id
       LEFT JOIN users u ON r.created_by = u.id
       WHERE r.company_id = ${companyId}
-        ${returnType ? sql`AND r.return_type = ${returnType}` : sql``}
+        AND (${returnType}::text IS NULL OR r.return_type = ${returnType}::text)
       ORDER BY r.created_at DESC
       LIMIT 50
     `

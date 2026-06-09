@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Save, ShieldCheck } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { ArrowLeft, Loader2, Save, ShieldCheck, KeyRound, Copy, Check } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 
@@ -33,6 +34,9 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
     const [isSaving, setIsSaving] = useState(false)
     const [user, setUser] = useState<any>(null)
     const [permissions, setPermissions] = useState<string[]>([])
+    const [isResetting, setIsResetting] = useState(false)
+    const [tempPassword, setTempPassword] = useState<string | null>(null)
+    const [copied, setCopied] = useState(false)
 
     useEffect(() => {
         async function fetchUser() {
@@ -66,6 +70,35 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
 
     const selectAll = () => setPermissions(MODULES.map(m => m.id))
     const selectNone = () => setPermissions([])
+
+    const onResetPassword = async () => {
+        setIsResetting(true)
+        try {
+            const res = await fetch(`/api/users/${id}/reset-password`, { method: 'POST' })
+            const data = await res.json()
+            if (res.ok && data.success) {
+                setTempPassword(data.tempPassword)
+                setCopied(false)
+            } else {
+                toast.error('Erreur', { description: data.error || 'Réinitialisation impossible' })
+            }
+        } catch {
+            toast.error('Erreur lors de la réinitialisation')
+        } finally {
+            setIsResetting(false)
+        }
+    }
+
+    const copyTempPassword = async () => {
+        if (!tempPassword) return
+        try {
+            await navigator.clipboard.writeText(tempPassword)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch {
+            toast.error('Copie impossible')
+        }
+    }
 
     const onSave = async () => {
         setIsSaving(true)
@@ -135,6 +168,25 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                     <Label className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Rôle actuel</Label>
                                     <p className="capitalize font-bold text-slate-950">{user.role}</p>
                                 </div>
+                                <div className="pt-4 border-t border-slate-100">
+                                    <Label className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Sécurité</Label>
+                                    <Button
+                                        variant="outline"
+                                        className="w-full mt-2 rounded-md"
+                                        onClick={onResetPassword}
+                                        disabled={isResetting}
+                                    >
+                                        {isResetting ? (
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        ) : (
+                                            <KeyRound className="h-4 w-4 mr-2" />
+                                        )}
+                                        Réinitialiser le mot de passe
+                                    </Button>
+                                    <p className="text-xs text-slate-400 mt-2">
+                                        Un mot de passe temporaire sera généré et affiché une seule fois.
+                                    </p>
+                                </div>
                             </CardContent>
                         </Card>
 
@@ -190,6 +242,27 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                         </Card>
                     </div>
                 </div>
+
+                <Dialog open={!!tempPassword} onOpenChange={(o) => { if (!o) setTempPassword(null) }}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Mot de passe réinitialisé</DialogTitle>
+                            <DialogDescription>
+                                Communiquez ce mot de passe temporaire à {user.full_name}. Il ne sera plus affiché ensuite.
+                                L&apos;utilisateur pourra se connecter avec, puis le changer.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="flex items-center gap-2 rounded-lg border bg-slate-50 p-3">
+                            <code className="flex-1 font-mono text-sm break-all">{tempPassword}</code>
+                            <Button variant="outline" size="icon" className="shrink-0" onClick={copyTempPassword}>
+                                {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                            </Button>
+                        </div>
+                        <DialogFooter>
+                            <Button onClick={() => setTempPassword(null)}>Fermer</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </main>
         </div>
     )

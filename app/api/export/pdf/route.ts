@@ -206,7 +206,7 @@ export async function GET(request: NextRequest) {
           LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
           JOIN depots d ON s.depot_id = d.id
           WHERE d.company_id = ${companyId}
-            ${depotId ? sql`AND s.depot_id = ${depotId}` : sql``}
+            AND (${depotId}::uuid IS NULL OR s.depot_id = ${depotId}::uuid)
           ORDER BY d.name, p.name
         `
 

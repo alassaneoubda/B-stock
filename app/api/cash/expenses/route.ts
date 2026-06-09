@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         WHERE e.company_id = ${companyId}
           AND e.expense_date >= ${from}::date
           AND e.expense_date <= ${to}::date
-          ${category ? sql`AND e.category = ${category}` : sql``}
+          AND (${category}::text IS NULL OR e.category = ${category}::text)
         ORDER BY e.created_at DESC
       `
     } else {

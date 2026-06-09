@@ -24,7 +24,7 @@ interface Credit {
   id: string; credit_number: string; client_name: string; client_phone: string
   total_amount: number; paid_amount: number; due_date: string | null
   status: string; is_overdue: boolean; days_overdue: number
-  order_number: string | null; created_at: string
+  order_number: string | null; created_at: string; account_type: string | null
 }
 interface Stats {
   total_credits: number; total_outstanding: number; overdue_count: number; overdue_amount: number
@@ -163,7 +163,12 @@ export default function CreditsPage() {
                     const st = c.is_overdue ? statusLabels.overdue : statusLabels[c.status] || statusLabels.pending
                     return (
                       <TableRow key={c.id}>
-                        <TableCell className="text-sm font-medium">{c.credit_number}</TableCell>
+                        <TableCell className="text-sm font-medium">
+                          <div>{c.credit_number}</div>
+                          <Badge variant="outline" className={`mt-1 text-[10px] ${c.account_type === 'packaging' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                            {c.account_type === 'packaging' ? 'Emballage' : 'Produit'}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           <div className="text-sm font-medium">{c.client_name}</div>
                           {c.client_phone && <div className="text-xs text-zinc-400">{c.client_phone}</div>}

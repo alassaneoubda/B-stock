@@ -54,7 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           balance = balance + ${amount},
           last_transaction_at = NOW(),
           updated_at = NOW()
-        WHERE client_id = ${credit.client_id} AND account_type = 'product'
+        WHERE client_id = ${credit.client_id} AND account_type = ${credit.account_type || 'product'}
       `,
     ])
 

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN users ru ON br.reported_by = ru.id
       LEFT JOIN users au ON br.approved_by = au.id
       WHERE br.company_id = ${companyId}
-        ${recordType ? sql`AND br.record_type = ${recordType}` : sql``}
+        AND (${recordType}::text IS NULL OR br.record_type = ${recordType}::text)
       ORDER BY br.created_at DESC
       LIMIT 50
     `

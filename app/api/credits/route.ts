@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
       LEFT JOIN sales_orders so ON cn.sales_order_id = so.id
       LEFT JOIN users u ON cn.created_by = u.id
       WHERE cn.company_id = ${companyId}
-        ${status ? sql`AND cn.status = ${status}` : sql``}
-        ${clientId ? sql`AND cn.client_id = ${clientId}` : sql``}
+        AND (${status}::text IS NULL OR cn.status = ${status}::text)
+        AND (${clientId}::uuid IS NULL OR cn.client_id = ${clientId}::uuid)
       ORDER BY 
         CASE WHEN cn.status = 'overdue' THEN 0 WHEN cn.status = 'pending' THEN 1 WHEN cn.status = 'partial' THEN 2 ELSE 3 END,
         cn.due_date ASC NULLS LAST
