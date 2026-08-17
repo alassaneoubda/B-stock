@@ -3,8 +3,41 @@
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { useAuthModal } from '@/components/auth/auth-modal'
+import { cn } from '@/lib/utils'
 
-/** Zone réservée — les vraies captures produit seront ajoutées plus tard. */
+/** Capture réelle de l’app (dashboard, tournée, etc.) */
+export function ProductCapture({
+  src,
+  alt,
+  className = '',
+  priority = false,
+}: {
+  src: string
+  alt: string
+  className?: string
+  priority?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-[1.25rem] border border-[#E2E8F0] bg-white shadow-[0_20px_50px_-24px_rgba(15,23,42,0.35)]',
+        className
+      )}
+    >
+      <Image
+        src={src}
+        alt={alt}
+        width={1280}
+        height={800}
+        priority={priority}
+        className="h-auto w-full object-cover object-top"
+        sizes="(max-width: 1024px) 100vw, 560px"
+      />
+    </div>
+  )
+}
+
+/** @deprecated Préférer ProductCapture — conservé pour compat */
 export function CapturePlaceholder({
   label = 'Capture de l’application — à venir',
   className = '',
@@ -48,8 +81,13 @@ export function LandingProduct() {
           </Button>
         </div>
 
-        <div className="flex justify-center lg:justify-end">
-          <CapturePlaceholder label="Capture mobile / dashboard — à venir" />
+        <div className="lg:justify-end">
+          <ProductCapture
+            src="/images/landing/capture-dashboard.png"
+            alt="Tableau de bord B-Stock — CA, ventes, tournées et stock"
+            priority
+            className="w-full max-w-xl mx-auto lg:mx-0"
+          />
         </div>
       </div>
     </section>

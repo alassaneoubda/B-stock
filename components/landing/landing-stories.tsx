@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import type { CmsFeature } from '@/lib/cms'
-import { CapturePlaceholder } from '@/components/landing/landing-product'
+import { ProductCapture } from '@/components/landing/landing-product'
 
 type Story = {
   id: string
@@ -10,7 +10,8 @@ type Story = {
   image: string
   imageAlt: string
   reverse?: boolean
-  showCaptureSlot?: boolean
+  captureSrc?: string
+  captureAlt?: string
 }
 
 const STORIES: Story[] = [
@@ -30,7 +31,8 @@ const STORIES: Story[] = [
     image: '/images/landing/landing-livraison.jpg',
     imageAlt: 'Chargement de casiers pour livraison',
     reverse: true,
-    showCaptureSlot: true,
+    captureSrc: '/images/landing/capture-tournee.png',
+    captureAlt: 'Planification d’une tournée de livraison dans B-Stock',
   },
   {
     id: 'consignes',
@@ -86,11 +88,12 @@ export function LandingStories({ features }: { features: CmsFeature[] }) {
               </h2>
               <p className="mt-4 text-base leading-relaxed text-[#52525B]">{s.body}</p>
 
-              {s.showCaptureSlot && (
-                <div className="mt-8 max-w-xs">
-                  <CapturePlaceholder
-                    label="Capture tournée / livraison — à venir"
-                    className="aspect-[16/10] max-w-none rounded-2xl"
+              {s.captureSrc && (
+                <div className="mt-8">
+                  <ProductCapture
+                    src={s.captureSrc}
+                    alt={s.captureAlt || 'Capture B-Stock'}
+                    className="max-w-md rounded-2xl"
                   />
                 </div>
               )}
