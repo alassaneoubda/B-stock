@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql, sqlRaw, transaction } from '@/lib/db'
+import { sql, sqlRaw, transaction, type SqlQuery } from '@/lib/db'
 
 const paymentSchema = z.object({
   amount: z.number().positive('Le montant doit être positif'),
@@ -112,7 +112,7 @@ export async function POST(
     }
 
     // 5. Build all writes and execute ATOMICALLY
-    const writes: unknown[] = []
+    const writes: SqlQuery[] = []
 
     if (paidForProducts > 0) {
       writes.push(sqlRaw`

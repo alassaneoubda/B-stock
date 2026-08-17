@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
-import { sql, sqlRaw, transaction } from '@/lib/db'
+import { sql, sqlRaw, transaction, type SqlQuery } from '@/lib/db'
 
 // POST /api/returns/[id]/process — Approve and process a return (restock + credit/refund)
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       SELECT * FROM return_items WHERE return_id = ${returnId}
     `
 
-    const writes: unknown[] = []
+    const writes: SqlQuery[] = []
 
     for (const item of items) {
       if (item.condition === 'good' && item.product_variant_id && ret.depot_id) {

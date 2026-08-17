@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql, sqlRaw, transaction } from '@/lib/db'
+import { sql, sqlRaw, transaction, type SqlQuery } from '@/lib/db'
 import { createCashMovementFromSale, hasExistingCashMovement } from '@/lib/cash-automation'
 
 const salesOrderSchema = z.object({
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
     const packagingDebtChange = packagingTotal - paidForPackaging
 
     // 6. Build all writes and execute them ATOMICALLY (tout ou rien)
-    const writes: unknown[] = []
+    const writes: SqlQuery[] = []
 
     // 6a. Sales order
     writes.push(sqlRaw`

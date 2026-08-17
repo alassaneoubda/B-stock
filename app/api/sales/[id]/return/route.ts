@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql, sqlRaw, transaction } from '@/lib/db'
+import { sql, sqlRaw, transaction, type SqlQuery } from '@/lib/db'
 
 const returnSchema = z.object({
     items: z.array(z.object({
@@ -40,7 +40,7 @@ export async function POST(
         }
         const { client_id: clientId, depot_id: depotId } = orders[0]
 
-        const writes: unknown[] = []
+        const writes: SqlQuery[] = []
 
         // 2. Process product returns
         let totalProductCredit = 0

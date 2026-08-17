@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
-import { sql, sqlRaw, transaction } from '@/lib/db'
+import { sql, sqlRaw, transaction, type SqlQuery } from '@/lib/db'
 
 // POST /api/transfers/[id]/receive — Receive a depot transfer (deduct source, add destination)
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     `
     const destPkgSet = new Set(existingDestPkg.map((r: any) => r.packaging_type_id))
 
-    const writes: unknown[] = []
+    const writes: SqlQuery[] = []
 
     // 1. If still pending, deduct from source depot
     if (transfer.status === 'pending') {
