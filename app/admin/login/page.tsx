@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +23,6 @@ export default function AdminLoginPage() {
 }
 
 function AdminLoginContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/admin'
 
@@ -46,8 +45,8 @@ function AdminLoginContent() {
       if (res?.error) {
         setError('Identifiants invalides ou compte non autorisé')
       } else {
-        router.push(callbackUrl)
-        router.refresh()
+        // Navigation complète : le cookie Auth.js doit être renvoyé au middleware
+        window.location.assign(callbackUrl.startsWith('/') ? callbackUrl : '/admin')
       }
     } catch {
       setError('Une erreur est survenue. Réessayez.')

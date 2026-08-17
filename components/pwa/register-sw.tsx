@@ -4,8 +4,7 @@ import { useEffect } from 'react'
 
 /**
  * Enregistre le service worker en production uniquement.
- * En développement (Turbopack/HMR), un SW actif perturbe le rechargement à chaud,
- * on le saute donc volontairement.
+ * Force aussi la prise en compte de la nouvelle version (SKIP_WAITING).
  */
 export function RegisterSW() {
   useEffect(() => {
@@ -16,6 +15,21 @@ export function RegisterSW() {
     const register = () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+        .then((reg) => {
+          // Nouvelle version disponible → activer tout de suite
+          if (reg.waiting) {
+            reg.waiting.postMessage('SKIP_WAITING')
+          }
+          reg.addEventListener('updatefound', () => {
+            const worker = reg.installing
+            if (!worker) return
+            worker.addEventListener('statechange', () => {
+              if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                worker.postMessage('SKIP_WAITING')
+              }
+            })
+          })
+        })
         .catch(() => {
           /* échec silencieux : l'app fonctionne sans le SW */
         })

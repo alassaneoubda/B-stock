@@ -3,14 +3,27 @@ import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
 /**
- * Edge-compatible middleware — uses JWT only (no Node crypto / bcrypt / Neon).
+ * Edge-compatible : JWT uniquement (pas de bcrypt / Neon).
+ * Auth.js v5 pose `__Secure-authjs.session-token` en HTTPS.
+ * Sans `secureCookie: true`, getToken cherche `authjs.session-token` → session invisible → boucle login.
  */
+async function readSessionToken(req: NextRequest) {
+  const secret = process.env.AUTH_SECRET
+  if (!secret) return null
+
+  const https = req.nextUrl.protocol === 'https:'
+  const attempts = https ? [true, false] : [false, true]
+
+  for (const secureCookie of attempts) {
+    const token = await getToken({ req, secret, secureCookie })
+    if (token) return token
+  }
+  return null
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
-  const token = await getToken({
-    req,
-    secret: process.env.AUTH_SECRET,
-  })
+  const token = await readSessionToken(req)
 
   const isLoggedIn = !!token
   const isPlatformAdmin = token?.isPlatformAdmin === true

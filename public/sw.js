@@ -5,7 +5,7 @@
  *  - /api/*        -> réseau uniquement (jamais intercepté)
  *  - /dashboard/*  -> réseau uniquement (données tenant)
  *  - /admin/*      -> réseau uniquement (back office)
- *  - /onboarding   -> réseau uniquement
+ *  - /login, /register, /onboarding -> réseau uniquement
  *  - requêtes non-GET -> réseau uniquement
  *  - cookies/sessions NextAuth -> jamais lus ni stockés ici
  *
@@ -17,15 +17,13 @@
  * Pour bumper le cache lors d'un déploiement, incrémenter VERSION.
  */
 
-const VERSION = 'v1'
+const VERSION = 'v2'
 const STATIC_CACHE = `bstock-static-${VERSION}`
 const PAGE_CACHE = `bstock-pages-${VERSION}`
 const OFFLINE_URL = '/offline'
 
-// Ressources mises en cache dès l'installation.
 const PRECACHE = [OFFLINE_URL, '/icons/192.png', '/manifest.webmanifest']
 
-// Pages publiques que l'on autorise à mettre en cache pour la consultation hors ligne.
 const PUBLIC_PAGES = [
   '/',
   '/a-propos',
@@ -36,14 +34,19 @@ const PUBLIC_PAGES = [
   '/contact',
 ]
 
-// Préfixes strictement réservés au réseau (données sensibles / dynamiques).
-const NETWORK_ONLY_PREFIXES = ['/api/', '/dashboard', '/admin', '/onboarding']
+const NETWORK_ONLY_PREFIXES = [
+  '/api/',
+  '/dashboard',
+  '/admin',
+  '/onboarding',
+  '/login',
+  '/register',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(STATIC_CACHE)
-      // allSettled : un 404 sur une ressource ne fait pas échouer toute l'installation.
       await Promise.allSettled(PRECACHE.map((url) => cache.add(url)))
       await self.skipWaiting()
     })(),
@@ -78,45 +81,52 @@ function isStaticAsset(url) {
   return (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||
+    url.pathname.startsWith('/images/') ||
     url.pathname === '/icon.svg' ||
     /\.(?:js|css|woff2?|ttf|otf|eot|png|jpe?g|gif|svg|webp|avif|ico)$/.test(url.pathname)
   )
 }
 
+function offlineResponse() {
+  return new Response('Hors ligne', {
+    status: 503,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  })
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
 
-  // On ne gère que les GET ; tout le reste (POST/PUT/...) passe au réseau.
   if (request.method !== 'GET') return
 
-  const url = new URL(request.url)
+  let url
+  try {
+    url = new URL(request.url)
+  } catch {
+    return
+  }
 
-  // On ignore les autres origines (CDN tiers, analytics, etc.).
   if (url.origin !== self.location.origin) return
 
-  // Zones sensibles : jamais interceptées, jamais mises en cache.
+  // Zones sensibles : ne pas appeler respondWith → navigateur gère seul.
   if (isNetworkOnly(url.pathname)) return
 
-  // Navigations (HTML) : réseau d'abord, repli cache puis page hors ligne.
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstPage(request, url))
     return
   }
 
-  // Assets statiques : stale-while-revalidate.
   if (isStaticAsset(url)) {
     event.respondWith(staleWhileRevalidate(request))
     return
   }
 
-  // Reste : réseau d'abord avec repli cache si dispo.
-  event.respondWith(fetch(request).catch(() => caches.match(request)))
+  event.respondWith(networkWithCacheFallback(request))
 })
 
 async function networkFirstPage(request, url) {
   try {
     const fresh = await fetch(request)
-    // On ne met en cache que les pages publiques explicitement autorisées.
     if (fresh && fresh.ok && PUBLIC_PAGES.includes(url.pathname)) {
       const cache = await caches.open(PAGE_CACHE)
       cache.put(request, fresh.clone())
@@ -126,22 +136,29 @@ async function networkFirstPage(request, url) {
     const cached = await caches.match(request)
     if (cached) return cached
     const offline = await caches.match(OFFLINE_URL)
-    if (offline) return offline
-    return new Response('Hors ligne', {
-      status: 503,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    })
+    return offline || offlineResponse()
   }
 }
 
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(STATIC_CACHE)
   const cached = await cache.match(request)
-  const network = fetch(request)
-    .then((response) => {
-      if (response && response.ok) cache.put(request, response.clone())
-      return response
-    })
-    .catch(() => cached)
-  return cached || network
+  try {
+    const response = await fetch(request)
+    if (response && response.ok) {
+      cache.put(request, response.clone())
+    }
+    return response
+  } catch {
+    return cached || offlineResponse()
+  }
+}
+
+async function networkWithCacheFallback(request) {
+  try {
+    return await fetch(request)
+  } catch {
+    const cached = await caches.match(request)
+    return cached || offlineResponse()
+  }
 }

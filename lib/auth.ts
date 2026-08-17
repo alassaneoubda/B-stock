@@ -126,6 +126,20 @@ async function getOrCreateOAuthUser(
   }
 }
 
+declare module 'next-auth/jwt' {
+  interface JWT {
+    id?: string
+    role?: UserRole
+    permissions?: string[]
+    companyId?: string
+    companyName?: string
+    companySlug?: string
+    onboardingCompleted?: boolean
+    isPlatformAdmin?: boolean
+    impersonatedBy?: string | null
+  }
+}
+
 declare module 'next-auth' {
   interface Session {
     user: {
@@ -363,17 +377,30 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       // Credentials / impersonate: the user object already carries the fields
       if (user) {
-        token.id = user.id as string
-        token.email = user.email as string
-        token.name = user.name as string
-        token.role = user.role as UserRole
-        token.permissions = user.permissions as string[]
-        token.companyId = user.companyId as string
-        token.companyName = user.companyName as string
-        token.companySlug = user.companySlug as string
-        token.onboardingCompleted = user.onboardingCompleted as boolean
-        token.isPlatformAdmin = (user as { isPlatformAdmin?: boolean }).isPlatformAdmin === true
-        token.impersonatedBy = (user as { impersonatedBy?: string | null }).impersonatedBy ?? null
+        const u = user as {
+          id: string
+          email?: string | null
+          name?: string | null
+          role: UserRole
+          permissions: string[]
+          companyId: string
+          companyName: string
+          companySlug: string
+          onboardingCompleted: boolean
+          isPlatformAdmin?: boolean
+          impersonatedBy?: string | null
+        }
+        token.id = u.id
+        token.email = u.email
+        token.name = u.name
+        token.role = u.role
+        token.permissions = u.permissions
+        token.companyId = u.companyId
+        token.companyName = u.companyName
+        token.companySlug = u.companySlug
+        token.onboardingCompleted = u.onboardingCompleted
+        token.isPlatformAdmin = u.isPlatformAdmin === true
+        token.impersonatedBy = u.impersonatedBy ?? null
       }
       return token
     },
