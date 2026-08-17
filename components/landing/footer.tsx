@@ -1,7 +1,7 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import { ArrowRight } from 'lucide-react'
 import { AuthTrigger } from '@/components/auth/auth-trigger'
+import { BrandLogo } from '@/components/brand-logo'
 
 export function Footer() {
   return (
@@ -28,9 +28,8 @@ export function Footer() {
       <div className="mx-auto max-w-[1200px] px-6 pb-8">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
           <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2 mb-4">
-              <Image src="/images/B-stock.png" alt="B-Stock" width={28} height={28} className="rounded-md" />
-              <span className="text-sm font-bold text-zinc-950">B-Stock</span>
+            <div className="mb-4">
+              <BrandLogo href="/" height={72} />
             </div>
             <p className="text-sm text-zinc-500 leading-relaxed max-w-xs">
               Gestion de distribution de boissons. Stocks, ventes, livraisons.

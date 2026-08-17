@@ -17,6 +17,13 @@ export async function POST(request: Request) {
       )
     }
 
+    if (typeof password !== 'string' || password.length < 8) {
+      return NextResponse.json(
+        { error: 'Le mot de passe doit contenir au moins 8 caractères' },
+        { status: 400 }
+      )
+    }
+
     // Respect global platform configuration
     const settings = await getSettings()
     if (!settings.registrations_open) {

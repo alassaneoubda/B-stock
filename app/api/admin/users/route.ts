@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireSuperAdmin } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
+import { ensureUsersFullNameColumn } from '@/lib/ensure-users-schema'
 
 // GET /api/admin/users — Global user list across all tenants
 export async function GET(request: NextRequest) {
@@ -8,6 +9,8 @@ export async function GET(request: NextRequest) {
   if (!authz.ok) return authz.response
 
   try {
+    await ensureUsersFullNameColumn()
+
     const { searchParams } = new URL(request.url)
     const search = (searchParams.get('search') || '').trim()
     const role = searchParams.get('role') || ''
@@ -24,7 +27,7 @@ export async function GET(request: NextRequest) {
       FROM users u
       JOIN companies c ON u.company_id = c.id
       WHERE
-        (${search} = '' OR u.email ILIKE ${like} OR u.full_name ILIKE ${like} OR c.name ILIKE ${like})
+        (${search} = '' OR u.email ILIKE ${like} OR COALESCE(u.full_name, '') ILIKE ${like} OR c.name ILIKE ${like})
         AND (${role} = '' OR u.role = ${role})
       ORDER BY u.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
@@ -35,7 +38,7 @@ export async function GET(request: NextRequest) {
       FROM users u
       JOIN companies c ON u.company_id = c.id
       WHERE
-        (${search} = '' OR u.email ILIKE ${like} OR u.full_name ILIKE ${like} OR c.name ILIKE ${like})
+        (${search} = '' OR u.email ILIKE ${like} OR COALESCE(u.full_name, '') ILIKE ${like} OR c.name ILIKE ${like})
         AND (${role} = '' OR u.role = ${role})
     `
 

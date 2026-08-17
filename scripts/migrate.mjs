@@ -7,7 +7,7 @@
 //
 // La connexion est lue depuis .env.local (puis .env) à la racine du projet.
 
-import { neon } from '@neondatabase/serverless'
+import pg from 'pg'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,8 +16,10 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(scriptsDir, '..')
 
 // --- Chargement des variables d'environnement (sans dépendance externe) ---
+// .env.local a TOUJOURS priorité sur les variables déjà présentes dans le shell
+// (évite qu'un vieux DATABASE_URL=host.neon.tech fantôme bloque la migration).
 function loadEnv() {
-  for (const name of ['.env.local', '.env']) {
+  for (const name of ['.env', '.env.local']) {
     const path = join(projectRoot, name)
     if (!existsSync(path)) continue
     const content = readFileSync(path, 'utf8')
@@ -34,7 +36,8 @@ function loadEnv() {
       ) {
         value = value.slice(1, -1)
       }
-      if (!(key in process.env)) process.env[key] = value
+      // .env d'abord (faible), .env.local ensuite (écrase)
+      process.env[key] = value
     }
   }
 }
@@ -127,8 +130,29 @@ async function main() {
   })()
   console.log(`Base cible : ${host}\n`)
 
-  const sql = neon(url)
+  // TCP vers le pooler Neon (évite api.neon.tech / HTTP, souvent bloqué en entreprise)
+  const connectionString = (() => {
+    try {
+      const u = new URL(url)
+      u.searchParams.set('sslmode', 'require')
+      u.searchParams.set('uselibpqcompat', 'true')
+      u.searchParams.delete('channel_binding')
+      return u.toString()
+    } catch {
+      return url
+    }
+  })()
+  const pool = new pg.Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 20_000,
+  })
+  const sql = async (text, params = []) => {
+    const res = await pool.query(text, params)
+    return res.rows
+  }
 
+  try {
   // Suivi des migrations déjà appliquées (rejouable sans risque)
   await sql(
     `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -188,6 +212,9 @@ async function main() {
   }
 
   console.log('\n✔ Migrations terminées avec succès.')
+  } finally {
+    await pool.end()
+  }
 }
 
 main().catch((e) => {

@@ -1,13 +1,10 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/components/providers/session-provider'
 import { RegisterSW } from '@/components/pwa/register-sw'
 import { InstallPrompt } from '@/components/pwa/install-prompt'
+import { auth } from '@/lib/auth'
 import './globals.css'
-
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 const APP_NAME = 'B-Stock'
 const APP_URL =
@@ -30,10 +27,13 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/icons/192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/icons/favicon-32.png?v=4', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/icon.png?v=4', sizes: '48x48', type: 'image/png' },
+      { url: '/icons/192.png?v=4', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/512.png?v=4', sizes: '512x512', type: 'image/png' },
     ],
-    apple: [{ url: '/icons/apple-180.png', sizes: '180x180', type: 'image/png' }],
+    apple: [{ url: '/icons/apple-180.png?v=4', sizes: '180x180', type: 'image/png' }],
+    shortcut: '/icons/favicon-32.png?v=4',
   },
 }
 
@@ -41,23 +41,30 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#ffffff',
+  themeColor: '#F58233',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  let session = null
+  try {
+    session = await auth()
+  } catch {
+    session = null
+  }
+
   return (
     <html lang="fr">
       <body className="font-sans antialiased">
-        <AuthProvider>
+        <AuthProvider session={session}>
           {children}
+          <RegisterSW />
+          <InstallPrompt />
+          <Analytics />
         </AuthProvider>
-        <RegisterSW />
-        <InstallPrompt />
-        <Analytics />
       </body>
     </html>
   )

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
+import { ensureUsersFullNameColumn } from '@/lib/ensure-users-schema'
 
 const ROLES = ['owner', 'manager', 'cashier', 'warehouse_keeper']
 
@@ -13,6 +14,8 @@ export async function PATCH(
   if (!authz.ok) return authz.response
 
   try {
+    await ensureUsersFullNameColumn()
+
     const { id } = await params
     const body = await request.json()
 

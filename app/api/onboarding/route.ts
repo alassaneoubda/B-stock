@@ -12,7 +12,7 @@ const onboardingSchema = z.object({
 // POST /api/onboarding — Finalize a freshly provisioned (e.g. Google) company
 export async function POST(request: NextRequest) {
   try {
-    const authz = await requireAuth()
+    const authz = await requireAuth({ skipSubscriptionCheck: true })
     if (!authz.ok) return authz.response
     const { session, companyId } = authz
 

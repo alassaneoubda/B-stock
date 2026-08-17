@@ -3,13 +3,13 @@ import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/agents/[id] — Agent detail with performance
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('agents.read')
     if (!authz.ok) return authz.response
     const { companyId } = authz
 
-    const agentId = params.id
+    const agentId = (await params).id
 
     const agents = await sql`
       SELECT sa.*, u.full_name as user_name
@@ -66,13 +66,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // PUT /api/agents/[id] — Update agent
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('agents.write')
     if (!authz.ok) return authz.response
     const { companyId } = authz
 
-    const agentId = params.id
+    const agentId = (await params).id
     const body = await request.json()
     const { full_name, phone, email, zone, commission_rate, is_active } = body
 

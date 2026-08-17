@@ -3,13 +3,13 @@ import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // POST /api/inventory/[id]/complete — Finalize inventory and apply adjustments
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('inventory.write')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const inventoryId = params.id
+    const inventoryId = (await params).id
     const body = await request.json()
     const { apply_adjustments } = body
 

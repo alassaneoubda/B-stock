@@ -3,13 +3,13 @@ import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/inventory/[id] — Get inventory session with items
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('inventory.read')
     if (!authz.ok) return authz.response
     const { companyId } = authz
 
-    const inventoryId = params.id
+    const inventoryId = (await params).id
 
     const sessions = await sql`
       SELECT is2.*, d.name as depot_name, su.full_name as started_by_name
@@ -43,13 +43,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // PUT /api/inventory/[id] — Update counted quantities
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('inventory.write')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const inventoryId = params.id
+    const inventoryId = (await params).id
     const body = await request.json()
     const { items } = body // [{ id, counted_quantity, notes }]
 

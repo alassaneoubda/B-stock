@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   Building2,
   Users,
-  ShieldCheck,
   LogOut,
   CreditCard,
   Package,
@@ -19,8 +18,10 @@ import {
   BarChart3,
   Menu,
   X,
+  Newspaper,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BrandLogo } from '@/components/brand-logo'
 
 const nav = [
   { href: '/admin', label: 'Tableau de bord', icon: LayoutDashboard, exact: true },
@@ -28,6 +29,7 @@ const nav = [
   { href: '/admin/users', label: 'Utilisateurs', icon: Users },
   { href: '/admin/plans', label: 'Plans', icon: Package },
   { href: '/admin/billing', label: 'Facturation', icon: CreditCard },
+  { href: '/admin/cms', label: 'CMS Landing', icon: Newspaper },
   { href: '/admin/reports', label: 'Rapports', icon: BarChart3 },
   { href: '/admin/announcements', label: 'Annonces', icon: Megaphone },
   { href: '/admin/audit', label: 'Journal d\u2019audit', icon: ScrollText },
@@ -50,10 +52,7 @@ export function AdminShell({
       {/* Mobile top bar */}
       <header className="lg:hidden sticky top-0 z-30 flex h-14 items-center justify-between bg-zinc-950 text-white px-4">
         <div className="flex items-center gap-2.5">
-          <div className="h-7 w-7 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center">
-            <ShieldCheck className="h-4 w-4" />
-          </div>
-          <span className="text-sm font-bold">B-Stock</span>
+          <BrandLogo href={false} height={44} />
           <span className="text-[11px] text-zinc-500">Back office</span>
         </div>
         <button
@@ -81,14 +80,9 @@ export function AdminShell({
         )}
       >
         <div className="h-16 flex items-center justify-between gap-2.5 px-5 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center">
-              <ShieldCheck className="h-4 w-4" />
-            </div>
-            <div className="leading-tight">
-              <p className="text-sm font-bold">B-Stock</p>
-              <p className="text-[11px] text-zinc-500">Back office</p>
-            </div>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <BrandLogo href={false} height={48} />
+            <p className="text-[11px] text-zinc-500 pl-0.5">Back office</p>
           </div>
           <button
             onClick={() => setOpen(false)}

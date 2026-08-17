@@ -4,13 +4,13 @@ import { sql, sqlRaw, transaction } from '@/lib/db'
 import { createCashMovementFromCreditPayment, hasExistingCashMovement } from '@/lib/cash-automation'
 
 // POST /api/credits/[id]/pay — Record a payment against a credit note
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('credits.write')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const creditId = params.id
+    const creditId = (await params).id
     const body = await request.json()
     const { amount, payment_method, reference, notes } = body
 

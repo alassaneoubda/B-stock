@@ -13,7 +13,7 @@ import { useRouter } from 'next/navigation'
 
 interface ReturnItem {
   id: string; item_type: string; product_variant_id?: string; packaging_type_id?: string
-  quantity: number; reason: string; product_name?: string; packaging_name?: string
+  quantity: number; unit_price?: number; reason: string; product_name?: string; packaging_name?: string
 }
 
 export default function NewReturnPage() {

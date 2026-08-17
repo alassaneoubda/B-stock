@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { LayoutDashboard, LogOut, ChevronDown, Menu, X } from 'lucide-react'
-import Image from 'next/image'
 import { useAuthModal } from '@/components/auth/auth-modal'
+import { BrandLogo } from '@/components/brand-logo'
 
 export function Header() {
   const { data: session, status } = useSession()
@@ -28,10 +28,7 @@ export function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-zinc-200/60">
       <nav className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
-        <Link href="/" className="flex items-center gap-2.5 group shrink-0">
-          <Image src="/images/B-stock.png" alt="B-Stock" width={36} height={36} className="rounded-lg h-8 w-8 sm:h-9 sm:w-9" />
-          <span className="text-lg font-bold tracking-tight text-zinc-950 whitespace-nowrap">B-Stock</span>
-        </Link>
+        <BrandLogo href="/" height={56} />
 
         <div className="hidden md:flex md:items-center md:gap-8">
           <Link href="/#features" className="text-sm font-medium text-zinc-500 hover:text-zinc-950 transition-colors">

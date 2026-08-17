@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
 import { recordSubscriptionPayment } from '@/lib/subscription'
 import { sql } from '@/lib/db'
+import { ensureUsersFullNameColumn } from '@/lib/ensure-users-schema'
 
 // GET /api/admin/companies/:id — Full tenant detail (info, usage, users, plan)
 export async function GET(
@@ -12,6 +13,8 @@ export async function GET(
   if (!authz.ok) return authz.response
 
   try {
+    await ensureUsersFullNameColumn()
+
     const { id } = await params
 
     const [company] = await sql`SELECT * FROM companies WHERE id = ${id}`
@@ -38,7 +41,12 @@ export async function GET(
       ? (await sql`SELECT * FROM subscription_plans WHERE name = ${company.subscription_plan_name}`)[0] ?? null
       : null
 
-    const plans = await sql`SELECT name, price_monthly, max_users, max_depots, max_products FROM subscription_plans WHERE is_active = true ORDER BY price_monthly ASC`
+    const plans = await sql`
+      SELECT id, name, display_name, price_monthly, max_users, max_depots, max_products
+      FROM subscription_plans
+      WHERE is_active = true
+      ORDER BY sort_order ASC NULLS LAST, price_monthly ASC
+    `
 
     return NextResponse.json({
       success: true,
@@ -70,30 +78,112 @@ export async function PATCH(
 
     if (action === 'set_plan') {
       const planName = String(body.planName || '')
-      const [plan] = await sql`SELECT name FROM subscription_plans WHERE name = ${planName}`
+      const [plan] = await sql`
+        SELECT id, name, price_monthly FROM subscription_plans WHERE name = ${planName} AND is_active = true
+      `
       if (!plan) return NextResponse.json({ error: 'Plan inconnu' }, { status: 400 })
 
-      const endsAt = new Date()
-      endsAt.setMonth(endsAt.getMonth() + 1)
+      const status = String(body.status || 'active')
+      if (!['trialing', 'active', 'past_due', 'canceled'].includes(status)) {
+        return NextResponse.json({ error: 'Statut invalide' }, { status: 400 })
+      }
 
-      await sql`
-        UPDATE companies SET
-          subscription_plan_name = ${planName},
-          subscription_status = 'active',
-          subscription_ends_at = ${endsAt.toISOString()},
-          updated_at = NOW()
-        WHERE id = ${id}
-      `
-      await recordSubscriptionPayment({
-        companyId: id,
+      // Durée : date personnalisée | mois | illimité | défaut +1 mois
+      let endsAt: string | null
+      let monthsRecorded = 1
+
+      if (body.unlimited === true || body.endsAt === null) {
+        endsAt = null
+        monthsRecorded = 0
+      } else if (body.endsAt) {
+        const d = new Date(String(body.endsAt))
+        if (Number.isNaN(d.getTime())) {
+          return NextResponse.json({ error: 'Date de fin invalide' }, { status: 400 })
+        }
+        endsAt = d.toISOString()
+        const diffMs = d.getTime() - Date.now()
+        monthsRecorded = Math.max(1, Math.round(diffMs / (30.44 * 24 * 60 * 60 * 1000)))
+      } else if (body.months != null && body.months !== '') {
+        const months = Math.max(1, parseInt(String(body.months), 10))
+        if (!months || Number.isNaN(months)) {
+          return NextResponse.json({ error: 'Nombre de mois invalide' }, { status: 400 })
+        }
+        const d = new Date()
+        d.setMonth(d.getMonth() + months)
+        endsAt = d.toISOString()
+        monthsRecorded = months
+      } else {
+        const d = new Date()
+        d.setMonth(d.getMonth() + 1)
+        endsAt = d.toISOString()
+        monthsRecorded = 1
+      }
+
+      const note = body.note ? String(body.note).slice(0, 500) : null
+      const paymentMethod = body.paymentMethod
+        ? String(body.paymentMethod).slice(0, 80)
+        : 'manual'
+      const amount =
+        body.amount != null && body.amount !== ''
+          ? Math.max(0, Number(body.amount))
+          : 0
+
+      if (status === 'trialing') {
+        // Essai personnalisé : la date de fin porte sur trial_ends_at
+        const trialEnds = endsAt ?? (() => {
+          const d = new Date()
+          d.setDate(d.getDate() + 30)
+          return d.toISOString()
+        })()
+        await sql`
+          UPDATE companies SET
+            subscription_plan_name = ${planName},
+            subscription_plan_id = ${plan.id},
+            subscription_status = 'trialing',
+            trial_ends_at = ${trialEnds},
+            subscription_ends_at = NULL,
+            updated_at = NOW()
+          WHERE id = ${id}
+        `
+      } else {
+        await sql`
+          UPDATE companies SET
+            subscription_plan_name = ${planName},
+            subscription_plan_id = ${plan.id},
+            subscription_status = ${status},
+            subscription_ends_at = ${endsAt},
+            updated_at = NOW()
+          WHERE id = ${id}
+        `
+      }
+
+      if (status === 'active' || status === 'trialing') {
+        await recordSubscriptionPayment({
+          companyId: id,
+          planName,
+          amount: Number.isFinite(amount) ? amount : 0,
+          months: monthsRecorded || 1,
+          status: 'manual',
+          provider: 'admin',
+          metadata: {
+            grantedBy: authz.adminEmail,
+            paymentMethod,
+            note,
+            endsAt,
+            status,
+          },
+        })
+      }
+
+      await logAdminAction(authz.adminId, authz.adminEmail, 'company.set_plan', 'company', id, {
         planName,
-        amount: 0,
-        months: 1,
-        status: 'manual',
-        provider: 'admin',
-        metadata: { grantedBy: authz.adminEmail },
+        status,
+        endsAt,
+        months: monthsRecorded,
+        paymentMethod,
+        note,
+        amount,
       })
-      await logAdminAction(authz.adminId, authz.adminEmail, 'company.set_plan', 'company', id, { planName })
     } else if (action === 'extend_trial') {
       const days = Math.max(1, parseInt(String(body.days || '0'), 10))
       if (!days) return NextResponse.json({ error: 'Nombre de jours invalide' }, { status: 400 })

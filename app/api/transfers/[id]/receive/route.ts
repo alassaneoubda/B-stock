@@ -3,13 +3,13 @@ import { requirePermission } from '@/lib/api-auth'
 import { sql, sqlRaw, transaction } from '@/lib/db'
 
 // POST /api/transfers/[id]/receive — Receive a depot transfer (deduct source, add destination)
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('transfers.write')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const transferId = params.id
+    const transferId = (await params).id
     const body = await request.json()
     const { items } = body // [{ id, quantity_received, quantity_damaged }]
 

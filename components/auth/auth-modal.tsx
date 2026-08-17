@@ -9,15 +9,15 @@ import {
   useRef,
 } from 'react'
 import { useRouter } from 'next/navigation'
-import { signIn } from 'next-auth/react'
+import { SessionProvider, signIn } from 'next-auth/react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import Image from 'next/image'
+import { GoogleButton } from '@/components/auth/google-button'
+import { BrandLogo } from '@/components/brand-logo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { GoogleButton } from '@/components/auth/google-button'
 import { Loader2, Eye, EyeOff, ArrowRight, X, Check } from 'lucide-react'
 
 type Mode = 'login' | 'register'
@@ -47,10 +47,12 @@ export function AuthModalProvider({ children }: { children: React.ReactNode }) {
   const close = useCallback(() => setIsOpen(false), [])
 
   return (
-    <AuthModalContext.Provider value={{ open, close }}>
-      {children}
-      <AuthModal isOpen={isOpen} mode={mode} setMode={setMode} onClose={close} />
-    </AuthModalContext.Provider>
+    <SessionProvider>
+      <AuthModalContext.Provider value={{ open, close }}>
+        {children}
+        <AuthModal isOpen={isOpen} mode={mode} setMode={setMode} onClose={close} />
+      </AuthModalContext.Provider>
+    </SessionProvider>
   )
 }
 
@@ -125,14 +127,7 @@ function AuthModal({
           {/* Header */}
           <div className="flex items-center justify-between px-5 sm:px-6 pt-5 pb-3">
             <div className="flex items-center gap-2.5">
-              <Image
-                src="/images/B-stock.png"
-                alt="B-Stock"
-                width={32}
-                height={32}
-                className="rounded-lg"
-              />
-              <span className="text-base font-bold tracking-tight text-zinc-950">B-Stock</span>
+              <BrandLogo href={false} height={88} />
             </div>
             <button
               onClick={onClose}

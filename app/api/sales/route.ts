@@ -64,6 +64,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Client introuvable' }, { status: 404 })
     }
 
+    // 1b. Pre-check product stock (prevents sale when UPDATE would match 0 rows)
+    for (const item of data.items) {
+      const stockRows = await sql`
+        SELECT COALESCE(SUM(quantity), 0) AS qty
+        FROM stock
+        WHERE depot_id = ${data.depotId}
+          AND product_variant_id = ${item.productVariantId}
+      `
+      const available = Number(stockRows[0]?.qty || 0)
+      if (available < item.quantity) {
+        return NextResponse.json(
+          {
+            error: `Stock insuffisant pour un article (disponible: ${available}, demandé: ${item.quantity})`,
+            code: 'INSUFFICIENT_STOCK',
+          },
+          { status: 400 }
+        )
+      }
+    }
+
+    // 1c. Pre-check packaging stock for net outs
+    if (data.packagingItems?.length) {
+      for (const pkg of data.packagingItems) {
+        if (pkg.quantityOut <= 0) continue
+        const pkgRows = await sql`
+          SELECT COALESCE(SUM(quantity), 0) AS qty
+          FROM packaging_stock
+          WHERE depot_id = ${data.depotId}
+            AND packaging_type_id = ${pkg.packagingTypeId}
+        `
+        const available = Number(pkgRows[0]?.qty || 0)
+        if (available < pkg.quantityOut) {
+          return NextResponse.json(
+            {
+              error: `Stock emballage insuffisant (disponible: ${available}, demandé: ${pkg.quantityOut})`,
+              code: 'INSUFFICIENT_PACKAGING_STOCK',
+            },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
     // 2. If credit payment, check product credit limit
     if (data.paymentMethod === 'credit') {
       const productAccounts = await sql`

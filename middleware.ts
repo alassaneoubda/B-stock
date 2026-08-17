@@ -1,18 +1,27 @@
-import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { getToken } from 'next-auth/jwt'
 
-export default auth((req) => {
+/**
+ * Edge-compatible middleware — uses JWT only (no Node crypto / bcrypt / Neon).
+ */
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
-  const isLoggedIn = !!req.auth
-  const isPlatformAdmin = req.auth?.user?.isPlatformAdmin === true
+  const token = await getToken({
+    req,
+    secret: process.env.AUTH_SECRET,
+  })
 
-  // API routes that require authentication
-  const isProtectedApiRoute = pathname.startsWith('/api/') && !pathname.startsWith('/api/auth') && !pathname.startsWith('/api/webhooks')
+  const isLoggedIn = !!token
+  const isPlatformAdmin = token?.isPlatformAdmin === true
 
-  // Dashboard routes
+  const isProtectedApiRoute =
+    pathname.startsWith('/api/') &&
+    !pathname.startsWith('/api/auth') &&
+    !pathname.startsWith('/api/webhooks')
+
   const isDashboardRoute = pathname.startsWith('/dashboard')
 
-  // ===== Back office plateforme (/admin) =====
   const isAdminLogin = pathname === '/admin/login'
   const isAdminArea = pathname.startsWith('/admin') && !isAdminLogin
 
@@ -23,7 +32,6 @@ export default auth((req) => {
       return NextResponse.redirect(loginUrl)
     }
     if (!isPlatformAdmin) {
-      // Tenant user trying to reach the back office
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
     return NextResponse.next()
@@ -33,25 +41,24 @@ export default auth((req) => {
     return NextResponse.redirect(new URL('/admin', req.url))
   }
 
-  // A real platform admin has no tenant context -> keep them in the back office
   if (isPlatformAdmin && isDashboardRoute) {
     return NextResponse.redirect(new URL('/admin', req.url))
   }
 
-  // Redirect to login if accessing protected routes without auth
   if (!isLoggedIn && (isDashboardRoute || isProtectedApiRoute)) {
     const loginUrl = new URL('/login', req.url)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  // Redirect if already logged in and accessing auth pages
   if (isLoggedIn && (pathname === '/login' || pathname === '/register')) {
-    return NextResponse.redirect(new URL(isPlatformAdmin ? '/admin' : '/dashboard', req.url))
+    return NextResponse.redirect(
+      new URL(isPlatformAdmin ? '/admin' : '/dashboard', req.url)
+    )
   }
 
   return NextResponse.next()
-})
+}
 
 export const config = {
   matcher: [

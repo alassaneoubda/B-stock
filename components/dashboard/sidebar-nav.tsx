@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
+import { BrandLogo } from '@/components/brand-logo'
 import {
   Sidebar,
   SidebarContent,
@@ -273,20 +274,16 @@ export function DashboardSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-zinc-200/60 bg-white">
-      <SidebarHeader className="h-14 flex items-center justify-center border-b border-zinc-200/60 px-4">
+      <SidebarHeader className="h-[4.5rem] flex items-center border-b border-zinc-200/60 px-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild className="hover:bg-transparent">
-              <Link href="/dashboard" className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-950">
-                  <span className="text-white text-sm font-bold">B</span>
-                </div>
-                <div className="flex flex-col gap-0 leading-none">
-                  <span className="font-bold text-sm text-zinc-950">B-Stock</span>
-                  <span className="text-[10px] text-zinc-400 truncate max-w-[120px]">
-                    {session?.user?.companyName || 'Distribution'}
-                  </span>
-                </div>
+            <SidebarMenuButton size="lg" asChild className="hover:bg-transparent h-auto py-2">
+              <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
+                <BrandLogo href={false} height={52} className="shrink-0 group-data-[collapsible=icon]:hidden" />
+                <span className="sr-only">B-Stock</span>
+                <span className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-950 text-sm font-bold text-white group-data-[collapsible=icon]:flex">
+                  B
+                </span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

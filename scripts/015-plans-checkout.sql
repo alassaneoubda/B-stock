@@ -2,12 +2,31 @@
 -- source unique pour le checkout GeniusPay (tarifs par intervalle, features
 -- marketing, nom d'affichage, visibilité). Idempotent.
 
+-- Colonnes cœur (si la table existait déjà avec un schéma incomplet)
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(255);
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_monthly DECIMAL(10,2);
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS price_yearly DECIMAL(10,2);
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS max_users INT;
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS max_depots INT;
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS max_products INT;
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS max_clients INT DEFAULT -1;
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS features JSONB;
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_price_id_monthly VARCHAR(255);
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_price_id_yearly VARCHAR(255);
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+
+-- Colonnes checkout / marketing
 ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS display_name VARCHAR(150);
 ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_popular BOOLEAN DEFAULT false;
 ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT true;
 ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS sort_order INT DEFAULT 0;
 ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS checkout_prices JSONB;
 ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS marketing_features JSONB;
+
+-- Index unique requis pour ON CONFLICT (name)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_plans_name ON subscription_plans(name);
 
 -- Les anciens plans (starter/professional/enterprise) ne sont plus exposés au checkout
 UPDATE subscription_plans SET is_public = false

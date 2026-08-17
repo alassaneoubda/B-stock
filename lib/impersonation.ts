@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 
 /**
  * Impersonation tokens — short-lived, HMAC-signed proofs that a super-admin

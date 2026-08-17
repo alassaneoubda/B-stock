@@ -7,7 +7,7 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireAuth()
+  const authz = await requireAuth({ skipSubscriptionCheck: true })
   if (!authz.ok) return authz.response
   const { session } = authz
 

@@ -4,7 +4,7 @@ import { sql } from '@/lib/db'
 
 // GET /api/announcements — active announcements targeting the current user/company
 export async function GET() {
-  const authz = await requireAuth()
+  const authz = await requireAuth({ skipSubscriptionCheck: true })
   if (!authz.ok) return authz.response
   const { session } = authz
 

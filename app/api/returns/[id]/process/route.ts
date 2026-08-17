@@ -3,13 +3,13 @@ import { requirePermission } from '@/lib/api-auth'
 import { sql, sqlRaw, transaction } from '@/lib/db'
 
 // POST /api/returns/[id]/process — Approve and process a return (restock + credit/refund)
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('returns.process')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const returnId = params.id
+    const returnId = (await params).id
     const body = await request.json()
     const { action } = body // 'approve' or 'reject'
 

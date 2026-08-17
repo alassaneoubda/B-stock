@@ -3,13 +3,13 @@ import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 // POST /api/cash/movements/[id]/validate — Validate or reject a cash movement
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const authz = await requirePermission('cash.manage')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const movementId = params.id
+    const movementId = (await params).id
     const body = await request.json()
     const { approved, notes } = body
 

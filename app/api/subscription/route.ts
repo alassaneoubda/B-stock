@@ -6,7 +6,8 @@ import { getPublicPlans } from '@/lib/plans'
 // GET /api/subscription — Get current subscription info + available plans
 export async function GET() {
     try {
-        const authz = await requireAuth()
+        // Must remain reachable when trial/subscription expired (renewal UI)
+        const authz = await requireAuth({ skipSubscriptionCheck: true })
         if (!authz.ok) return authz.response
         const { session } = authz
 
