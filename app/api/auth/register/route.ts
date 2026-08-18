@@ -3,9 +3,14 @@ import { randomUUID } from 'crypto'
 import { hash } from 'bcryptjs'
 import { sql, sqlRaw, transaction } from '@/lib/db'
 import { getSettings } from '@/lib/settings'
+import { ensureCompaniesSchema } from '@/lib/ensure-companies-schema'
+import { ensureUsersFullNameColumn } from '@/lib/ensure-users-schema'
 
 export async function POST(request: Request) {
   try {
+    await ensureCompaniesSchema()
+    await ensureUsersFullNameColumn()
+
     const body = await request.json()
     const { companyName, fullName, email, phone, password } = body
 

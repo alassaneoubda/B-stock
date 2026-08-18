@@ -4,6 +4,8 @@ import Google from 'next-auth/providers/google'
 import { compare } from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import { sql, sqlRaw, transaction } from './db'
+import { ensureCompaniesSchema } from './ensure-companies-schema'
+import { ensureUsersFullNameColumn } from './ensure-users-schema'
 import { verifyImpersonationToken } from './impersonation'
 import { getSettings } from './settings'
 import type { UserRole } from './types'
@@ -77,6 +79,9 @@ async function getOrCreateOAuthUser(
   }
 
   // First-time Google user -> provision a fresh tenant
+  await ensureCompaniesSchema()
+  await ensureUsersFullNameColumn()
+
   const companyId = randomUUID()
   const displayName = name?.trim() || email.split('@')[0]
   const slug =
