@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
+import { createProductForCompany, DuplicateSkuError } from '@/lib/products'
 
 const productSchema = z.object({
   name: z.string().min(1, 'Nom du produit requis'),
@@ -33,90 +34,31 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = productSchema.parse(body)
 
-    // Check for duplicate SKU
-    if (data.sku) {
-      const existing = await sql`
-        SELECT id FROM products
-        WHERE company_id = ${companyId} AND sku = ${data.sku} AND is_active = true
-      `
-      if (existing.length > 0) {
-        return NextResponse.json(
-          { error: 'Un produit avec ce SKU existe déjà' },
-          { status: 409 }
-        )
-      }
-    }
-
-    const products = await sql`
-      INSERT INTO products (
-        company_id, name, sku, category, brand, description,
-        base_unit, purchase_price, selling_price, image_url
-      ) VALUES (
-        ${companyId}, ${data.name}, ${data.sku || null},
-        ${data.category || null}, ${data.brand || null},
-        ${data.description || null}, ${data.baseUnit},
-        ${data.purchasePrice}, ${data.sellingPrice},
-        ${data.imageUrl || null}
-      )
-      RETURNING *
-    `
-
-    const productId = products[0].id
-
-    // Auto-create packaging type corresponding to this product
-    const packagingName = `Emballage - ${data.name} ${data.baseUnit === 'bouteille' ? '' : data.baseUnit}`.trim()
-    const packagingTypes = await sql`
-      INSERT INTO packaging_types (
-        company_id, name, units_per_case, is_returnable, deposit_price
-      ) VALUES (
-        ${companyId}, ${packagingName}, 1, true, 0
-      )
-      RETURNING id
-    `
-    const newPackagingTypeId = packagingTypes[0].id
-
-    // Initialize packaging stock for all depots
-    const depots = await sql`SELECT id FROM depots WHERE company_id = ${companyId}`
-    if (depots.length > 0) {
-      for (const depot of depots) {
-        await sql`
-          INSERT INTO packaging_stock (depot_id, packaging_type_id, quantity)
-          VALUES (${depot.id}, ${newPackagingTypeId}, 0)
-        `
-      }
-    }
-
-    // Create variants if provided
-    if (data.variants && data.variants.length > 0) {
-      for (const variant of data.variants) {
-        await sql`
-          INSERT INTO product_variants(
-            product_id, packaging_type_id, barcode, price, cost_price
-          ) VALUES(
-            ${productId}, ${variant.packagingTypeId},
-            ${variant.barcode || null}, ${variant.price},
-            ${variant.costPrice || null}
-          )
-        `
-      }
-    } else {
-      // Auto-create default variant using the newly created packaging
-      await sql`
-        INSERT INTO product_variants(
-          product_id, packaging_type_id, barcode, price, cost_price
-        ) VALUES(
-          ${productId}, ${newPackagingTypeId},
-          NULL, ${data.sellingPrice}, ${data.purchasePrice}
-        )
-      `
-    }
+    const product = await createProductForCompany(companyId, {
+      name: data.name,
+      sku: data.sku,
+      category: data.category,
+      brand: data.brand,
+      description: data.description,
+      baseUnit: data.baseUnit,
+      purchasePrice: data.purchasePrice,
+      sellingPrice: data.sellingPrice,
+      imageUrl: data.imageUrl,
+      variants: data.variants,
+    })
 
     return NextResponse.json({
       success: true,
-      data: products[0],
+      data: product,
       message: 'Produit créé avec succès',
     }, { status: 201 })
   } catch (error) {
+    if (error instanceof DuplicateSkuError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 409 }
+      )
+    }
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Données invalides', details: error.errors },

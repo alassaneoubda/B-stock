@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Plus, Search, MoreHorizontal, Package, Edit, Trash2, Eye, Check, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
+import { ProductCatalogSetup } from '@/components/dashboard/product-catalog-setup'
 
 interface Product {
   id: string
@@ -113,6 +114,10 @@ export default async function ProductsPage() {
       />
 
       <main className="flex-1 p-4 lg:p-6 space-y-6">
+        {products.length === 0 ? (
+          <ProductCatalogSetup />
+        ) : (
+          <>
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {statsData.map((stat) => (
@@ -133,24 +138,6 @@ export default async function ProductsPage() {
             <h3 className="text-sm font-semibold text-zinc-950">Catalogue</h3>
           </div>
 
-          {products.length === 0 ? (
-            <div className="text-center py-16 flex flex-col items-center">
-              <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
-                <Package className="h-6 w-6 text-zinc-400" />
-              </div>
-              <h3 className="text-sm font-semibold text-zinc-950">Aucun produit</h3>
-              <p className="mt-1 text-sm text-zinc-500 max-w-xs">
-                Ajoutez vos premiers articles pour commencer.
-              </p>
-              <Button size="sm" className="mt-4" asChild>
-                <Link href="/dashboard/products/new">
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Ajouter un produit
-                </Link>
-              </Button>
-            </div>
-          ) : (
-            <>
               {/* Desktop table */}
               <div className="hidden md:block overflow-x-auto">
                 <Table>
@@ -262,9 +249,9 @@ export default async function ProductsPage() {
                   </Link>
                 ))}
               </div>
-            </>
-          )}
         </div>
+          </>
+        )}
       </main>
     </div>
   )
