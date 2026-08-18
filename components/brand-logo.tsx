@@ -2,7 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
-const LOGO_SRC = '/images/b-stock-logo.png?v=3'
+const LOGO_SRC = '/images/b-stock-logo.png?v=5'
 /** Ratio réel du PNG après détourage / trim (~1:1) */
 const LOGO_RATIO = 648 / 624
 
@@ -28,15 +28,17 @@ export function BrandLogo({
   const width = Math.round(height * LOGO_RATIO)
 
   const img = (
-    <Image
-      src={LOGO_SRC}
-      alt="B-STOCK — Distribution de boissons, Côte d’Ivoire"
-      width={width}
-      height={height}
-      priority={priority}
-      className={cn('h-auto w-auto max-w-none object-contain', className)}
-      style={{ height, width: 'auto' }}
-    />
+    <span className={cn('inline-flex items-center justify-center', className)}>
+      <Image
+        src={LOGO_SRC}
+        alt="B-STOCK — Distribution de boissons, Côte d’Ivoire"
+        width={width}
+        height={height}
+        priority={priority}
+        className="h-auto w-auto max-h-full max-w-full object-contain object-center"
+        style={{ height, width: 'auto' }}
+      />
+    </span>
   )
 
   if (href === false) return img

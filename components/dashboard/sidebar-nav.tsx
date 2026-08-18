@@ -286,20 +286,21 @@ export function DashboardSidebar({
 
   return (
     <Sidebar collapsible="icon" className="border-r border-zinc-200/60 bg-white">
-      <SidebarHeader className="h-[4.5rem] flex items-center border-b border-zinc-200/60 px-3">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild className="hover:bg-transparent h-auto py-2">
-              <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
-                <BrandLogo href={false} height={52} className="shrink-0 group-data-[collapsible=icon]:hidden" />
-                <span className="sr-only">B-Stock</span>
-                <span className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-950 text-sm font-bold text-white group-data-[collapsible=icon]:flex">
-                  B
-                </span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarHeader className="flex h-auto shrink-0 items-center justify-center border-b border-zinc-200/60 px-4 py-5 group-data-[collapsible=icon]:h-14 group-data-[collapsible=icon]:p-2">
+        <Link
+          href="/dashboard"
+          className="flex w-full items-center justify-center group-data-[collapsible=icon]:hidden"
+          aria-label="B-STOCK — Tableau de bord"
+        >
+          <BrandLogo href={false} height={128} className="mx-auto" />
+        </Link>
+        <Link
+          href="/dashboard"
+          className="hidden h-9 w-9 items-center justify-center rounded-lg bg-zinc-950 text-sm font-bold text-white group-data-[collapsible=icon]:flex"
+          aria-label="B-STOCK"
+        >
+          B
+        </Link>
       </SidebarHeader>
 
       <SidebarContent className="px-3 pt-4 gap-4">
