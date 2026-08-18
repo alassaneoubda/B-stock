@@ -100,8 +100,8 @@ async function getOrCreateOAuthUser(
       VALUES (${companyId}, ${displayName}, ${slug}, ${email}, 'trialing', ${trialEndsAt.toISOString()}, false)
     `,
     sqlRaw`
-      INSERT INTO users (company_id, email, full_name, role, auth_provider, avatar_url)
-      VALUES (${companyId}, ${email}, ${displayName}, 'owner', 'google', ${image || null})
+      INSERT INTO users (company_id, email, name, full_name, role, auth_provider, avatar_url)
+      VALUES (${companyId}, ${email}, ${displayName}, ${displayName}, 'owner', 'google', ${image || null})
     `,
     sqlRaw`
       INSERT INTO depots (company_id, name, is_main)

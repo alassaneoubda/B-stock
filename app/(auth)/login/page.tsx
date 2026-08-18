@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { GoogleButton } from '@/components/auth/google-button'
+import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
 import { Loader2, Eye, EyeOff, ArrowRight } from 'lucide-react'
 
 const loginSchema = z.object({
@@ -25,7 +26,7 @@ function mapAuthError(code: string): string {
     case 'Configuration':
       return "Connexion Google indisponible : configuration OAuth invalide. Réessayez avec votre email ou contactez l'administrateur."
     case 'AccessDenied':
-      return 'Accès refusé. Votre compte n\u2019est pas autorisé.'
+      return 'Accès refusé. Votre compte n’est pas autorisé.'
     case 'OAuthAccountNotLinked':
       return 'Cet email est déjà utilisé avec une autre méthode de connexion.'
     case 'OAuthSignin':
@@ -38,22 +39,26 @@ function mapAuthError(code: string): string {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>}>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[#F7F4EF]">
+          <Loader2 className="h-6 w-6 animate-spin text-[#F58233]" />
+        </div>
+      }
+    >
       <LoginContent />
     </Suspense>
   )
 }
 
 function LoginContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
   const urlError = searchParams.get('error')
+  const registered = searchParams.get('registered') === 'true'
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState<string | null>(
-    urlError ? mapAuthError(urlError) : null
-  )
+  const [error, setError] = useState<string | null>(urlError ? mapAuthError(urlError) : null)
 
   const {
     register,
@@ -77,8 +82,7 @@ function LoginContent() {
       if (result?.error) {
         setError('Email ou mot de passe incorrect')
       } else {
-        router.push(callbackUrl)
-        router.refresh()
+        window.location.assign(callbackUrl.startsWith('/') ? callbackUrl : '/dashboard')
       }
     } catch {
       setError('Une erreur est survenue. Veuillez réessayer.')
@@ -88,137 +92,108 @@ function LoginContent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Left side — Branding */}
-      <div className="hidden lg:flex lg:w-[45%] bg-zinc-950 flex-col justify-between p-12 text-white relative overflow-hidden">
-        <div className="absolute inset-0 opacity-30">
-          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600 rounded-full blur-[100px]" />
-          <div className="absolute bottom-[10%] right-[-10%] w-[40%] h-[40%] bg-blue-400 rounded-full blur-[80px]" />
-        </div>
+    <AuthSplitLayout
+      imageSrc="/images/landing/landing-hero-depot.jpg"
+      imageAlt="Dépôt de boissons B-STOCK"
+      headline="Gérez votre dépôt comme un vrai métier."
+      subline="Stock, ventes, tournées et consignes — une seule application pour les distributeurs en Côte d’Ivoire."
+      imageSide="left"
+    >
+      <h1 className="text-2xl font-bold tracking-tight text-[#0F172A]">Connexion</h1>
+      <p className="mt-1 text-sm text-[#64748B]">Accédez à votre tableau de bord</p>
 
-        <div className="relative z-10">
-          <Link href="/" className="inline-flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center">
-              <span className="text-white text-sm font-bold">B</span>
-            </div>
-            <span className="text-xl font-bold">B-Stock</span>
-          </Link>
+      {registered && (
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
+          Compte créé. Connectez-vous pour continuer.
         </div>
+      )}
 
-        <div className="relative z-10 max-w-md">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight mb-4">
-            Gérez votre distribution avec confiance.
-          </h1>
-          <p className="text-zinc-400 leading-relaxed">
-            Une plateforme conçue pour les distributeurs de boissons en Afrique. Stock, ventes, livraisons — tout au même endroit.
-          </p>
-        </div>
-
-        <p className="relative z-10 text-xs text-zinc-600">
-          © {new Date().getFullYear()} B-Stock
-        </p>
+      <div className="mt-6">
+        <GoogleButton label="Continuer avec Google" callbackUrl={callbackUrl} />
       </div>
 
-      {/* Right side — Form */}
-      <div className="flex-1 flex flex-col justify-center items-center px-6 py-12 bg-white">
-        <div className="w-full max-w-[400px] space-y-8">
-          {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-2.5 mb-4">
-            <div className="h-8 w-8 rounded-lg bg-zinc-950 flex items-center justify-center">
-              <span className="text-white text-sm font-bold">B</span>
-            </div>
-            <span className="text-lg font-bold text-zinc-950">B-Stock</span>
+      <div className="my-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-[#E7E0D6]" />
+        <span className="text-xs text-[#94A3B8]">ou avec votre email</span>
+        <div className="h-px flex-1 bg-[#E7E0D6]" />
+      </div>
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+            {error}
           </div>
+        )}
 
-          <div>
-            <h2 className="text-2xl font-bold text-zinc-950 mb-1">Connexion</h2>
-            <p className="text-sm text-zinc-500">
-              Accédez à votre tableau de bord
-            </p>
-          </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-sm font-medium text-[#334155]">
+            Email
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="nom@entreprise.com"
+            className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6]"
+            {...register('email')}
+            disabled={isLoading}
+          />
+          {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+        </div>
 
-          <GoogleButton label="Se connecter avec Google" callbackUrl={callbackUrl} />
-
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-zinc-200" />
-            <span className="text-xs text-zinc-400">ou avec votre email</span>
-            <div className="h-px flex-1 bg-zinc-200" />
-          </div>
-
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            {error && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium animate-in fade-in slide-in-from-top-2">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm font-medium text-zinc-700">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="nom@entreprise.com"
-                className="h-10"
-                {...register('email')}
-                disabled={isLoading}
-              />
-              {errors.email && (
-                <p className="text-xs text-red-500">{errors.email.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-medium text-zinc-700">Mot de passe</Label>
-                <Link href="/forgot-password" className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors">
-                  Mot de passe oublié ?
-                </Link>
-              </div>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  className="h-10 pr-10"
-                  {...register('password')}
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="text-xs text-red-500">{errors.password.message}</p>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full h-10 bg-zinc-950 hover:bg-zinc-800 text-white text-sm font-semibold"
-              disabled={isLoading}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password" className="text-sm font-medium text-[#334155]">
+              Mot de passe
+            </Label>
+            <Link
+              href="/forgot-password"
+              className="text-xs font-medium text-[#EA580C] hover:text-[#C2410C]"
             >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <span className="flex items-center justify-center gap-2">
-                  Se connecter <ArrowRight className="h-4 w-4" />
-                </span>
-              )}
-            </Button>
-          </form>
-
-          <p className="text-center text-sm text-zinc-500">
-            Pas encore de compte ?{' '}
-            <Link href="/register" className="font-medium text-zinc-950 hover:underline">
-              Créer un compte
+              Mot de passe oublié ?
             </Link>
-          </p>
+          </div>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="••••••••"
+              className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6] pr-10"
+              {...register('password')}
+              disabled={isLoading}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#475569]"
+              aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
         </div>
-      </div>
-    </div>
+
+        <Button
+          type="submit"
+          className="mt-2 h-11 w-full rounded-full bg-[#F58233] text-sm font-semibold text-white hover:bg-[#E06B1A]"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <span className="flex items-center justify-center gap-2">
+              Se connecter <ArrowRight className="h-4 w-4" />
+            </span>
+          )}
+        </Button>
+      </form>
+
+      <p className="mt-6 text-center text-sm text-[#64748B]">
+        Pas encore de compte ?{' '}
+        <Link href="/register" className="font-semibold text-[#0F172A] hover:underline">
+          Créer un compte
+        </Link>
+      </p>
+    </AuthSplitLayout>
   )
 }

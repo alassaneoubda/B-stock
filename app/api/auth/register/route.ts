@@ -74,8 +74,8 @@ export async function POST(request: Request) {
         VALUES (${companyId}, ${companyName}, ${slug}, ${email}, ${phone || null}, 'trialing', ${trialEndsAt.toISOString()})
       `,
       sqlRaw`
-        INSERT INTO users (company_id, email, password_hash, full_name, phone, role)
-        VALUES (${companyId}, ${email}, ${passwordHash}, ${fullName}, ${phone || null}, 'owner')
+        INSERT INTO users (company_id, email, password_hash, name, full_name, phone, role)
+        VALUES (${companyId}, ${email}, ${passwordHash}, ${fullName}, ${fullName}, ${phone || null}, 'owner')
       `,
       sqlRaw`
         INSERT INTO depots (company_id, name, is_main)

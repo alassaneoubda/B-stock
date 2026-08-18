@@ -49,7 +49,7 @@ export function GoogleButton({
       variant="outline"
       onClick={handleClick}
       disabled={isLoading}
-      className="w-full h-10 text-sm font-medium border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+      className="w-full h-11 rounded-xl text-sm font-medium border-[#E7E0D6] bg-white text-[#334155] hover:bg-[#FBF9F6]"
     >
       {isLoading ? (
         <Loader2 className="h-4 w-4 animate-spin" />

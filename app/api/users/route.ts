@@ -56,9 +56,9 @@ export async function POST(request: NextRequest) {
 
         const users = await sql`
             INSERT INTO users (
-                company_id, full_name, email, password_hash, role, phone, permissions
+                company_id, name, full_name, email, password_hash, role, phone, permissions
             ) VALUES (
-                ${session.user.companyId}, ${data.fullName}, ${data.email}, ${passwordHash}, ${data.role}, ${data.phone || null}, ${permissionsJson}
+                ${session.user.companyId}, ${data.fullName}, ${data.fullName}, ${data.email}, ${passwordHash}, ${data.role}, ${data.phone || null}, ${permissionsJson}
             )
             RETURNING id, full_name, email, role
         `
