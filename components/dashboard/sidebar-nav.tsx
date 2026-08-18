@@ -240,9 +240,21 @@ function isActive(pathname: string, href: string, exact?: boolean) {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
-export function DashboardSidebar() {
+export function DashboardSidebar({
+  user: serverUser,
+}: {
+  user?: {
+    name?: string | null
+    email?: string | null
+    role?: string
+    permissions?: string[]
+    companyName?: string | null
+    isPlatformAdmin?: boolean
+  }
+}) {
   const pathname = usePathname()
-  const { data: session, status } = useSession()
+  const { data: session } = useSession()
+  const user = serverUser ?? session?.user
 
   const getInitials = (name: string) => {
     return name
@@ -264,13 +276,13 @@ export function DashboardSidebar() {
   }
 
   const canSee = (item: { requiredPermission?: string }) => {
-    // While session is loading, show all items (auth is already verified server-side in layout)
-    if (status === 'loading') return true
-    if (!session?.user) return false
-    if (session.user.role === 'owner') return true
+    if (!user) return true
+    if (user.role === 'owner' || user.isPlatformAdmin) return true
     if (!item.requiredPermission) return true
-    return session.user.permissions?.includes(item.requiredPermission)
+    return user.permissions?.includes(item.requiredPermission) ?? false
   }
+
+  const displayName = user?.name || user?.companyName || user?.email || 'Mon compte'
 
   return (
     <Sidebar collapsible="icon" className="border-r border-zinc-200/60 bg-white">
@@ -419,15 +431,15 @@ export function DashboardSidebar() {
                 >
                   <Avatar className="h-7 w-7 rounded-md shrink-0">
                     <AvatarFallback className="bg-zinc-900 text-white text-xs font-medium rounded-md">
-                      {session?.user?.name ? getInitials(session.user.name) : 'U'}
+                      {user?.name ? getInitials(user.name) : 'U'}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col gap-0 leading-none text-left min-w-0 ml-1">
                     <span className="font-medium truncate text-sm text-zinc-950">
-                      {session?.user?.name || 'Administrateur'}
+                      {displayName}
                     </span>
                     <span className="text-[10px] text-zinc-400">
-                      {getRoleBadge(session?.user?.role)}
+                      {getRoleBadge(user?.role)}
                     </span>
                   </div>
                   <ChevronsUpDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-400" />
@@ -440,8 +452,8 @@ export function DashboardSidebar() {
                 sideOffset={8}
               >
                 <div className="px-3 py-2 border-b border-zinc-100 mb-1">
-                  <p className="text-sm font-medium text-zinc-950">{session?.user?.name}</p>
-                  <p className="text-xs text-zinc-500">{session?.user?.email}</p>
+                  <p className="text-sm font-medium text-zinc-950">{displayName}</p>
+                  <p className="text-xs text-zinc-500">{user?.email}</p>
                 </div>
                 <DropdownMenuItem asChild className="cursor-pointer">
                   <Link href="/dashboard/profile" className="flex items-center gap-2">

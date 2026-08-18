@@ -21,7 +21,9 @@ export function DashboardHeader({ title, description, actions }: DashboardHeader
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 bg-white border-b border-zinc-200/60 px-4 lg:px-6 sticky top-0 z-40">
       <div className="flex items-center gap-3 flex-1 min-w-0">
-        <SidebarTrigger className="h-8 w-8 rounded-md hover:bg-zinc-100 transition-colors" />
+        <SidebarTrigger className="h-9 w-auto shrink-0 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 text-zinc-800 hover:bg-zinc-100 md:border-0 md:bg-transparent md:px-2">
+          <span className="text-sm font-medium md:hidden">Menu</span>
+        </SidebarTrigger>
         <div className="h-5 w-px bg-zinc-200 hidden sm:block" />
         <div className="flex flex-col min-w-0">
           <h1 className="text-sm font-semibold text-zinc-950 truncate">{title}</h1>

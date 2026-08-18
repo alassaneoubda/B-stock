@@ -3,7 +3,6 @@ import { auth } from '@/lib/auth'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { DashboardSidebar } from '@/components/dashboard/sidebar-nav'
 import { MobileBottomNav } from '@/components/dashboard/mobile-bottom-nav'
-import { AuthProvider } from '@/components/providers/session-provider'
 import { SubscriptionGate } from '@/components/dashboard/subscription-gate'
 import { ImpersonationBanner } from '@/components/dashboard/impersonation-banner'
 import { AnnouncementBanner } from '@/components/dashboard/announcement-banner'
@@ -43,12 +42,12 @@ export default async function DashboardLayout({
   }
 
   return (
-    <AuthProvider>
+    <>
       {session.user.impersonatedBy && (
         <ImpersonationBanner companyName={session.user.companyName} />
       )}
-      <SidebarProvider>
-        <DashboardSidebar />
+      <SidebarProvider defaultOpen>
+        <DashboardSidebar user={session.user} />
         <SidebarInset className="has-bottom-nav">
           <AnnouncementBanner />
           <SubscriptionGate>
@@ -57,6 +56,6 @@ export default async function DashboardLayout({
         </SidebarInset>
         <MobileBottomNav />
       </SidebarProvider>
-    </AuthProvider>
+    </>
   )
 }

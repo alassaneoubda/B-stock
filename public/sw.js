@@ -17,7 +17,7 @@
  * Pour bumper le cache lors d'un déploiement, incrémenter VERSION.
  */
 
-const VERSION = 'v2'
+const VERSION = 'v3'
 const STATIC_CACHE = `bstock-static-${VERSION}`
 const PAGE_CACHE = `bstock-pages-${VERSION}`
 const OFFLINE_URL = '/offline'
