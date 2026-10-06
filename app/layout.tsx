@@ -18,6 +18,21 @@ export const metadata: Metadata = {
   title: 'B-Stock - Gestion de Distribution de Boissons',
   description: 'La solution complète pour la gestion de distribution et de stock de boissons en Afrique. Gérez votre stock, vos clients, vos ventes et vos livraisons.',
   manifest: '/manifest.webmanifest',
+  openGraph: {
+    type: 'website',
+    locale: 'fr_CI',
+    siteName: APP_NAME,
+    title: 'B-Stock — La gestion de distribution de boissons, enfin simple',
+    description:
+      'Stock, ventes, crédits clients, emballages consignés, caisse et livraisons : tout votre dépôt dans une seule application.',
+    images: [{ url: '/images/landing/landing-hero-depot.jpg', width: 1536, height: 1024, alt: 'Dépôt de boissons géré avec B-Stock' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'B-Stock — Gestion de distribution de boissons',
+    description: 'Stock, ventes, crédits, consignes, caisse et livraisons dans une seule application.',
+    images: ['/images/landing/landing-hero-depot.jpg'],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
