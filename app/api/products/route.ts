@@ -2,27 +2,41 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
-import { createProductForCompany, DuplicateSkuError } from '@/lib/products'
+import { handleRouteError } from '@/lib/errors'
+import { createProductForCompany } from '@/lib/products'
 
 const productSchema = z.object({
-  name: z.string().min(1, 'Nom du produit requis'),
-  sku: z.string().optional(),
-  category: z.string().optional(),
-  brand: z.string().optional(),
-  description: z.string().optional(),
-  baseUnit: z.string().default('casier'),
+  name: z.string().trim().min(1, 'Nom du produit requis').max(255),
+  sku: z.string().trim().max(100).optional(),
+  category: z.string().max(100).optional(),
+  brand: z.string().max(100).optional(),
+  description: z.string().max(5000).optional(),
+  baseUnit: z.string().min(1).max(50).default('casier'),
   purchasePrice: z.number().min(0).default(0),
   sellingPrice: z.number().min(0).default(0),
-  imageUrl: z.string().optional(),
-  variants: z.array(
-    z.object({
-      packagingTypeId: z.string().uuid(),
-      barcode: z.string().optional(),
-      price: z.number().min(0),
-      costPrice: z.number().min(0).optional(),
-    })
-  ).optional(),
+  imageUrl: z.string().max(2000).optional(),
+  variants: z
+    .array(
+      z.object({
+        packagingTypeId: z.string().uuid(),
+        barcode: z.string().max(100).optional(),
+        price: z.number().min(0),
+        costPrice: z.number().min(0).optional(),
+      })
+    )
+    .max(50)
+    .optional(),
 })
+
+/** ?limit (défaut 500 : la liste alimente des listes déroulantes, max 500) / ?offset */
+function parsePage(searchParams: URLSearchParams, defaultLimit = 500) {
+  const limit = Number.parseInt(searchParams.get('limit') ?? '', 10)
+  const offset = Number.parseInt(searchParams.get('offset') ?? '', 10)
+  return {
+    limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : defaultLimit,
+    offset: Number.isFinite(offset) && offset > 0 ? offset : 0,
+  }
+}
 
 // POST /api/products — Create a new product
 export async function POST(request: NextRequest) {
@@ -31,9 +45,9 @@ export async function POST(request: NextRequest) {
     if (!authz.ok) return authz.response
     const { companyId } = authz
 
-    const body = await request.json()
-    const data = productSchema.parse(body)
+    const data = productSchema.parse(await request.json())
 
+    // Transaction + contrôle d'appartenance des emballages + verrou SKU dans createProductForCompany
     const product = await createProductForCompany(companyId, {
       name: data.name,
       sku: data.sku,
@@ -47,29 +61,12 @@ export async function POST(request: NextRequest) {
       variants: data.variants,
     })
 
-    return NextResponse.json({
-      success: true,
-      data: product,
-      message: 'Produit créé avec succès',
-    }, { status: 201 })
-  } catch (error) {
-    if (error instanceof DuplicateSkuError) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 409 }
-      )
-    }
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      )
-    }
-    console.error('Error creating product:', error)
     return NextResponse.json(
-      { error: 'Erreur lors de la création du produit' },
-      { status: 500 }
+      { success: true, data: product, message: 'Produit créé avec succès' },
+      { status: 201 }
     )
+  } catch (error) {
+    return handleRouteError(error, 'products.create')
   }
 }
 
@@ -78,84 +75,48 @@ export async function GET(request: NextRequest) {
   try {
     const authz = await requirePermission('products.read')
     if (!authz.ok) return authz.response
-    const { session } = authz
+    const { companyId } = authz
 
     const { searchParams } = new URL(request.url)
-    const category = searchParams.get('category')
-    const search = searchParams.get('search')
-    const withVariants = searchParams.get('withVariants') !== 'false'
+    const category = searchParams.get('category') || null
+    const search = searchParams.get('search')?.trim() || null
+    const { limit, offset } = parsePage(searchParams)
+    const pattern = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null
 
-    let products
+    const products = await sql`
+      SELECT p.*,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', pv.id,
+              'packaging_type_id', pv.packaging_type_id,
+              'barcode', pv.barcode,
+              'price', pv.price,
+              'cost_price', pv.cost_price,
+              'packaging_name', pt.name,
+              'units_per_case', pt.units_per_case
+            )
+          ) FILTER (WHERE pv.id IS NOT NULL), '[]'
+        ) AS variants
+      FROM products p
+      LEFT JOIN product_variants pv ON p.id = pv.product_id
+      LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
+      WHERE p.company_id = ${companyId}
+        AND p.is_active = true
+        AND (${category}::text IS NULL OR p.category = ${category}::text)
+        AND (
+          ${pattern}::text IS NULL
+          OR p.name ILIKE ${pattern}::text
+          OR COALESCE(p.sku, '') ILIKE ${pattern}::text
+          OR COALESCE(p.brand, '') ILIKE ${pattern}::text
+        )
+      GROUP BY p.id
+      ORDER BY p.name, p.id
+      LIMIT ${limit} OFFSET ${offset}
+    `
 
-    if (category) {
-      products = await sql`
-        SELECT p.*,
-      COALESCE(
-        json_agg(
-          json_build_object(
-            'id', pv.id,
-            'packaging_type_id', pv.packaging_type_id,
-            'barcode', pv.barcode,
-            'price', pv.price,
-            'cost_price', pv.cost_price,
-            'packaging_name', pt.name,
-            'units_per_case', pt.units_per_case
-          )
-        ) FILTER(WHERE pv.id IS NOT NULL), '[]'
-      ) as variants
-        FROM products p
-        LEFT JOIN product_variants pv ON p.id = pv.product_id
-        LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
-        WHERE p.company_id = ${session.user.companyId}
-          AND p.is_active = true
-          AND p.category = ${category}
-        GROUP BY p.id
-        ORDER BY p.name
-      `
-    } else {
-      products = await sql`
-        SELECT p.*,
-      COALESCE(
-        json_agg(
-          json_build_object(
-            'id', pv.id,
-            'packaging_type_id', pv.packaging_type_id,
-            'barcode', pv.barcode,
-            'price', pv.price,
-            'cost_price', pv.cost_price,
-            'packaging_name', pt.name,
-            'units_per_case', pt.units_per_case
-          )
-        ) FILTER(WHERE pv.id IS NOT NULL), '[]'
-      ) as variants
-        FROM products p
-        LEFT JOIN product_variants pv ON p.id = pv.product_id
-        LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
-        WHERE p.company_id = ${session.user.companyId}
-          AND p.is_active = true
-        GROUP BY p.id
-        ORDER BY p.name
-      `
-    }
-
-    // Filter by search in JS
-    let filtered = products as Array<Record<string, unknown>>
-    if (search) {
-      const q = search.toLowerCase()
-      filtered = filtered.filter(
-        (p) =>
-          String(p.name).toLowerCase().includes(q) ||
-          String(p.sku || '').toLowerCase().includes(q) ||
-          String(p.brand || '').toLowerCase().includes(q)
-      )
-    }
-
-    return NextResponse.json({ success: true, data: filtered })
+    return NextResponse.json({ success: true, data: products })
   } catch (error) {
-    console.error('Error fetching products:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des produits' },
-      { status: 500 }
-    )
+    return handleRouteError(error, 'products.list')
   }
 }

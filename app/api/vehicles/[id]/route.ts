@@ -1,117 +1,124 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { handleRouteError, notFound } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
+
+/** Le formulaire peut envoyer un nombre, une chaîne vide, null ou rien (= inchangé). */
+const capacitySchema = z
+    .union([z.number(), z.string(), z.null()])
+    .optional()
+    .transform((v, ctx) => {
+        if (v === undefined || v === null || v === '') return undefined
+        const n = Number(v)
+        if (!Number.isInteger(n) || n < 0) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Capacité invalide' })
+            return z.NEVER
+        }
+        return n
+    })
 
 const vehicleUpdateSchema = z.object({
-    name: z.string().optional(),
-    plateNumber: z.string().min(1).optional(),
+    name: z.string().max(100).optional(),
+    plateNumber: z.string().trim().min(1).max(50).optional(),
     vehicleType: z.enum(['truck', 'tricycle', 'van']).optional(),
-    capacityCases: z.any().transform(v => v === '' || v === null || Number.isNaN(Number(v)) ? undefined : Number(v)).optional(),
-    driverName: z.string().optional(),
-    driverPhone: z.string().optional(),
+    capacityCases: capacitySchema,
+    driverName: z.string().max(255).optional(),
+    driverPhone: z.string().max(20).optional(),
     isActive: z.boolean().optional(),
 })
 
+type Params = { params: Promise<{ id: string }> }
+
 // GET /api/vehicles/[id]
-export async function GET(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_request: NextRequest, { params }: Params) {
     try {
         const authz = await requirePermission('vehicles.read')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
+
         const { id } = await params
+        if (!isUuid(id)) throw notFound('Véhicule')
 
-        const vehicles = await sql`
-      SELECT * FROM vehicles
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-    `
-        if (vehicles.length === 0) {
-            return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
-        }
+        const [vehicle] = await sql`
+            SELECT * FROM vehicles WHERE id = ${id} AND company_id = ${companyId}
+        `
+        if (!vehicle) throw notFound('Véhicule')
 
-        return NextResponse.json({ success: true, data: vehicles[0] })
+        return NextResponse.json({ success: true, data: vehicle })
     } catch (error) {
-        console.error('Error fetching vehicle:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+        return handleRouteError(error, 'vehicles.get')
     }
 }
 
 // PATCH /api/vehicles/[id]
-export async function PATCH(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(request: NextRequest, { params }: Params) {
     try {
         const authz = await requirePermission('vehicles.write')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
+
         const { id } = await params
-        const body = await request.json()
-        const data = vehicleUpdateSchema.parse(body)
+        if (!isUuid(id)) throw notFound('Véhicule')
+        const data = vehicleUpdateSchema.parse(await request.json())
 
-        const existing = await sql`
-      SELECT id FROM vehicles
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-    `
-        if (existing.length === 0) {
-            return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
-        }
+        const [vehicle] = await sql`
+            UPDATE vehicles SET
+                name = COALESCE(${data.name ?? null}, name),
+                plate_number = COALESCE(${data.plateNumber ?? null}, plate_number),
+                vehicle_type = COALESCE(${data.vehicleType ?? null}, vehicle_type),
+                capacity_cases = COALESCE(${data.capacityCases ?? null}::int, capacity_cases),
+                driver_name = COALESCE(${data.driverName ?? null}, driver_name),
+                driver_phone = COALESCE(${data.driverPhone ?? null}, driver_phone),
+                is_active = COALESCE(${data.isActive ?? null}::boolean, is_active)
+            WHERE id = ${id} AND company_id = ${companyId}
+            RETURNING *
+        `
+        if (!vehicle) throw notFound('Véhicule')
 
-        const vehicles = await sql`
-      UPDATE vehicles SET
-        name = COALESCE(${data.name ?? null}, name),
-        plate_number = COALESCE(${data.plateNumber ?? null}, plate_number),
-        vehicle_type = COALESCE(${data.vehicleType ?? null}, vehicle_type),
-        capacity_cases = COALESCE(${data.capacityCases ?? null}, capacity_cases),
-        driver_name = COALESCE(${data.driverName ?? null}, driver_name),
-        driver_phone = COALESCE(${data.driverPhone ?? null}, driver_phone),
-        is_active = COALESCE(${data.isActive ?? null}, is_active)
-      WHERE id = ${id}
-      RETURNING *
-    `
-
-        return NextResponse.json({ success: true, data: vehicles[0] })
+        return NextResponse.json({ success: true, data: vehicle })
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: 'Données invalides', details: error.errors }, { status: 400 })
-        }
-        console.error('Error updating vehicle:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+        return handleRouteError(error, 'vehicles.update')
     }
 }
 
 // DELETE /api/vehicles/[id]
-export async function DELETE(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
-) {
+// Suppression définitive si le véhicule n'a jamais servi, sinon désactivation.
+export async function DELETE(_request: NextRequest, { params }: Params) {
     try {
         const authz = await requirePermission('vehicles.write')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
+
         const { id } = await params
+        if (!isUuid(id)) throw notFound('Véhicule')
 
-        const existing = await sql`
-      SELECT id FROM vehicles
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-    `
-        if (existing.length === 0) {
-            return NextResponse.json({ error: 'Véhicule introuvable' }, { status: 404 })
-        }
+        const softDeleted = await withTransaction(async (tx) => {
+            const [current] = await tx.sql`
+                SELECT id FROM vehicles WHERE id = ${id} AND company_id = ${companyId} FOR UPDATE
+            `
+            if (!current) throw notFound('Véhicule')
 
-        try {
-            await sql`DELETE FROM vehicles WHERE id = ${id}`
-        } catch {
-            // FK (tournées liées) -> désactivation au lieu d'une suppression destructive
-            await sql`UPDATE vehicles SET is_active = false WHERE id = ${id}`
-            return NextResponse.json({ success: true, message: 'Véhicule désactivé (utilisé dans des tournées)' })
-        }
-        return NextResponse.json({ success: true, message: 'Véhicule supprimé' })
+            await tx.sql`SAVEPOINT vehicle_delete`
+            try {
+                await tx.sql`DELETE FROM vehicles WHERE id = ${id} AND company_id = ${companyId}`
+                await tx.sql`RELEASE SAVEPOINT vehicle_delete`
+                return false
+            } catch (error) {
+                if ((error as { code?: string })?.code !== '23503') throw error
+                // FK (tournées liées) -> désactivation au lieu d'une suppression destructive
+                await tx.sql`ROLLBACK TO SAVEPOINT vehicle_delete`
+                await tx.sql`UPDATE vehicles SET is_active = false WHERE id = ${id} AND company_id = ${companyId}`
+                return true
+            }
+        })
+
+        return NextResponse.json({
+            success: true,
+            message: softDeleted ? 'Véhicule désactivé (utilisé dans des tournées)' : 'Véhicule supprimé',
+        })
     } catch (error) {
-        console.error('Error deleting vehicle:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+        return handleRouteError(error, 'vehicles.delete')
     }
 }
