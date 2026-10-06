@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { handleRouteError } from '@/lib/errors'
 
 const clientSchema = z.object({
   name: z.string().min(1, 'Nom du client requis'),
@@ -28,49 +29,38 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = clientSchema.parse(body)
 
-    const clients = await sql`
-      INSERT INTO clients (
-        company_id, name, contact_name, client_type, phone, email,
-        address, gps_coordinates, zone, credit_limit,
-        packaging_credit_limit, payment_terms_days, notes
-      ) VALUES (
-        ${companyId}, ${data.name}, ${data.contactName || null},
-        ${data.clientType}, ${data.phone || null}, ${data.email || null},
-        ${data.address || null}, ${data.gpsCoordinates || null},
-        ${data.zone || null}, ${data.creditLimit},
-        ${data.packagingCreditLimit}, ${data.paymentTermsDays},
-        ${data.notes || null}
-      )
-      RETURNING *
-    `
-
-    // Create product and packaging accounts
-    await sql`
-      INSERT INTO client_accounts (client_id, account_type, balance)
-      VALUES (${clients[0].id}, 'product', 0)
-    `
-    await sql`
-      INSERT INTO client_accounts (client_id, account_type, balance)
-      VALUES (${clients[0].id}, 'packaging', 0)
-    `
+    // Client et ses deux comptes (produits / emballages) : tout ou rien
+    const client = await withTransaction(async (tx) => {
+      const [row] = await tx.sql`
+        INSERT INTO clients (
+          company_id, name, contact_name, client_type, phone, email,
+          address, gps_coordinates, zone, credit_limit,
+          packaging_credit_limit, payment_terms_days, notes
+        ) VALUES (
+          ${companyId}, ${data.name}, ${data.contactName || null},
+          ${data.clientType}, ${data.phone || null}, ${data.email || null},
+          ${data.address || null}, ${data.gpsCoordinates || null},
+          ${data.zone || null}, ${data.creditLimit},
+          ${data.packagingCreditLimit}, ${data.paymentTermsDays},
+          ${data.notes || null}
+        )
+        RETURNING *
+      `
+      await tx.sql`
+        INSERT INTO client_accounts (client_id, account_type, balance)
+        VALUES (${row.id}, 'product', 0), (${row.id}, 'packaging', 0)
+        ON CONFLICT (client_id, account_type) DO NOTHING
+      `
+      return row
+    })
 
     return NextResponse.json({
       success: true,
-      data: clients[0],
+      data: client,
       message: 'Client créé avec succès',
     }, { status: 201 })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Données invalides', details: error.errors },
-        { status: 400 }
-      )
-    }
-    console.error('Error creating client:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la création du client' },
-      { status: 500 }
-    )
+    return handleRouteError(error, 'clients.create')
   }
 }
 
@@ -79,11 +69,15 @@ export async function GET(request: NextRequest) {
   try {
     const authz = await requirePermission('clients.read')
     if (!authz.ok) return authz.response
-    const { session } = authz
+    const { companyId } = authz
 
     const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')
-    const clientType = searchParams.get('clientType')
+    const search = searchParams.get('search')?.trim() || null
+    const searchPattern = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null
+    const clientType = searchParams.get('clientType') || null
+    // Défaut 500 (= maximum) : l'écran « Nouveau retour » charge la liste complète dans un menu
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '500', 10) || 500, 1), 500)
+    const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0)
 
     const clients = await sql`
       SELECT c.*,
@@ -100,34 +94,22 @@ export async function GET(request: NextRequest) {
           0
         ) as total_orders
       FROM clients c
-      WHERE c.company_id = ${session.user.companyId}
+      WHERE c.company_id = ${companyId}
         AND c.is_active = true
+        AND (${clientType}::text IS NULL OR c.client_type = ${clientType}::text)
+        AND (
+          ${searchPattern}::text IS NULL
+          OR c.name ILIKE ${searchPattern}::text
+          OR c.phone ILIKE ${searchPattern}::text
+          OR c.zone ILIKE ${searchPattern}::text
+          OR c.contact_name ILIKE ${searchPattern}::text
+        )
       ORDER BY c.name
+      LIMIT ${limit} OFFSET ${offset}
     `
 
-    // Apply JS filters
-    let filtered = clients as Array<Record<string, unknown>>
-
-    if (search) {
-      const q = search.toLowerCase()
-      filtered = filtered.filter(
-        (c) =>
-          String(c.name).toLowerCase().includes(q) ||
-          String(c.phone || '').toLowerCase().includes(q) ||
-          String(c.zone || '').toLowerCase().includes(q) ||
-          String(c.contact_name || '').toLowerCase().includes(q)
-      )
-    }
-    if (clientType) {
-      filtered = filtered.filter((c) => c.client_type === clientType)
-    }
-
-    return NextResponse.json({ success: true, data: filtered })
+    return NextResponse.json({ success: true, data: clients })
   } catch (error) {
-    console.error('Error fetching clients:', error)
-    return NextResponse.json(
-      { error: 'Erreur lors de la récupération des clients' },
-      { status: 500 }
-    )
+    return handleRouteError(error, 'clients.list')
   }
 }

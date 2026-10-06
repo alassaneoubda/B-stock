@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { AppError, handleRouteError } from '@/lib/errors'
+import { assertOwned } from '@/lib/tenant'
+import { nextDocumentNumber } from '@/lib/sequences'
+import { money } from '@/lib/domain/payments'
 
-function generateInvoiceNumber(type: string): string {
-  const prefix = type === 'client' ? 'FC' : 'FF'
-  const date = new Date()
-  const y = date.getFullYear().toString().slice(-2)
-  const m = (date.getMonth() + 1).toString().padStart(2, '0')
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase()
-  return `${prefix}-${y}${m}-${rand}`
-}
+const INVOICE_TYPES = ['client', 'supplier'] as const
+const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'partial', 'cancelled'] as const
 
 // GET /api/invoices — List invoices with filters
 export async function GET(request: NextRequest) {
@@ -19,155 +18,157 @@ export async function GET(request: NextRequest) {
     const { companyId } = authz
 
     const { searchParams } = new URL(request.url)
-    const type = searchParams.get('type')
-    const status = searchParams.get('status')
-    const search = searchParams.get('search')
-    const limit = parseInt(searchParams.get('limit') || '100')
-    const offset = parseInt(searchParams.get('offset') || '0')
+    const typeParam = searchParams.get('type')
+    const statusParam = searchParams.get('status')
+    const type = typeParam && (INVOICE_TYPES as readonly string[]).includes(typeParam) ? typeParam : null
+    const status = statusParam && (INVOICE_STATUSES as readonly string[]).includes(statusParam) ? statusParam : null
+    const search = searchParams.get('search')?.trim() || null
+    const searchPattern = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '100', 10) || 100, 1), 500)
+    const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0)
 
-    let invoices
-    if (type && status) {
-      invoices = await sql`
-        SELECT i.*,
-          c.name as client_name,
-          s.name as supplier_name
-        FROM invoices i
-        LEFT JOIN clients c ON i.client_id = c.id
-        LEFT JOIN suppliers s ON i.supplier_id = s.id
-        WHERE i.company_id = ${companyId}
-          AND i.type = ${type}
-          AND i.status = ${status}
-        ORDER BY i.created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
-    } else if (type) {
-      invoices = await sql`
-        SELECT i.*,
-          c.name as client_name,
-          s.name as supplier_name
-        FROM invoices i
-        LEFT JOIN clients c ON i.client_id = c.id
-        LEFT JOIN suppliers s ON i.supplier_id = s.id
-        WHERE i.company_id = ${companyId}
-          AND i.type = ${type}
-        ORDER BY i.created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
-    } else if (status) {
-      invoices = await sql`
-        SELECT i.*,
-          c.name as client_name,
-          s.name as supplier_name
-        FROM invoices i
-        LEFT JOIN clients c ON i.client_id = c.id
-        LEFT JOIN suppliers s ON i.supplier_id = s.id
-        WHERE i.company_id = ${companyId}
-          AND i.status = ${status}
-        ORDER BY i.created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
-    } else {
-      invoices = await sql`
-        SELECT i.*,
-          c.name as client_name,
-          s.name as supplier_name
-        FROM invoices i
-        LEFT JOIN clients c ON i.client_id = c.id
-        LEFT JOIN suppliers s ON i.supplier_id = s.id
-        WHERE i.company_id = ${companyId}
-        ORDER BY i.created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
-    }
+    const invoices = await sql`
+      SELECT i.*,
+        c.name as client_name,
+        s.name as supplier_name
+      FROM invoices i
+      LEFT JOIN clients c ON i.client_id = c.id
+      LEFT JOIN suppliers s ON i.supplier_id = s.id
+      WHERE i.company_id = ${companyId}
+        AND (${type}::text IS NULL OR i.type = ${type}::text)
+        AND (${status}::text IS NULL OR i.status = ${status}::text)
+        AND (
+          ${searchPattern}::text IS NULL
+          OR i.invoice_number ILIKE ${searchPattern}::text
+          OR c.name ILIKE ${searchPattern}::text
+          OR s.name ILIKE ${searchPattern}::text
+        )
+      ORDER BY i.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `
 
-    // Filter by search term in JS if provided
-    let filtered = invoices
-    if (search) {
-      const q = search.toLowerCase()
-      filtered = invoices.filter((inv: any) =>
-        inv.invoice_number?.toLowerCase().includes(q) ||
-        inv.client_name?.toLowerCase().includes(q) ||
-        inv.supplier_name?.toLowerCase().includes(q)
-      )
-    }
-
-    return NextResponse.json({ success: true, data: filtered })
+    return NextResponse.json({ success: true, data: invoices })
   } catch (error) {
-    console.error('Error fetching invoices:', error)
-    return NextResponse.json({ error: 'Erreur lors de la récupération des factures' }, { status: 500 })
+    return handleRouteError(error, 'invoices.list')
   }
 }
 
-// POST /api/invoices — Create a new invoice (or auto-generate from order)
+const optionalUuid = z.preprocess(
+  (v) => (v === '' || v === null ? undefined : v),
+  z.string().uuid().optional()
+)
+
+const invoiceSchema = z
+  .object({
+    type: z.enum(INVOICE_TYPES),
+    clientId: optionalUuid,
+    supplierId: optionalUuid,
+    orderId: optionalUuid,
+    items: z
+      .array(
+        z.object({
+          productId: optionalUuid,
+          description: z.string().max(500).optional().nullable(),
+          quantity: z.coerce.number().positive('Quantité invalide'),
+          unitPrice: z.coerce.number().nonnegative('Prix invalide'),
+          itemType: z.enum(['product', 'packaging', 'service']).optional().default('product'),
+        })
+      )
+      .max(500)
+      .optional()
+      .default([]),
+    notes: z.string().max(2000).optional().nullable(),
+    amountPaid: z.coerce.number().nonnegative().optional().default(0),
+  })
+  .refine((d) => (d.type === 'client' ? !!d.clientId && !d.supplierId : !!d.supplierId && !d.clientId), {
+    message: 'Facture client : client requis ; facture fournisseur : fournisseur requis',
+    path: ['type'],
+  })
+
+// POST /api/invoices — Create a new invoice
 export async function POST(request: NextRequest) {
   try {
     const authz = await requirePermission('invoices.write')
     if (!authz.ok) return authz.response
     const { companyId } = authz
 
-    const body = await request.json()
+    const data = invoiceSchema.parse(await request.json())
 
-    const {
-      type,
-      clientId,
-      supplierId,
-      orderId,
-      items,
-      notes,
-      amountPaid,
-    } = body
-
-    if (!type || !['client', 'supplier'].includes(type)) {
-      return NextResponse.json({ error: 'Type de facture invalide' }, { status: 400 })
+    // Totaux recalculés côté serveur à partir des lignes
+    const lines = data.items.map((item) => {
+      const unitPrice = money(item.unitPrice)
+      return { ...item, unitPrice, total: money(item.quantity * unitPrice) }
+    })
+    const totalAmount = money(lines.reduce((s, l) => s + l.total, 0))
+    const paid = money(data.amountPaid)
+    if (paid > totalAmount) {
+      throw new AppError(400, 'Le montant payé dépasse le total de la facture', 'AMOUNT_EXCEEDS_TOTAL')
     }
+    const remaining = money(totalAmount - paid)
+    const invoiceStatus = totalAmount > 0 && paid >= totalAmount ? 'paid' : paid > 0 ? 'partial' : 'draft'
 
-    // Calculate totals
-    let totalAmount = 0
-    if (items && items.length > 0) {
-      totalAmount = items.reduce((acc: number, item: any) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0)
-    }
+    const invoice = await withTransaction(async (tx) => {
+      await assertOwned(tx.sql, companyId, {
+        clients: [data.clientId],
+        suppliers: [data.supplierId],
+        ...(data.type === 'client' ? { salesOrders: [data.orderId] } : { purchaseOrders: [data.orderId] }),
+      })
 
-    const paid = Number(amountPaid || 0)
-    const remaining = totalAmount - paid
-    const invoiceStatus = paid >= totalAmount ? 'paid' : paid > 0 ? 'partial' : 'draft'
-    const invoiceNumber = generateInvoiceNumber(type)
+      if (data.orderId && data.type === 'client') {
+        const [order] = await tx.sql`SELECT client_id FROM sales_orders WHERE id = ${data.orderId}`
+        if (order.client_id !== data.clientId) {
+          throw new AppError(400, "Cette commande n'appartient pas à ce client", 'ORDER_CLIENT_MISMATCH')
+        }
+      }
 
-    const result = await sql`
-      INSERT INTO invoices (
-        invoice_number, type, company_id, client_id, supplier_id,
-        order_id, total_ht, total_ttc, total_amount,
-        amount_paid, remaining_amount, status, notes
-      ) VALUES (
-        ${invoiceNumber}, ${type}, ${companyId},
-        ${clientId || null}, ${supplierId || null},
-        ${orderId || null}, ${totalAmount}, ${totalAmount}, ${totalAmount},
-        ${paid}, ${remaining}, ${invoiceStatus}, ${notes || null}
+      // product_id : produit ou variante de l'entreprise
+      const productIds = [...new Set(lines.map((l) => l.productId).filter((v): v is string => !!v))]
+      if (productIds.length > 0) {
+        const owned = await tx.sql`
+          SELECT id FROM products WHERE company_id = ${companyId} AND id = ANY(${productIds}::uuid[])
+          UNION
+          SELECT pv.id FROM product_variants pv JOIN products p ON p.id = pv.product_id
+          WHERE p.company_id = ${companyId} AND pv.id = ANY(${productIds}::uuid[])
+        `
+        if (owned.length !== productIds.length) throw new AppError(404, 'Produit introuvable', 'NOT_FOUND')
+      }
+
+      const invoiceNumber = await nextDocumentNumber(
+        tx,
+        companyId,
+        data.type === 'client' ? 'invoice_client' : 'invoice_supplier'
       )
-      RETURNING *
-    `
 
-    const invoice = result[0]
+      const [row] = await tx.sql`
+        INSERT INTO invoices (
+          invoice_number, type, company_id, client_id, supplier_id,
+          order_id, total_ht, total_ttc, total_amount,
+          amount_paid, remaining_amount, status, notes
+        ) VALUES (
+          ${invoiceNumber}, ${data.type}, ${companyId},
+          ${data.clientId ?? null}, ${data.supplierId ?? null},
+          ${data.orderId ?? null}, ${totalAmount}, ${totalAmount}, ${totalAmount},
+          ${paid}, ${remaining}, ${invoiceStatus}, ${data.notes || null}
+        )
+        RETURNING *
+      `
 
-    // Insert items
-    if (items && items.length > 0) {
-      for (const item of items) {
-        const lineTotal = Number(item.quantity) * Number(item.unitPrice)
-        await sql`
+      for (const line of lines) {
+        await tx.sql`
           INSERT INTO invoice_items (
             invoice_id, product_id, description,
             quantity, unit_price, total_price, item_type
           ) VALUES (
-            ${invoice.id}, ${item.productId || null}, ${item.description || null},
-            ${item.quantity}, ${item.unitPrice}, ${lineTotal},
-            ${item.itemType || 'product'}
+            ${row.id}, ${line.productId ?? null}, ${line.description || null},
+            ${line.quantity}, ${line.unitPrice}, ${line.total}, ${line.itemType}
           )
         `
       }
-    }
+      return row
+    })
 
     return NextResponse.json({ success: true, data: invoice }, { status: 201 })
   } catch (error) {
-    console.error('Error creating invoice:', error)
-    return NextResponse.json({ error: 'Erreur lors de la création de la facture' }, { status: 500 })
+    return handleRouteError(error, 'invoices.create')
   }
 }

@@ -2,6 +2,7 @@ import { withTransaction, type Tx } from '../db'
 import { AppError, notFound } from '../errors'
 import { nextDocumentNumber } from '../sequences'
 import { assertOwned } from '../tenant'
+import { recordCashMovement } from '../cash-automation'
 import { addStock, adjustPackagingStock, removeStock } from './stock'
 
 /**
@@ -324,23 +325,18 @@ export async function createSale(input: CreateSaleInput): Promise<CreateSaleResu
 
     // ---- Caisse : encaissement espèces sur la session ouverte du dépôt (ou de l'entreprise) ----
     if (cashAmount > 0) {
-      const [session] = await tx.sql`
-        SELECT id FROM cash_sessions
-        WHERE company_id = ${companyId} AND status = 'open'
-        ORDER BY (depot_id = ${input.depotId}) DESC NULLS LAST, opened_at DESC
-        LIMIT 1
-      `
-      if (session) {
-        await tx.sql`
-          INSERT INTO cash_movements (
-            company_id, cash_session_id, movement_type, category, amount, description,
-            reference_type, reference_id, created_by
-          ) VALUES (
-            ${companyId}, ${session.id}, 'cash_in', 'sale', ${cashAmount}, ${`Vente ${orderNumber}`},
-            'sales_order', ${orderId}, ${userId}
-          )
-        `
-      } else {
+      // Verrou partagé sur la session : une clôture concurrente ne peut pas l'oublier
+      const movement = await recordCashMovement(tx.sql, {
+        companyId,
+        movementType: 'cash_in',
+        category: 'sale',
+        amount: cashAmount,
+        description: `Vente ${orderNumber}`,
+        referenceType: 'sales_order',
+        referenceId: orderId,
+        userId,
+      })
+      if (!movement) {
         warnings.push("Aucune caisse n'est ouverte : l'encaissement en espèces n'a pas été enregistré en caisse.")
       }
     }
@@ -507,21 +503,17 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
   `
   const cashToRefund = Number(cashIn.total)
   if (cashToRefund > 0) {
-    const [session] = await tx.sql`
-      SELECT id FROM cash_sessions WHERE company_id = ${companyId} AND status = 'open'
-      ORDER BY opened_at DESC LIMIT 1
-    `
-    if (session) {
-      await tx.sql`
-        INSERT INTO cash_movements (
-          company_id, cash_session_id, movement_type, category, amount, description,
-          reference_type, reference_id, created_by
-        ) VALUES (
-          ${companyId}, ${session.id}, 'cash_out', 'refund', ${cashToRefund}, ${note},
-          'sales_order', ${order.id}, ${userId}
-        )
-      `
-    } else {
+    const movement = await recordCashMovement(tx.sql, {
+      companyId,
+      movementType: 'cash_out',
+      category: 'refund',
+      amount: cashToRefund,
+      description: note,
+      referenceType: 'sales_order',
+      referenceId: order.id,
+      userId,
+    })
+    if (!movement) {
       warnings.push(
         `Aucune caisse ouverte : pensez à enregistrer la sortie de ${formatFcfa(cashToRefund)} remboursés au client.`
       )

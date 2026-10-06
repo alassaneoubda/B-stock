@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePermission } from '@/lib/api-auth'
+import { z } from 'zod'
 import { sql } from '@/lib/db'
+import { handleRouteError, notFound } from '@/lib/errors'
+import { assertOwned, isUuid } from '@/lib/tenant'
+
+const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v)
+
+const agentUpdateSchema = z.object({
+  full_name: z.preprocess(emptyToUndefined, z.string().trim().min(1).max(200).optional()),
+  phone: z.preprocess(emptyToUndefined, z.string().max(50).optional()),
+  email: z.preprocess(emptyToUndefined, z.string().email('Email invalide').max(200).optional()),
+  zone: z.preprocess(emptyToUndefined, z.string().max(100).optional()),
+  commission_rate: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().min(0, 'Taux entre 0 et 100').max(100, 'Taux entre 0 et 100').optional()
+  ),
+  is_active: z.boolean().optional(),
+  user_id: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+})
 
 // GET /api/agents/[id] — Agent detail with performance
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,6 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { companyId } = authz
 
     const agentId = (await params).id
+    if (!isUuid(agentId)) throw notFound('Commercial')
 
     const agents = await sql`
       SELECT sa.*, u.full_name as user_name
@@ -60,8 +79,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       data: { agent: agents[0], clients, performance, commissions },
     })
   } catch (error) {
-    console.error('Agent detail error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'agents.get')
   }
 }
 
@@ -73,17 +91,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { companyId } = authz
 
     const agentId = (await params).id
-    const body = await request.json()
-    const { full_name, phone, email, zone, commission_rate, is_active } = body
+    if (!isUuid(agentId)) throw notFound('Commercial')
+    const d = agentUpdateSchema.parse(await request.json())
+    await assertOwned(sql, companyId, { users: [d.user_id] })
 
     const result = await sql`
       UPDATE sales_agents SET
-        full_name = COALESCE(${full_name || null}, full_name),
-        phone = COALESCE(${phone || null}, phone),
-        email = COALESCE(${email || null}, email),
-        zone = COALESCE(${zone || null}, zone),
-        commission_rate = COALESCE(${commission_rate}, commission_rate),
-        is_active = COALESCE(${is_active}, is_active),
+        full_name = COALESCE(${d.full_name ?? null}, full_name),
+        phone = COALESCE(${d.phone ?? null}, phone),
+        email = COALESCE(${d.email ?? null}, email),
+        zone = COALESCE(${d.zone ?? null}, zone),
+        commission_rate = COALESCE(${d.commission_rate ?? null}::numeric, commission_rate),
+        is_active = COALESCE(${d.is_active ?? null}::boolean, is_active),
+        user_id = COALESCE(${d.user_id ?? null}::uuid, user_id),
         updated_at = NOW()
       WHERE id = ${agentId} AND company_id = ${companyId}
       RETURNING *
@@ -95,7 +115,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json({ success: true, data: result[0] })
   } catch (error) {
-    console.error('Update agent error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'agents.update')
   }
 }

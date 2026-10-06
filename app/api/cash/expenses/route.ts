@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { AppError, handleRouteError } from '@/lib/errors'
+import { createCashMovementFromExpense, findOpenCashSession } from '@/lib/cash-automation'
+import { money } from '@/lib/domain/payments'
+
+const EXPENSE_CATEGORIES = [
+  'fuel',
+  'maintenance',
+  'salary',
+  'rent',
+  'utilities',
+  'supplies',
+  'transport',
+  'other',
+] as const
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide (AAAA-MM-JJ)')
 
 // GET /api/cash/expenses — List expenses
 export async function GET(request: NextRequest) {
@@ -10,32 +27,25 @@ export async function GET(request: NextRequest) {
     const { companyId } = authz
 
     const { searchParams } = new URL(request.url)
-    const from = searchParams.get('from')
-    const to = searchParams.get('to')
+    const fromParam = searchParams.get('from')
+    const toParam = searchParams.get('to')
+    const from = fromParam ? isoDate.parse(fromParam) : null
+    const to = toParam ? isoDate.parse(toParam) : null
     const category = searchParams.get('category')
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '100', 10) || 100, 1), 500)
+    const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0)
 
-    let expenses
-    if (from && to) {
-      expenses = await sql`
-        SELECT e.*, u.full_name as created_by_name
-        FROM expenses e
-        LEFT JOIN users u ON e.created_by = u.id
-        WHERE e.company_id = ${companyId}
-          AND e.expense_date >= ${from}::date
-          AND e.expense_date <= ${to}::date
-          AND (${category}::text IS NULL OR e.category = ${category}::text)
-        ORDER BY e.created_at DESC
-      `
-    } else {
-      expenses = await sql`
-        SELECT e.*, u.full_name as created_by_name
-        FROM expenses e
-        LEFT JOIN users u ON e.created_by = u.id
-        WHERE e.company_id = ${companyId}
-        ORDER BY e.created_at DESC
-        LIMIT 50
-      `
-    }
+    const expenses = await sql`
+      SELECT e.*, u.full_name as created_by_name
+      FROM expenses e
+      LEFT JOIN users u ON e.created_by = u.id
+      WHERE e.company_id = ${companyId}
+        AND (${from}::date IS NULL OR e.expense_date >= ${from}::date)
+        AND (${to}::date IS NULL OR e.expense_date <= ${to}::date)
+        AND (${category}::text IS NULL OR e.category = ${category}::text)
+      ORDER BY e.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `
 
     // Totals by category
     const totals = await sql`
@@ -50,51 +60,55 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: { expenses, totals } })
   } catch (error) {
-    console.error('Expenses error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'cash.expenses.list')
   }
 }
 
-// POST /api/cash/expenses — Create an expense
+const expenseSchema = z.object({
+  category: z.enum(EXPENSE_CATEGORIES),
+  amount: z.coerce.number().positive('Le montant doit être positif'),
+  description: z.string().max(1000).optional().nullable(),
+  expense_date: isoDate.optional().nullable().or(z.literal('')),
+})
+
+// POST /api/cash/expenses — Create an expense (paid from the open cash session)
 export async function POST(request: NextRequest) {
   try {
     const authz = await requirePermission('cash.write')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const body = await request.json()
-    const { category, amount, description, expense_date } = body
+    const data = expenseSchema.parse(await request.json())
+    const amount = money(data.amount)
 
-    if (!category || !amount || amount <= 0) {
-      return NextResponse.json({ error: 'Catégorie et montant requis' }, { status: 400 })
-    }
+    const expense = await withTransaction(async (tx) => {
+      const session = await findOpenCashSession(tx.sql, companyId)
+      if (!session) throw new AppError(409, 'Aucune caisse ouverte', 'NO_OPEN_CASH')
 
-    // Find open cash session
-    const openSessions = await sql`
-      SELECT id FROM cash_sessions
-      WHERE company_id = ${companyId} AND status = 'open'
-      LIMIT 1
-    `
-
-    const cashSessionId = openSessions[0]?.id || null
-
-    const result = await sql`
-      INSERT INTO expenses (company_id, cash_session_id, category, amount, description, expense_date, created_by)
-      VALUES (${companyId}, ${cashSessionId}, ${category}, ${amount}, ${description || null}, ${expense_date || new Date().toISOString().split('T')[0]}, ${userId})
-      RETURNING *
-    `
-
-    // Record as cash movement if session open
-    if (cashSessionId) {
-      await sql`
-        INSERT INTO cash_movements (company_id, cash_session_id, movement_type, category, amount, description, reference_type, reference_id, created_by)
-        VALUES (${companyId}, ${cashSessionId}, 'cash_out', 'expense', ${amount}, ${description || 'Dépense: ' + category}, 'expense', ${result[0].id}, ${userId})
+      const [row] = await tx.sql`
+        INSERT INTO expenses (company_id, cash_session_id, category, amount, description, expense_date, created_by)
+        VALUES (
+          ${companyId}, ${session.id}, ${data.category}, ${amount}, ${data.description || null},
+          COALESCE(${data.expense_date || null}::date, CURRENT_DATE), ${userId}
+        )
+        RETURNING *
       `
-    }
 
-    return NextResponse.json({ success: true, data: result[0] })
+      const movement = await createCashMovementFromExpense(
+        companyId,
+        row.id,
+        amount,
+        data.category,
+        data.description || null,
+        userId,
+        tx.sql
+      )
+      if (!movement) throw new AppError(409, 'Aucune caisse ouverte', 'NO_OPEN_CASH')
+      return row
+    })
+
+    return NextResponse.json({ success: true, data: expense })
   } catch (error) {
-    console.error('Create expense error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'cash.expenses.create')
   }
 }

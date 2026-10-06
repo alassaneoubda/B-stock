@@ -1,129 +1,139 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { withTransaction } from '@/lib/db'
+import { AppError, handleRouteError } from '@/lib/errors'
+import { nextDocumentNumber } from '@/lib/sequences'
+import { money } from '@/lib/domain/payments'
 
-function generateInvoiceNumber(type: string): string {
-  const prefix = type === 'client' ? 'FC' : 'FF'
-  const date = new Date()
-  const y = date.getFullYear().toString().slice(-2)
-  const m = (date.getMonth() + 1).toString().padStart(2, '0')
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase()
-  return `${prefix}-${y}${m}-${rand}`
-}
+const generateSchema = z.object({
+  orderId: z.string().uuid('orderId requis'),
+})
 
-// POST /api/invoices/generate — Auto-generate invoice from a sales order
+/**
+ * POST /api/invoices/generate — Auto-generate the client invoice of a sales order.
+ *
+ * Idempotent : la ligne de la commande est verrouillée (FOR UPDATE) avant de
+ * chercher une facture existante, donc deux appels simultanés ne créent
+ * jamais deux factures ; si une facture (non annulée) existe déjà, elle est
+ * renvoyée telle quelle.
+ */
 export async function POST(request: NextRequest) {
   try {
     const authz = await requirePermission('invoices.write')
     if (!authz.ok) return authz.response
     const { companyId } = authz
 
-    const { orderId } = await request.json()
+    const { orderId } = generateSchema.parse(await request.json())
 
-    if (!orderId) {
-      return NextResponse.json({ error: 'orderId requis' }, { status: 400 })
-    }
-
-    // Check if invoice already exists for this order
-    const existing = await sql`
-      SELECT id, invoice_number FROM invoices
-      WHERE order_id = ${orderId} AND company_id = ${companyId}
-    `
-    if (existing.length > 0) {
-      return NextResponse.json({
-        success: true,
-        data: existing[0],
-        message: 'Facture déjà générée'
-      })
-    }
-
-    // Fetch the sales order
-    const orders = await sql`
-      SELECT so.*, c.name as client_name
-      FROM sales_orders so
-      LEFT JOIN clients c ON so.client_id = c.id
-      WHERE so.id = ${orderId} AND so.company_id = ${companyId}
-    `
-
-    if (orders.length === 0) {
-      return NextResponse.json({ error: 'Commande non trouvée' }, { status: 404 })
-    }
-
-    const order = orders[0]
-
-    // Fetch order items
-    const orderItems = await sql`
-      SELECT soi.*, p.name as product_name
-      FROM sales_order_items soi
-      LEFT JOIN products p ON soi.product_id = p.id
-      WHERE soi.sales_order_id = ${orderId}
-    `
-
-    // Fetch packaging items
-    const packagingItems = await sql`
-      SELECT sopi.*, pt.name as packaging_name
-      FROM sales_order_packaging_items sopi
-      LEFT JOIN packaging_types pt ON sopi.packaging_type_id = pt.id
-      WHERE sopi.sales_order_id = ${orderId}
-    `
-
-    const totalAmount = Number(order.total_amount)
-    const amountPaid = Number(order.paid_amount)
-    const remaining = totalAmount - amountPaid
-    const invoiceStatus = amountPaid >= totalAmount ? 'paid' : amountPaid > 0 ? 'partial' : 'draft'
-    const invoiceNumber = generateInvoiceNumber('client')
-
-    // Create invoice
-    const result = await sql`
-      INSERT INTO invoices (
-        invoice_number, type, company_id, client_id,
-        order_id, total_ht, total_ttc, total_amount,
-        amount_paid, remaining_amount, status
-      ) VALUES (
-        ${invoiceNumber}, 'client', ${companyId}, ${order.client_id},
-        ${orderId}, ${totalAmount}, ${totalAmount}, ${totalAmount},
-        ${amountPaid}, ${remaining}, ${invoiceStatus}
-      )
-      RETURNING *
-    `
-
-    const invoice = result[0]
-
-    // Insert product items
-    for (const item of orderItems) {
-      const lineTotal = Number(item.quantity) * Number(item.unit_price)
-      await sql`
-        INSERT INTO invoice_items (
-          invoice_id, product_id, description,
-          quantity, unit_price, total_price, item_type
-        ) VALUES (
-          ${invoice.id}, ${item.product_id}, ${item.product_name || 'Produit'},
-          ${item.quantity}, ${item.unit_price}, ${lineTotal}, 'product'
-        )
+    const result = await withTransaction(async (tx) => {
+      const [order] = await tx.sql`
+        SELECT id, client_id, paid_amount, status
+        FROM sales_orders
+        WHERE id = ${orderId} AND company_id = ${companyId}
+        FOR UPDATE
       `
-    }
+      if (!order) throw new AppError(404, 'Commande non trouvée', 'NOT_FOUND')
 
-    // Insert packaging items
-    for (const item of packagingItems) {
-      const lineTotal = Number(item.quantity) * Number(item.unit_price || 0)
-      await sql`
-        INSERT INTO invoice_items (
-          invoice_id, product_id, description,
-          quantity, unit_price, total_price, item_type
-        ) VALUES (
-          ${invoice.id}, NULL, ${item.packaging_name || 'Emballage'},
-          ${item.quantity}, ${item.unit_price || 0}, ${lineTotal}, 'packaging'
-        )
+      const [existing] = await tx.sql`
+        SELECT * FROM invoices
+        WHERE order_id = ${orderId} AND company_id = ${companyId}
+          AND type = 'client' AND status <> 'cancelled'
+        ORDER BY created_at ASC
+        LIMIT 1
       `
-    }
+      if (existing) return { invoice: existing, created: false }
 
-    return NextResponse.json({
-      success: true,
-      data: invoice,
-      message: 'Facture générée avec succès'
-    }, { status: 201 })
+      if (order.status === 'cancelled') {
+        throw new AppError(409, 'Commande annulée : aucune facture ne peut être générée', 'ORDER_CANCELLED')
+      }
+
+      // Lignes produits : variante → produit (+ conditionnement pour le libellé)
+      const orderItems = await tx.sql`
+        SELECT soi.product_variant_id, soi.quantity, soi.unit_price,
+               COALESCE(soi.total_price, soi.quantity * soi.unit_price) AS line_total,
+               p.name AS product_name, pt.name AS packaging_name
+        FROM sales_order_items soi
+        JOIN product_variants pv ON pv.id = soi.product_variant_id
+        JOIN products p ON p.id = pv.product_id
+        LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
+        WHERE soi.sales_order_id = ${orderId}
+        ORDER BY soi.created_at, soi.id
+      `
+
+      // Consignes : uniquement le net sorti (sorties - retours) > 0
+      const packagingItems = await tx.sql`
+        SELECT sopi.packaging_type_id, sopi.quantity_out - sopi.quantity_in AS net_quantity,
+               COALESCE(sopi.unit_price, 0) AS unit_price, pt.name AS packaging_name
+        FROM sales_order_packaging_items sopi
+        LEFT JOIN packaging_types pt ON pt.id = sopi.packaging_type_id
+        WHERE sopi.sales_order_id = ${orderId}
+          AND sopi.quantity_out - sopi.quantity_in > 0
+        ORDER BY sopi.created_at, sopi.id
+      `
+
+      const lines = [
+        ...orderItems.map((i) => ({
+          productId: i.product_variant_id as string | null,
+          description: i.packaging_name ? `${i.product_name} (${i.packaging_name})` : i.product_name || 'Produit',
+          quantity: Number(i.quantity),
+          unitPrice: money(Number(i.unit_price || 0)),
+          total: money(Number(i.line_total || 0)),
+          itemType: 'product',
+        })),
+        ...packagingItems.map((p) => ({
+          productId: null as string | null,
+          description: `Consigne ${p.packaging_name || 'emballage'}`,
+          quantity: Number(p.net_quantity),
+          unitPrice: money(Number(p.unit_price)),
+          total: money(Number(p.net_quantity) * Number(p.unit_price)),
+          itemType: 'packaging',
+        })),
+      ]
+
+      // Totaux recalculés à partir des lignes de la facture
+      const totalAmount = money(lines.reduce((s, l) => s + l.total, 0))
+      const amountPaid = money(Math.min(Number(order.paid_amount || 0), totalAmount))
+      const remaining = money(totalAmount - amountPaid)
+      const invoiceStatus =
+        totalAmount > 0 && amountPaid >= totalAmount ? 'paid' : amountPaid > 0 ? 'partial' : 'draft'
+      const invoiceNumber = await nextDocumentNumber(tx, companyId, 'invoice_client')
+
+      const [invoice] = await tx.sql`
+        INSERT INTO invoices (
+          invoice_number, type, company_id, client_id,
+          order_id, total_ht, total_ttc, total_amount,
+          amount_paid, remaining_amount, status
+        ) VALUES (
+          ${invoiceNumber}, 'client', ${companyId}, ${order.client_id},
+          ${orderId}, ${totalAmount}, ${totalAmount}, ${totalAmount},
+          ${amountPaid}, ${remaining}, ${invoiceStatus}
+        )
+        RETURNING *
+      `
+
+      for (const line of lines) {
+        await tx.sql`
+          INSERT INTO invoice_items (
+            invoice_id, product_id, description,
+            quantity, unit_price, total_price, item_type
+          ) VALUES (
+            ${invoice.id}, ${line.productId}, ${line.description},
+            ${line.quantity}, ${line.unitPrice}, ${line.total}, ${line.itemType}
+          )
+        `
+      }
+      return { invoice, created: true }
+    })
+
+    if (!result.created) {
+      return NextResponse.json({ success: true, data: result.invoice, message: 'Facture déjà générée' })
+    }
+    return NextResponse.json(
+      { success: true, data: result.invoice, message: 'Facture générée avec succès' },
+      { status: 201 }
+    )
   } catch (error) {
-    console.error('Error generating invoice:', error)
-    return NextResponse.json({ error: 'Erreur lors de la génération de la facture' }, { status: 500 })
+    return handleRouteError(error, 'invoices.generate')
   }
 }
