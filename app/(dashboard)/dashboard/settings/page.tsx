@@ -18,9 +18,12 @@ import {
     Package
 } from 'lucide-react'
 import Link from 'next/link'
+import { canAccessPath } from '@/lib/route-permissions'
+import { formatNumber } from '@/lib/format'
 
+// Pas de try/catch : une panne SQL affiche error.tsx plutôt qu'une page vide.
 async function getCompanyInfo(companyId: string) {
-    try {
+    {
         const company = await sql`
       SELECT c.*, 
         (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id AND u.is_active = true) as users_count,
@@ -29,8 +32,6 @@ async function getCompanyInfo(companyId: string) {
       FROM companies c WHERE c.id = ${companyId}
     `
         return company[0] || null
-    } catch {
-        return null
     }
 }
 
@@ -81,7 +82,7 @@ const settingsSections = [
         href: '/dashboard/settings/security',
         icon: Shield,
         title: 'Sécurité & Accès',
-        description: 'Authentification forte et journal de sécurité',
+        description: 'Mot de passe et sessions',
         color: 'bg-rose-500/10 text-rose-600'
     },
 ]
@@ -91,6 +92,10 @@ export default async function SettingsPage() {
     const companyId = session?.user?.companyId || ''
     const company = await getCompanyInfo(companyId)
     const subscription = subscriptionLabels[company?.subscription_status || 'trialing']
+    // N'affiche que les sections que le rôle peut réellement ouvrir
+    const visibleSections = settingsSections.filter((section) =>
+        canAccessPath(section.href, session.access.permissions)
+    )
 
     return (
         <div className="flex flex-col min-h-screen bg-zinc-50/50">
@@ -106,7 +111,7 @@ export default async function SettingsPage() {
                         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
                             <div className="flex items-center gap-6">
                                 <div className="h-20 w-20 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30">
-                                    <Building2 className="h-10 w-10" />
+                                    <Building2 className="h-10 w-10" aria-hidden="true" />
                                 </div>
                                 <div className="space-y-1.5">
                                     <div className="flex items-center gap-3">
@@ -132,15 +137,15 @@ export default async function SettingsPage() {
 
                             <div className="grid grid-cols-3 gap-6 md:gap-10 border-t md:border-t-0 md:border-l border-slate-100 pt-8 md:pt-0 md:pl-10">
                                 <div className="text-center md:text-left">
-                                    <p className="text-2xl font-semibold text-slate-950">{company.users_count || 0}</p>
+                                    <p className="text-2xl font-semibold text-slate-950">{formatNumber(company.users_count)}</p>
                                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-1">Équipe</p>
                                 </div>
                                 <div className="text-center md:text-left">
-                                    <p className="text-2xl font-semibold text-slate-950">{company.depots_count || 0}</p>
+                                    <p className="text-2xl font-semibold text-slate-950">{formatNumber(company.depots_count)}</p>
                                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-1">Dépôts</p>
                                 </div>
                                 <div className="text-center md:text-left">
-                                    <p className="text-2xl font-semibold text-slate-950">{company.products_count || 0}</p>
+                                    <p className="text-2xl font-semibold text-slate-950">{formatNumber(company.products_count)}</p>
                                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-1">Articles</p>
                                 </div>
                             </div>
@@ -154,21 +159,21 @@ export default async function SettingsPage() {
                 <div className="grid gap-6">
                     <h3 className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400 pl-4">Préférences du Système</h3>
                     <div className="grid gap-4 sm:grid-cols-2">
-                        {settingsSections.map((section, i) => (
+                        {visibleSections.map((section) => (
                             <Link
                                 key={section.href}
                                 href={section.href}
-                                className="group relative flex items-center gap-5 p-6 rounded-[2rem] bg-white border border-slate-200/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-300"
+                                className="group relative flex items-center gap-5 p-6 rounded-[2rem] bg-white border border-slate-200/60 shadow-sm hover:border-slate-300 hover:bg-slate-50/50 transition-colors"
                             >
-                                <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-md ${section.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <section.icon className="h-6 w-6" />
+                                <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-md ${section.color}`}>
+                                    <section.icon className="h-6 w-6" aria-hidden="true" />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="font-semibold text-slate-950 text-base tracking-tight">{section.title}</p>
                                     <p className="text-sm font-medium text-slate-400 mt-0.5 line-clamp-1">{section.description}</p>
                                 </div>
-                                <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all transform group-hover:block hidden md:flex">
-                                    <ChevronRight className="h-5 w-5" />
+                                <div className="h-10 w-10 rounded-xl bg-slate-50 items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-colors hidden md:flex">
+                                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
                                 </div>
                             </Link>
                         ))}
@@ -176,19 +181,19 @@ export default async function SettingsPage() {
                 </div>
 
                 {/* Quick Info/Help */}
-                <div className="rounded-lg bg-slate-900 p-10 text-white relative overflow-hidden group">
+                <div className="rounded-lg bg-slate-900 p-10 text-white relative overflow-hidden">
                     <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
                         <div className="space-y-4 max-w-lg">
-                            <h3 className="text-2xl font-semibold tracking-tight">Besoin d'aide pour configurer B-Stock ?</h3>
+                            <h3 className="text-2xl font-semibold tracking-tight">Besoin d&apos;aide pour configurer B-Stock ?</h3>
                             <p className="text-slate-400 font-medium leading-relaxed">
-                                Notre centre d'aide contient des guides détaillés pour optimiser votre gestion de stock et paramétrer vos flux de facturation.
+                                Notre guide d&apos;utilisation explique pas à pas la gestion du stock, des ventes et de la caisse.
                             </p>
-                            <Button className="rounded-md h-12 px-8 bg-white text-slate-950 hover:bg-slate-200 transition-all font-semibold shadow-md">
-                                Accéder à la documentation
+                            <Button asChild className="rounded-md h-12 px-8 bg-white text-slate-950 hover:bg-slate-200 transition-colors font-semibold shadow-md">
+                                <Link href="/guide">Accéder à la documentation</Link>
                             </Button>
                         </div>
-                        <div className="h-32 w-32 rounded-lg bg-white/10 flex items-center justify-center backdrop-blur-sm group-hover:scale-110 transition-transform duration-700">
-                            <Settings className="h-16 w-16 text-white/50 animate-spin-slow" />
+                        <div className="h-32 w-32 rounded-lg bg-white/10 flex items-center justify-center backdrop-blur-sm">
+                            <Settings className="h-16 w-16 text-white/50" aria-hidden="true" />
                         </div>
                     </div>
                     {/* Dark gradient overlap */}
@@ -196,16 +201,6 @@ export default async function SettingsPage() {
                 </div>
             </main>
 
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                @keyframes spin-slow {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-                .animate-spin-slow {
-                    animation: spin-slow 12s linear infinite;
-                }
-            `}} />
         </div>
     )
 }

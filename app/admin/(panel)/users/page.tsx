@@ -6,11 +6,26 @@ import useSWR from 'swr'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Loader2, Search, KeyRound, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { Loader2, Search, KeyRound, ChevronLeft, ChevronRight, Copy, Users } from 'lucide-react'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { formatNumber } from '@/lib/format'
+import { ROLES, ROLE_LABELS } from '@/lib/permissions'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
 
-const ROLES = ['owner', 'manager', 'cashier', 'warehouse_keeper']
+const roleLabel = (r: string) => (ROLE_LABELS as Record<string, string>)[r] || r
 
 type User = {
   id: string
@@ -30,9 +45,10 @@ export default function AdminUsersPage() {
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState<string | null>(null)
   const [resetInfo, setResetInfo] = useState<{ email: string; password: string } | null>(null)
+  const [toReset, setToReset] = useState<User | null>(null)
 
   const qs = new URLSearchParams({ search, role, page: String(page) }).toString()
-  const { data, isLoading, mutate } = useSWR<{
+  const { data, error, isLoading, mutate } = useSWR<{
     data: User[]
     pagination: { page: number; pages: number; total: number }
   }>(`/api/admin/users?${qs}`, fetcher)
@@ -40,29 +56,45 @@ export default function AdminUsersPage() {
   const users = data?.data || []
   const pagination = data?.pagination
 
-  async function patch(userId: string, body: any, key: string) {
+  async function patch(userId: string, body: { role?: string; isActive?: boolean }, key: string, success: string) {
+    if (busy) return
     setBusy(key)
     try {
-      await fetch(`/api/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
+      await apiFetch(`/api/admin/users/${userId}`, { method: 'PATCH', body })
+      toast.success(success)
       await mutate()
+    } catch (e) {
+      toastError(e, 'Modification impossible')
     } finally {
       setBusy(null)
     }
   }
 
   async function resetPassword(u: User) {
-    if (!confirm(`Réinitialiser le mot de passe de ${u.email} ?`)) return
+    if (busy) return
     setBusy('reset-' + u.id)
     try {
-      const res = await fetch(`/api/admin/users/${u.id}/reset-password`, { method: 'POST' })
-      const json = await res.json()
-      if (res.ok) setResetInfo({ email: json.email, password: json.tempPassword })
+      const json = await apiFetch<{ email: string; tempPassword: string }>(
+        `/api/admin/users/${u.id}/reset-password`,
+        { method: 'POST' }
+      )
+      setResetInfo({ email: json.email, password: json.tempPassword })
+      toast.success('Mot de passe réinitialisé')
+      setToReset(null)
+    } catch (e) {
+      setToReset(null)
+      toastError(e, 'Réinitialisation impossible')
     } finally {
       setBusy(null)
+    }
+  }
+
+  async function copyPassword(password: string) {
+    try {
+      await navigator.clipboard.writeText(password)
+      toast.success('Mot de passe copié')
+    } catch {
+      toast.error('Copie impossible', { description: 'Sélectionnez le mot de passe et copiez-le manuellement.' })
     }
   }
 
@@ -71,7 +103,7 @@ export default function AdminUsersPage() {
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-zinc-950">Utilisateurs</h1>
         <p className="text-sm text-zinc-500">
-          {pagination ? `${pagination.total} utilisateur(s) — tous tenants` : 'Tous les tenants'}
+          {pagination ? `${formatNumber(pagination.total)} utilisateur(s) — tous tenants` : 'Tous les tenants'}
         </p>
       </header>
 
@@ -87,7 +119,7 @@ export default function AdminUsersPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => navigator.clipboard?.writeText(resetInfo.password)}
+              onClick={() => copyPassword(resetInfo.password)}
             >
               <Copy className="h-4 w-4 mr-1.5" /> Copier
             </Button>
@@ -120,12 +152,13 @@ export default function AdminUsersPage() {
             setRole(e.target.value)
             setPage(1)
           }}
-          className="h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm capitalize"
+          className="h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+          aria-label="Filtrer par rôle"
         >
           <option value="">Tous les rôles</option>
           {ROLES.map((r) => (
             <option key={r} value={r}>
-              {r}
+              {roleLabel(r)}
             </option>
           ))}
         </select>
@@ -133,11 +166,18 @@ export default function AdminUsersPage() {
 
       <Card className="overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={5} />
           </div>
+        ) : error ? (
+          <ErrorState className="m-5" description={errorMessage(error)} onRetry={() => mutate()} />
         ) : users.length === 0 ? (
-          <div className="py-20 text-center text-sm text-zinc-400">Aucun utilisateur</div>
+          <EmptyState
+            className="m-5"
+            icon={Users}
+            title="Aucun utilisateur"
+            description={search || role ? 'Aucun utilisateur ne correspond à ces filtres.' : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -168,21 +208,39 @@ export default function AdminUsersPage() {
                     <td className="px-5 py-3">
                       <select
                         value={u.role}
-                        disabled={busy === 'role-' + u.id}
-                        onChange={(e) => patch(u.id, { role: e.target.value }, 'role-' + u.id)}
-                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs capitalize"
+                        disabled={!!busy}
+                        aria-label={`Rôle de ${u.email}`}
+                        onChange={(e) =>
+                          patch(
+                            u.id,
+                            { role: e.target.value },
+                            'role-' + u.id,
+                            `Rôle de ${u.email} : ${roleLabel(e.target.value)}`
+                          )
+                        }
+                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs"
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {r}
+                            {roleLabel(r)}
                           </option>
                         ))}
                       </select>
                     </td>
                     <td className="px-5 py-3">
                       <button
-                        onClick={() => patch(u.id, { isActive: !u.is_active }, 'active-' + u.id)}
-                        disabled={busy === 'active-' + u.id}
+                        onClick={() =>
+                          patch(
+                            u.id,
+                            { isActive: !u.is_active },
+                            'active-' + u.id,
+                            u.is_active ? `${u.email} désactivé` : `${u.email} réactivé`
+                          )
+                        }
+                        disabled={!!busy}
+                        role="switch"
+                        aria-checked={u.is_active}
+                        aria-label={u.is_active ? `Désactiver ${u.email}` : `Activer ${u.email}`}
                         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                           u.is_active ? 'bg-green-500' : 'bg-zinc-300'
                         }`}
@@ -198,8 +256,9 @@ export default function AdminUsersPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => resetPassword(u)}
-                        disabled={busy === 'reset-' + u.id}
+                        onClick={() => setToReset(u)}
+                        disabled={!!busy}
+                        aria-label={`Réinitialiser le mot de passe de ${u.email}`}
                       >
                         {busy === 'reset-' + u.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -226,6 +285,7 @@ export default function AdminUsersPage() {
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
+              aria-label="Page précédente"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -233,6 +293,7 @@ export default function AdminUsersPage() {
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
+              aria-label="Page suivante"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronRight className="h-4 w-4" />
@@ -240,6 +301,33 @@ export default function AdminUsersPage() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={!!toReset} onOpenChange={(o) => !o && !busy && setToReset(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Réinitialiser le mot de passe de {toReset?.email} ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Son mot de passe actuel cessera immédiatement de fonctionner et un mot de passe temporaire sera
+              affiché une seule fois, à lui transmettre.
+              {toReset?.auth_provider === 'google' &&
+                ' Ce compte utilise la connexion Google : il passera en connexion par email et mot de passe.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!busy}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!busy}
+              onClick={(e) => {
+                e.preventDefault()
+                if (toReset) resetPassword(toReset)
+              }}
+            >
+              {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Réinitialiser
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

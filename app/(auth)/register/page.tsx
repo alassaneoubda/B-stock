@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { GoogleButton } from '@/components/auth/google-button'
 import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
+import { NETWORK_ERROR, httpErrorMessage, readJson } from '@/components/auth/auth-errors'
+import { passwordPolicyError } from '@/lib/permissions'
 import { Loader2, Eye, EyeOff } from 'lucide-react'
 
 const registerSchema = z
@@ -19,11 +21,11 @@ const registerSchema = z
     fullName: z.string().min(2, 'Le nom complet doit contenir au moins 2 caractères'),
     email: z.string().email('Email invalide'),
     phone: z.string().optional(),
-    password: z
-      .string()
-      .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
-      .regex(/[A-Za-z]/, 'Le mot de passe doit contenir au moins une lettre')
-      .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre'),
+    // Mêmes règles que le serveur (lib/permissions)
+    password: z.string().superRefine((value, ctx) => {
+      const policyError = passwordPolicyError(value)
+      if (policyError) ctx.addIssue({ code: z.ZodIssueCode.custom, message: policyError })
+    }),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -38,6 +40,8 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Verrou synchrone : empêche une double soumission avant le re-rendu
+  const submittingRef = useRef(false)
 
   const {
     register,
@@ -48,8 +52,12 @@ export default function RegisterPage() {
   })
 
   async function onSubmit(data: RegisterForm) {
+    if (submittingRef.current) return
+    submittingRef.current = true
     setIsLoading(true)
     setError(null)
+
+    let redirecting = false
 
     try {
       const response = await fetch('/api/auth/register', {
@@ -64,18 +72,23 @@ export default function RegisterPage() {
         }),
       })
 
-      const result = await response.json()
+      const result = await readJson(response)
 
       if (!response.ok) {
-        setError(result.error || 'Une erreur est survenue')
+        // Message précis du serveur (email déjà utilisé, inscriptions fermées, 429…)
+        setError(httpErrorMessage(response, result))
         return
       }
 
+      redirecting = true
       router.push('/login?registered=true')
     } catch {
-      setError('Une erreur est survenue. Veuillez réessayer.')
+      setError(NETWORK_ERROR)
     } finally {
-      setIsLoading(false)
+      if (!redirecting) {
+        submittingRef.current = false
+        setIsLoading(false)
+      }
     }
   }
 
@@ -103,7 +116,7 @@ export default function RegisterPage() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
             {error}
           </div>
         )}

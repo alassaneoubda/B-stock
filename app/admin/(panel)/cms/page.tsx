@@ -4,7 +4,21 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Save, Trash2, Plus } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { Loader2, Save, Trash2, Plus, Newspaper } from 'lucide-react'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { EmptyState, ErrorState } from '@/components/states'
 
 type Section = {
   section_key: string
@@ -45,33 +59,38 @@ type Feature = {
 
 type Tab = 'sections' | 'features' | 'faq' | 'testimonials'
 
+/** Suppression en attente de confirmation (payload envoyé tel quel à PATCH /api/admin/cms). */
+type PendingDelete = { kind: string; label: string; body: Record<string, unknown> }
+
 export default function AdminCmsPage() {
   const [tab, setTab] = useState<Tab>('sections')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
 
   const [sections, setSections] = useState<Section[]>([])
   const [features, setFeatures] = useState<Feature[]>([])
   const [faq, setFaq] = useState<Faq[]>([])
   const [testimonials, setTestimonials] = useState<Testimonial[]>([])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  /** `silent` : rechargement après enregistrement, sans remplacer la page par le squelette. */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
-      const res = await fetch('/api/admin/cms')
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Erreur de chargement')
+      const json = await apiFetch<{
+        data: { sections?: Section[]; features?: Feature[]; faq?: Faq[]; testimonials?: Testimonial[] }
+      }>('/api/admin/cms')
       setSections(json.data.sections || [])
       setFeatures(json.data.features || [])
       setFaq(json.data.faq || [])
       setTestimonials(json.data.testimonials || [])
+      setLoadError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur')
+      if (silent) toastError(e, 'Rechargement impossible')
+      else setLoadError(errorMessage(e))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -79,25 +98,27 @@ export default function AdminCmsPage() {
     load()
   }, [load])
 
-  async function patch(body: Record<string, unknown>) {
+  /** Retourne true si l'enregistrement a réussi. */
+  async function patch(body: Record<string, unknown>, success = 'Modifications enregistrées'): Promise<boolean> {
+    if (saving) return false
     setSaving(true)
-    setMessage(null)
-    setError(null)
     try {
-      const res = await fetch('/api/admin/cms', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Échec')
-      setMessage('Enregistré')
-      await load()
+      await apiFetch('/api/admin/cms', { method: 'PATCH', body })
+      toast.success(success)
+      await load(true)
+      return true
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur')
+      toastError(e, 'Enregistrement impossible')
+      return false
     } finally {
       setSaving(false)
     }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    await patch(pendingDelete.body, `${pendingDelete.kind} supprimé(e)`)
+    setPendingDelete(null)
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -109,32 +130,32 @@ export default function AdminCmsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-zinc-500 gap-2">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        Chargement du CMS…
+      <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-6" aria-busy="true" aria-label="Chargement du CMS">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-9 w-80" />
+        {Array.from({ length: 3 }, (_, i) => (
+          <Skeleton key={i} className="h-56 rounded-xl" />
+        ))}
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-4 sm:p-8 max-w-5xl mx-auto">
+        <ErrorState description={loadError} onRetry={() => load()} />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-zinc-950">CMS Landing</h1>
         <p className="text-sm text-zinc-500 mt-1">
           Modifiez les textes, FAQ et témoignages affichés sur la page d’accueil — sans toucher au code.
         </p>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {message}
-        </div>
-      )}
 
       <div className="flex flex-wrap gap-2 border-b border-zinc-200 pb-3">
         {tabs.map((t) => (
@@ -154,6 +175,7 @@ export default function AdminCmsPage() {
 
       {tab === 'sections' && (
         <div className="space-y-4">
+          {sections.length === 0 && <EmptyState icon={Newspaper} title="Aucune section configurée" />}
           {sections.map((s) => (
             <form
               key={s.section_key}
@@ -221,6 +243,7 @@ export default function AdminCmsPage() {
 
       {tab === 'features' && (
         <div className="space-y-4">
+          {features.length === 0 && <EmptyState icon={Newspaper} title="Aucune fonctionnalité configurée" />}
           {features.map((f) => (
             <form
               key={f.id}
@@ -242,8 +265,15 @@ export default function AdminCmsPage() {
                 <span className="text-xs font-mono text-zinc-400">{f.slug}</span>
                 <button
                   type="button"
-                  className="text-red-600 text-xs flex items-center gap-1"
-                  onClick={() => patch({ type: 'feature', id: f.id, title: f.title, delete: true })}
+                  className="text-red-600 text-xs flex items-center gap-1 disabled:opacity-50"
+                  disabled={saving}
+                  onClick={() =>
+                    setPendingDelete({
+                      kind: 'Fonctionnalité',
+                      label: f.title,
+                      body: { type: 'feature', id: f.id, title: f.title, delete: true },
+                    })
+                  }
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Supprimer
                 </button>
@@ -288,14 +318,19 @@ export default function AdminCmsPage() {
               <div className="flex justify-end">
                 <button
                   type="button"
-                  className="text-red-600 text-xs flex items-center gap-1"
+                  className="text-red-600 text-xs flex items-center gap-1 disabled:opacity-50"
+                  disabled={saving}
                   onClick={() =>
-                    patch({
-                      type: 'faq',
-                      id: item.id,
-                      question: item.question,
-                      answer: item.answer,
-                      delete: true,
+                    setPendingDelete({
+                      kind: 'Question',
+                      label: item.question,
+                      body: {
+                        type: 'faq',
+                        id: item.id,
+                        question: item.question,
+                        answer: item.answer,
+                        delete: true,
+                      },
                     })
                   }
                 >
@@ -321,15 +356,19 @@ export default function AdminCmsPage() {
 
           <form
             className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-5 space-y-3"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault()
-              const fd = new FormData(e.currentTarget)
-              patch({
-                type: 'faq',
-                question: String(fd.get('question')),
-                answer: String(fd.get('answer')),
-              })
-              e.currentTarget.reset()
+              const formEl = e.currentTarget
+              const fd = new FormData(formEl)
+              const ok = await patch(
+                {
+                  type: 'faq',
+                  question: String(fd.get('question')),
+                  answer: String(fd.get('answer')),
+                },
+                'Question ajoutée'
+              )
+              if (ok) formEl.reset()
             }}
           >
             <p className="text-sm font-semibold flex items-center gap-2">
@@ -373,14 +412,19 @@ export default function AdminCmsPage() {
               <div className="flex justify-end">
                 <button
                   type="button"
-                  className="text-red-600 text-xs flex items-center gap-1"
+                  className="text-red-600 text-xs flex items-center gap-1 disabled:opacity-50"
+                  disabled={saving}
                   onClick={() =>
-                    patch({
-                      type: 'testimonial',
-                      id: t.id,
-                      author_name: t.author_name,
-                      quote: t.quote,
-                      delete: true,
+                    setPendingDelete({
+                      kind: 'Témoignage',
+                      label: t.author_name,
+                      body: {
+                        type: 'testimonial',
+                        id: t.id,
+                        author_name: t.author_name,
+                        quote: t.quote,
+                        delete: true,
+                      },
                     })
                   }
                 >
@@ -415,17 +459,21 @@ export default function AdminCmsPage() {
 
           <form
             className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-5 space-y-3"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault()
-              const fd = new FormData(e.currentTarget)
-              patch({
-                type: 'testimonial',
-                author_name: String(fd.get('author_name')),
-                author_role: String(fd.get('author_role') || '') || null,
-                company_name: String(fd.get('company_name') || '') || null,
-                quote: String(fd.get('quote')),
-              })
-              e.currentTarget.reset()
+              const formEl = e.currentTarget
+              const fd = new FormData(formEl)
+              const ok = await patch(
+                {
+                  type: 'testimonial',
+                  author_name: String(fd.get('author_name')),
+                  author_role: String(fd.get('author_role') || '') || null,
+                  company_name: String(fd.get('company_name') || '') || null,
+                  quote: String(fd.get('quote')),
+                },
+                'Témoignage ajouté'
+              )
+              if (ok) formEl.reset()
             }}
           >
             <p className="text-sm font-semibold flex items-center gap-2">
@@ -446,6 +494,34 @@ export default function AdminCmsPage() {
           </form>
         </div>
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(o) => !o && !saving && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Supprimer {pendingDelete?.kind.toLowerCase()} « {pendingDelete?.label} » ?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              L’élément sera retiré immédiatement de la page d’accueil publique. Cette action est irréversible :
+              pour le masquer temporairement, décochez plutôt « Publié ».
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault()
+                confirmDelete()
+              }}
+            >
+              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Supprimer définitivement
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, ArrowRight } from 'lucide-react'
+import { NETWORK_ERROR, httpErrorMessage, readJson } from '@/components/auth/auth-errors'
 
 const sectors = [
   { value: 'distributor', label: 'Distributeur' },
@@ -24,16 +25,21 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
   const [phone, setPhone] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Verrou synchrone : empêche une double soumission avant le re-rendu
+  const submittingRef = useRef(false)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submittingRef.current) return
     if (companyName.trim().length < 2) {
       setError("Le nom de l'entreprise doit contenir au moins 2 caractères")
       return
     }
+    submittingRef.current = true
     setIsLoading(true)
     setError(null)
 
+    let redirecting = false
     try {
       const res = await fetch('/api/onboarding', {
         method: 'POST',
@@ -44,28 +50,39 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
           phone: phone || undefined,
         }),
       })
-      const json = await res.json()
+      const json = await readJson(res)
 
       if (!res.ok) {
-        setError(json.error || 'Une erreur est survenue')
+        setError(httpErrorMessage(res, json))
         return
       }
 
       // Refresh the JWT so the dashboard guard lets the user through
-      await update({ companyName: json.companyName, onboardingCompleted: true })
+      try {
+        await update({ companyName: json?.companyName, onboardingCompleted: true })
+      } catch {
+        // Entreprise enregistrée mais session non rafraîchie : rechargement complet
+        redirecting = true
+        window.location.assign('/dashboard')
+        return
+      }
+      redirecting = true
       router.push('/dashboard')
       router.refresh()
     } catch {
-      setError('Une erreur est survenue. Veuillez réessayer.')
+      setError(NETWORK_ERROR)
     } finally {
-      setIsLoading(false)
+      if (!redirecting) {
+        submittingRef.current = false
+        setIsLoading(false)
+      }
     }
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium">
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium">
           {error}
         </div>
       )}
@@ -125,7 +142,9 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
         disabled={isLoading}
       >
         {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="flex items-center justify-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> Enregistrement…
+          </span>
         ) : (
           <span className="flex items-center justify-center gap-2">
             Continuer <ArrowRight className="h-4 w-4" />

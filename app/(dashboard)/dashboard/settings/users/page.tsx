@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,10 @@ import {
 } from '@/components/ui/table'
 import { Users, UserPlus, Shield } from 'lucide-react'
 import Link from 'next/link'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
+import { ROLE_LABELS } from '@/lib/permissions'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
 interface User {
     id: string
@@ -26,12 +30,7 @@ interface User {
     created_at: string
 }
 
-const roleLabels: Record<string, string> = {
-    owner: 'Propriétaire',
-    manager: 'Gérant',
-    cashier: 'Caissier',
-    warehouse_keeper: 'Magasinier',
-}
+const roleLabels: Record<string, string> = ROLE_LABELS
 
 const roleColors: Record<string, string> = {
     owner: 'bg-indigo-50 text-indigo-600',
@@ -43,20 +42,22 @@ const roleColors: Record<string, string> = {
 export default function UsersSettingsPage() {
     const [users, setUsers] = useState<User[]>([])
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
 
-    useEffect(() => {
-        async function fetchUsers() {
-            try {
-                const res = await fetch('/api/users')
-                const data = await res.json()
-                if (data.success) setUsers(data.data)
-            } catch (e) {
-                console.error(e)
-            }
+    const fetchUsers = useCallback(async () => {
+        setLoading(true)
+        setLoadError(null)
+        try {
+            const data = await apiFetch<{ data: User[] }>('/api/users')
+            setUsers(Array.isArray(data.data) ? data.data : [])
+        } catch (e) {
+            setLoadError(errorMessage(e))
+        } finally {
             setLoading(false)
         }
-        fetchUsers()
     }, [])
+
+    useEffect(() => { fetchUsers() }, [fetchUsers])
 
     return (
         <div className="flex flex-col min-h-screen bg-zinc-50/50">
@@ -66,7 +67,7 @@ export default function UsersSettingsPage() {
                 actions={
                     <Button className="rounded-md h-11 px-6 bg-blue-600 hover:bg-blue-700 font-bold" asChild>
                         <Link href="/dashboard/settings/users/new">
-                            <UserPlus className="h-5 w-5 mr-2" /> Ajouter un utilisateur
+                            <UserPlus className="h-5 w-5 mr-2" aria-hidden="true" /> Ajouter un utilisateur
                         </Link>
                     </Button>
                 }
@@ -75,12 +76,21 @@ export default function UsersSettingsPage() {
                 <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
                     <CardHeader className="px-8 py-8 border-b border-slate-100">
                         <CardTitle className="text-xl font-semibold text-slate-950 flex items-center gap-3">
-                            <Users className="h-5 w-5 text-blue-600" /> Membres de l&apos;équipe ({users.length})
+                            <Users className="h-5 w-5 text-blue-600" aria-hidden="true" /> Membres de l&apos;équipe{!loading && !loadError ? ` (${users.length})` : ''}
                         </CardTitle>
                     </CardHeader>
-                    <CardContent className="p-0">
+                    <CardContent className={loading || loadError || users.length === 0 ? 'p-6' : 'p-0'}>
                         {loading ? (
-                            <div className="text-center py-24 text-slate-400 font-medium">Chargement...</div>
+                            <TableSkeleton rows={4} columns={5} />
+                        ) : loadError ? (
+                            <ErrorState description={loadError} onRetry={fetchUsers} />
+                        ) : users.length === 0 ? (
+                            <EmptyState
+                                icon={Users}
+                                title="Aucun membre"
+                                description="Ajoutez vos caissiers, magasiniers et gérants pour qu'ils aient leur propre accès."
+                                action={{ label: 'Ajouter un utilisateur', href: '/dashboard/settings/users/new' }}
+                            />
                         ) : (
                             <Table>
                                 <TableHeader className="bg-slate-50/50">
@@ -103,17 +113,15 @@ export default function UsersSettingsPage() {
                                             <TableCell className="py-5 font-medium text-slate-600">{user.email}</TableCell>
                                             <TableCell className="py-5">
                                                 <Badge className={`rounded-xl px-4 py-1 font-semibold text-[10px] uppercase tracking-wider border-none ${roleColors[user.role] || 'bg-slate-100 text-slate-600'}`}>
-                                                    <Shield className="h-3 w-3 mr-1" />
+                                                    <Shield className="h-3 w-3 mr-1" aria-hidden="true" />
                                                     {roleLabels[user.role] || user.role}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell className="py-5 text-sm text-slate-500">
-                                                {user.last_login_at
-                                                    ? new Date(user.last_login_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-                                                    : 'Jamais'}
+                                                {user.last_login_at ? formatDateTime(user.last_login_at) : 'Jamais'}
                                             </TableCell>
                                             <TableCell className="py-5 pr-8">
-                                                <Badge className={`rounded-xl px-4 py-1 font-semibold text-[10px] uppercase tracking-wider border-none ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                <Badge className={`rounded-xl px-4 py-1 font-semibold text-[10px] uppercase tracking-wider border-none ${user.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
                                                     {user.is_active ? 'Actif' : 'Inactif'}
                                                 </Badge>
                                             </TableCell>

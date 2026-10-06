@@ -5,9 +5,12 @@ import useSWR from 'swr'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, ScrollText } from 'lucide-react'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { formatDateTime, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
 
 type Log = {
   id: string
@@ -25,7 +28,7 @@ export default function AdminAuditPage() {
   const [page, setPage] = useState(1)
 
   const qs = new URLSearchParams({ search, action, page: String(page) }).toString()
-  const { data, isLoading } = useSWR<{
+  const { data, error, isLoading, mutate } = useSWR<{
     data: Log[]
     actions: string[]
     pagination: { page: number; pages: number; total: number }
@@ -40,7 +43,7 @@ export default function AdminAuditPage() {
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-zinc-950">Journal d&apos;audit</h1>
         <p className="text-sm text-zinc-500">
-          {pagination ? `${pagination.total} action(s) enregistrée(s)` : 'Traçabilité des actions admin'}
+          {pagination ? `${formatNumber(pagination.total)} action(s) enregistrée(s)` : 'Traçabilité des actions admin'}
         </p>
       </header>
 
@@ -64,6 +67,7 @@ export default function AdminAuditPage() {
             setPage(1)
           }}
           className="h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+          aria-label="Filtrer par action"
         >
           <option value="">Toutes les actions</option>
           {actions.map((a) => (
@@ -76,11 +80,18 @@ export default function AdminAuditPage() {
 
       <Card className="overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={5} />
           </div>
+        ) : error ? (
+          <ErrorState className="m-5" description={errorMessage(error)} onRetry={() => mutate()} />
         ) : logs.length === 0 ? (
-          <div className="py-20 text-center text-sm text-zinc-400">Aucune action</div>
+          <EmptyState
+            className="m-5"
+            icon={ScrollText}
+            title="Aucune action"
+            description={search || action ? 'Aucune action ne correspond à ces filtres.' : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -97,7 +108,7 @@ export default function AdminAuditPage() {
                 {logs.map((l) => (
                   <tr key={l.id} className="border-b border-zinc-50 hover:bg-zinc-50">
                     <td className="px-5 py-3 text-zinc-500 whitespace-nowrap">
-                      {new Date(l.created_at).toLocaleString('fr-FR')}
+                      {formatDateTime(l.created_at)}
                     </td>
                     <td className="px-5 py-3 text-zinc-700">{l.admin_email || '—'}</td>
                     <td className="px-5 py-3">
@@ -115,7 +126,10 @@ export default function AdminAuditPage() {
                         '—'
                       )}
                     </td>
-                    <td className="px-5 py-3 text-zinc-400 text-xs max-w-xs truncate">
+                    <td
+                      className="px-5 py-3 text-zinc-400 text-xs max-w-xs truncate"
+                      title={l.metadata ? JSON.stringify(l.metadata) : undefined}
+                    >
                       {l.metadata ? JSON.stringify(l.metadata) : '—'}
                     </td>
                   </tr>
@@ -135,6 +149,7 @@ export default function AdminAuditPage() {
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
+              aria-label="Page précédente"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -142,6 +157,7 @@ export default function AdminAuditPage() {
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
+              aria-label="Page suivante"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronRight className="h-4 w-4" />

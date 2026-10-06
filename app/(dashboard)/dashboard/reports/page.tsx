@@ -3,14 +3,16 @@ import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { BarChart3, TrendingUp, Users, Package, CreditCard, ShoppingCart, ArrowUpRight, ArrowDownRight, PieChart, Wallet, Boxes, Truck } from 'lucide-react'
+import { formatMoney, formatNumber, formatDate } from '@/lib/format'
 
+// Pas de try/catch : une panne SQL remonte à error.tsx au lieu d'afficher des zéros.
 async function getReportData(companyId: string) {
-    try {
+    {
         // Sales by month (last 6 months)
         const salesByMonth = await sql`
       SELECT
-        TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as month,
-        DATE_TRUNC('month', created_at) as month_date,
+        TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
+        TO_CHAR(DATE_TRUNC('month', NOW()), 'YYYY-MM') as current_month,
         COALESCE(SUM(total_amount), 0) as total,
         COUNT(*) as count
       FROM sales_orders
@@ -18,7 +20,7 @@ async function getReportData(companyId: string) {
         AND status != 'cancelled'
         AND created_at >= NOW() - INTERVAL '6 months'
       GROUP BY DATE_TRUNC('month', created_at)
-      ORDER BY month_date DESC
+      ORDER BY month DESC
     `
 
         // Top clients by sales
@@ -31,6 +33,7 @@ async function getReportData(companyId: string) {
       LEFT JOIN sales_orders so ON so.client_id = c.id AND so.company_id = ${companyId} AND so.status != 'cancelled'
       WHERE c.company_id = ${companyId}
       GROUP BY c.id, c.name
+      HAVING COUNT(so.id) > 0
       ORDER BY total_sales DESC
       LIMIT 5
     `
@@ -115,7 +118,7 @@ async function getReportData(companyId: string) {
     `
 
         return {
-            salesByMonth: salesByMonth as Array<{ month: string; total: number; count: number }>,
+            salesByMonth: salesByMonth as Array<{ month: string; current_month: string; total: number; count: number }>,
             topClients: topClients as Array<{ name: string; total_sales: number; orders_count: number }>,
             productDebt: Number(creditStats[0]?.product_debt || 0),
             packagingDebt: Number(creditStats[0]?.packaging_debt || 0),
@@ -127,29 +130,21 @@ async function getReportData(companyId: string) {
             procurementCount: Number(procurementSpend[0]?.count || 0),
             dailySales: dailySales as Array<{ day: string; total: number; count: number }>,
         }
-    } catch {
-        return {
-            salesByMonth: [],
-            topClients: [],
-            productDebt: 0,
-            packagingDebt: 0,
-            stockValue: 0,
-            stockUnits: 0,
-            paymentMethods: [],
-            topProducts: [],
-            procurementTotal: 0,
-            procurementCount: 0,
-            dailySales: [],
-        }
     }
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
+/** « 2026-10 » → « octobre 2026 » */
+function monthLabel(month: string) {
+    const [year, m] = month.split('-').map(Number)
+    if (!year || !m) return month
+    return new Date(year, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+}
+
+/** « 2026-10-06 » (ou Date) → jour du mois, sans décalage de fuseau. */
+function dayOfMonth(day: unknown) {
+    if (day instanceof Date) return day.getDate()
+    const n = Number(String(day).slice(8, 10))
+    return Number.isFinite(n) && n > 0 ? n : '—'
 }
 
 const paymentLabels: Record<string, string> = {
@@ -164,50 +159,52 @@ export default async function ReportsPage() {
     const companyId = session?.user?.companyId || ''
     const data = await getReportData(companyId)
 
-    const currentMonthSales = data.salesByMonth[0]
+    // salesByMonth[0] n'est le mois en cours que s'il y a eu des ventes ce mois-ci
+    const currentMonthSales = data.salesByMonth.find((m) => m.month === m.current_month)
+    const salesMinusPurchases = Number(currentMonthSales?.total || 0) - data.procurementTotal
 
     const kpiData = [
         {
             title: "Ventes ce Mois",
-            value: formatCurrency(Number(currentMonthSales?.total || 0)),
-            description: `${currentMonthSales?.count || 0} commandes validées`,
+            value: formatMoney(Number(currentMonthSales?.total || 0)),
+            description: `${formatNumber(currentMonthSales?.count || 0)} commande(s) non annulée(s)`,
             icon: ShoppingCart,
             color: "bg-blue-500/10 text-blue-600",
         },
         {
             title: "Achats ce Mois",
-            value: formatCurrency(data.procurementTotal),
-            description: `${data.procurementCount} commande(s) fournisseur`,
+            value: formatMoney(data.procurementTotal),
+            description: `${formatNumber(data.procurementCount)} commande(s) fournisseur`,
             icon: Truck,
             color: "bg-indigo-500/10 text-indigo-600",
         },
         {
             title: "Créances Produits",
-            value: formatCurrency(data.productDebt),
+            value: formatMoney(data.productDebt),
             description: "Encours de paiement",
             icon: CreditCard,
             color: "bg-rose-500/10 text-rose-600",
         },
         {
             title: "Dettes Emballages",
-            value: formatCurrency(data.packagingDebt),
+            value: formatMoney(data.packagingDebt),
             description: "Casiers à récupérer",
             icon: Package,
             color: "bg-amber-500/10 text-amber-600",
         },
         {
             title: "Valeur du Stock",
-            value: formatCurrency(data.stockValue),
-            description: `${data.stockUnits} unités en réserve`,
+            value: formatMoney(data.stockValue),
+            description: `${formatNumber(data.stockUnits)} unités en réserve`,
             icon: TrendingUp,
             color: "bg-emerald-500/10 text-emerald-600",
         },
         {
-            title: "Marge Brute Est.",
-            value: formatCurrency(Number(currentMonthSales?.total || 0) - data.procurementTotal),
-            description: "Ventes - Achats ce mois",
+            title: "Ventes − Achats",
+            value: formatMoney(salesMinusPurchases),
+            description: "Écart du mois (ce n'est pas une marge comptable)",
             icon: Boxes,
-            color: Number(currentMonthSales?.total || 0) - data.procurementTotal >= 0 ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600",
+            color: salesMinusPurchases >= 0 ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600",
         },
     ]
 
@@ -215,7 +212,7 @@ export default async function ReportsPage() {
         <div className="flex flex-col min-h-screen bg-zinc-50/50">
             <DashboardHeader
                 title="Intelligence & Rapports"
-                description="Suivez la performance et la santé financière de B-Stock"
+                description="Suivez la performance et la santé financière de votre entreprise"
             />
 
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
@@ -224,11 +221,11 @@ export default async function ReportsPage() {
                     {kpiData.map((stat) => (
                         <div
                             key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
+                            className="relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:border-slate-300 transition-colors"
                         >
                             <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <stat.icon className="h-7 w-7" />
+                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color}`}>
+                                    <stat.icon className="h-7 w-7" aria-hidden="true" />
                                 </div>
                                 <div>
                                     <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
@@ -238,7 +235,6 @@ export default async function ReportsPage() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
                         </div>
                     ))}
                 </div>
@@ -262,30 +258,44 @@ export default async function ReportsPage() {
                                     <div className="h-16 w-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
                                         <BarChart3 className="h-8 w-8 text-slate-200" />
                                     </div>
-                                    <p className="text-slate-400 font-bold text-sm">Données insuffisantes</p>
+                                    <p className="text-slate-500 font-bold text-sm">Aucune vente sur les 6 derniers mois</p>
                                 </div>
                             ) : (
-                                data.salesByMonth.map((month) => {
+                                data.salesByMonth.map((month, index) => {
                                     const maxSales = Math.max(...data.salesByMonth.map(m => Number(m.total)))
                                     const pct = maxSales > 0 ? (Number(month.total) / maxSales) * 100 : 0
+                                    // Variation réelle par rapport au mois précédent (liste triée du plus récent au plus ancien)
+                                    const previous = data.salesByMonth[index + 1]
+                                    const previousTotal = Number(previous?.total || 0)
+                                    const variation = previous && previousTotal > 0
+                                        ? Math.round(((Number(month.total) - previousTotal) / previousTotal) * 100)
+                                        : null
                                     return (
                                         <div key={month.month} className="group/item">
                                             <div className="flex items-center justify-between mb-2">
-                                                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{month.month}</span>
-                                                <span className="text-sm font-semibold text-slate-950">{formatCurrency(Number(month.total))}</span>
+                                                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{monthLabel(month.month)}</span>
+                                                <span className="text-sm font-semibold text-slate-950">{formatMoney(Number(month.total))}</span>
                                             </div>
                                             <div className="relative h-4 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100/50">
                                                 <div
-                                                    className="absolute inset-y-0 left-0 bg-blue-600 rounded-full transition-all duration-1000 group-hover/item:bg-blue-500"
+                                                    className="absolute inset-y-0 left-0 bg-blue-600 rounded-full transition-colors group-hover/item:bg-blue-500"
                                                     style={{ width: `${pct}%` }}
                                                 />
                                             </div>
                                             <div className="flex items-center justify-between mt-1">
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{month.count} commandes</span>
-                                                <div className="flex items-center gap-1">
-                                                    <ArrowUpRight className="h-3 w-3 text-emerald-500" />
-                                                    <span className="text-[10px] font-semibold text-emerald-500">+{Math.round(pct / 10)}%</span>
-                                                </div>
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{formatNumber(month.count)} commandes</span>
+                                                {variation !== null && (
+                                                    <div className="flex items-center gap-1" title="Variation par rapport au mois précédent">
+                                                        {variation >= 0 ? (
+                                                            <ArrowUpRight className="h-3 w-3 text-emerald-600" aria-hidden="true" />
+                                                        ) : (
+                                                            <ArrowDownRight className="h-3 w-3 text-rose-600" aria-hidden="true" />
+                                                        )}
+                                                        <span className={`text-[10px] font-semibold ${variation >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                            {variation >= 0 ? '+' : '−'}{Math.abs(variation)} % vs mois préc.
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )
@@ -316,19 +326,22 @@ export default async function ReportsPage() {
                                 </div>
                             ) : (
                                 data.topClients.map((client, i) => (
-                                    <div key={client.name} className="flex items-center gap-4 p-4 rounded-lg hover:bg-slate-50/80 transition-all border border-transparent hover:border-slate-100 group/client">
+                                    <div key={`${client.name}-${i}`} className="flex items-center gap-4 p-4 rounded-lg hover:bg-slate-50/80 transition-all border border-transparent hover:border-slate-100 group/client">
                                         <div className="h-12 w-12 rounded-md bg-slate-100 font-semibold text-slate-400 flex items-center justify-center shrink-0 group-hover/client:bg-blue-600 group-hover/client:text-white transition-colors">
                                             {i + 1}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between mb-1">
                                                 <span className="text-sm font-semibold text-slate-950 truncate">{client.name}</span>
-                                                <span className="text-sm font-semibold text-slate-950">{formatCurrency(Number(client.total_sales))}</span>
+                                                <span className="text-sm font-semibold text-slate-950">{formatMoney(Number(client.total_sales))}</span>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{client.orders_count} transactions</span>
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{formatNumber(client.orders_count)} transactions</span>
                                                 <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-blue-600/30 w-[60%]" />
+                                                    <div
+                                                        className="h-full bg-blue-600/30"
+                                                        style={{ width: `${Number(data.topClients[0]?.total_sales) > 0 ? (Number(client.total_sales) / Number(data.topClients[0].total_sales)) * 100 : 0}%` }}
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
@@ -362,10 +375,10 @@ export default async function ReportsPage() {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-1">
                                                     <span className="text-sm font-semibold text-slate-950 truncate">{prod.product_name}</span>
-                                                    <span className="text-sm font-semibold text-slate-950 ml-2">{formatCurrency(Number(prod.revenue))}</span>
+                                                    <span className="text-sm font-semibold text-slate-950 ml-2">{formatMoney(Number(prod.revenue))}</span>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <span className="text-[10px] font-bold text-slate-400">{prod.packaging_name} — {prod.units_sold} vendus</span>
+                                                    <span className="text-[10px] font-bold text-slate-500">{prod.packaging_name} — {formatNumber(prod.units_sold)} vendus</span>
                                                     <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
                                                         <div className="h-full bg-indigo-500/40 rounded-full" style={{ width: `${pct}%` }} />
                                                     </div>
@@ -389,17 +402,17 @@ export default async function ReportsPage() {
                         </div>
                         <div className="grid gap-4 sm:grid-cols-2">
                             {data.paymentMethods.length === 0 ? (
-                                <div className="col-span-full text-center py-12 text-slate-400 font-bold">Données indisponibles</div>
+                                <div className="col-span-full text-center py-12 text-slate-500 font-bold text-sm">Aucune vente ce mois</div>
                             ) : (
                                 data.paymentMethods.map((pm) => (
-                                    <div key={pm.payment_method} className="p-6 rounded-[2rem] bg-slate-50 border border-slate-100 hover:bg-white hover:shadow-md hover:shadow-blue-500/5 transition-all">
+                                    <div key={pm.payment_method ?? 'unknown'} className="p-6 rounded-[2rem] bg-slate-50 border border-slate-100 hover:bg-white transition-colors">
                                         <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                                            {paymentLabels[pm.payment_method] || pm.payment_method}
+                                            {paymentLabels[pm.payment_method] || pm.payment_method || 'Non renseigné'}
                                         </p>
-                                        <p className="text-xl font-semibold text-slate-950 leading-none mb-2">{formatCurrency(Number(pm.total))}</p>
+                                        <p className="text-xl font-semibold text-slate-950 leading-none mb-2">{formatMoney(Number(pm.total))}</p>
                                         <div className="flex items-center gap-2">
                                             <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{pm.count} transactions</span>
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{formatNumber(pm.count)} transactions</span>
                                         </div>
                                     </div>
                                 ))
@@ -425,17 +438,17 @@ export default async function ReportsPage() {
                                 const maxDay = Math.max(...data.dailySales.map(d => Number(d.total)))
                                 const hPct = maxDay > 0 ? (Number(day.total) / maxDay) * 100 : 0
                                 return (
-                                    <div key={day.day} className="flex flex-col items-center gap-1 flex-1 min-w-[24px] group/bar">
+                                    <div key={String(day.day)} className="flex flex-col items-center gap-1 flex-1 min-w-[24px] group/bar">
                                         <span className="text-[9px] font-semibold text-slate-400 opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
-                                            {formatCurrency(Number(day.total))}
+                                            {formatMoney(Number(day.total))}
                                         </span>
                                         <div
-                                            className="w-full rounded-t-lg bg-emerald-500 hover:bg-emerald-400 transition-all cursor-pointer min-h-[4px]"
+                                            className="w-full rounded-t-lg bg-emerald-500 hover:bg-emerald-400 transition-colors min-h-[4px]"
                                             style={{ height: `${Math.max(hPct, 3)}%` }}
-                                            title={`${new Date(day.day).toLocaleDateString('fr-FR')}: ${formatCurrency(Number(day.total))} (${day.count} cmd)`}
+                                            title={`${formatDate(day.day)} : ${formatMoney(day.total)} (${formatNumber(day.count)} cmd)`}
                                         />
                                         <span className="text-[8px] font-bold text-slate-300 leading-none">
-                                            {new Date(day.day).getDate()}
+                                            {dayOfMonth(day.day)}
                                         </span>
                                     </div>
                                 )

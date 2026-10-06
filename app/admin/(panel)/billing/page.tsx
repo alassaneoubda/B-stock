@@ -7,10 +7,23 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Search, TrendingUp, Calendar, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { Loader2, Search, TrendingUp, Calendar, RotateCcw, ChevronLeft, ChevronRight, CreditCard } from 'lucide-react'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
-const xof = (n: number) => new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
+const fetcher = (url: string) => apiFetch(url)
 
 type Payment = {
   id: string
@@ -39,9 +52,10 @@ export default function AdminBillingPage() {
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState<string | null>(null)
+  const [toRefund, setToRefund] = useState<Payment | null>(null)
 
   const qs = new URLSearchParams({ search, status, page: String(page) }).toString()
-  const { data, isLoading, mutate } = useSWR<{
+  const { data, error, isLoading, mutate } = useSWR<{
     data: Payment[]
     summary: { revenueTotal: number; revenueMonth: number; completed: number; failed: number; refunded: number }
     pagination: { page: number; pages: number; total: number }
@@ -51,12 +65,17 @@ export default function AdminBillingPage() {
   const summary = data?.summary
   const pagination = data?.pagination
 
-  async function refund(id: string) {
-    if (!confirm('Marquer ce paiement comme remboursé ?')) return
-    setBusy(id)
+  async function refund(p: Payment) {
+    if (busy) return
+    setBusy(p.id)
     try {
-      const res = await fetch(`/api/admin/billing/${id}/refund`, { method: 'POST' })
-      if (res.ok) await mutate()
+      await apiFetch(`/api/admin/billing/${p.id}/refund`, { method: 'POST' })
+      toast.success('Paiement marqué comme remboursé')
+      setToRefund(null)
+      await mutate()
+    } catch (e) {
+      setToRefund(null)
+      toastError(e, 'Remboursement impossible')
     } finally {
       setBusy(null)
     }
@@ -75,23 +94,23 @@ export default function AdminBillingPage() {
             <TrendingUp className="h-4 w-4" />
             <span className="text-xs font-medium uppercase tracking-wide">Revenu total</span>
           </div>
-          <p className="text-2xl font-bold text-zinc-950">{summary ? xof(summary.revenueTotal) : '—'}</p>
+          <p className="text-2xl font-bold text-zinc-950">{summary ? formatMoney(summary.revenueTotal) : '—'}</p>
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-2 text-zinc-500 mb-2">
             <Calendar className="h-4 w-4" />
             <span className="text-xs font-medium uppercase tracking-wide">Ce mois-ci</span>
           </div>
-          <p className="text-2xl font-bold text-zinc-950">{summary ? xof(summary.revenueMonth) : '—'}</p>
+          <p className="text-2xl font-bold text-zinc-950">{summary ? formatMoney(summary.revenueMonth) : '—'}</p>
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-2 text-zinc-500 mb-2">
             <span className="text-xs font-medium uppercase tracking-wide">Transactions</span>
           </div>
           <p className="text-sm text-zinc-700">
-            <span className="font-bold text-green-600">{summary?.completed ?? 0}</span> complétées ·{' '}
-            <span className="font-bold text-red-600">{summary?.failed ?? 0}</span> échouées ·{' '}
-            <span className="font-bold text-zinc-600">{summary?.refunded ?? 0}</span> remboursées
+            <span className="font-bold text-green-600">{formatNumber(summary?.completed ?? 0)}</span> complétées ·{' '}
+            <span className="font-bold text-red-600">{formatNumber(summary?.failed ?? 0)}</span> échouées ·{' '}
+            <span className="font-bold text-zinc-600">{formatNumber(summary?.refunded ?? 0)}</span> remboursées
           </p>
         </Card>
       </div>
@@ -131,11 +150,18 @@ export default function AdminBillingPage() {
 
       <Card className="overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={6} />
           </div>
+        ) : error ? (
+          <ErrorState className="m-5" description={errorMessage(error)} onRetry={() => mutate()} />
         ) : payments.length === 0 ? (
-          <div className="py-20 text-center text-sm text-zinc-400">Aucun paiement</div>
+          <EmptyState
+            className="m-5"
+            icon={CreditCard}
+            title="Aucun paiement"
+            description={search || status ? 'Aucun paiement ne correspond à ces filtres.' : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -153,7 +179,7 @@ export default function AdminBillingPage() {
                 {payments.map((p) => (
                   <tr key={p.id} className="border-b border-zinc-50 hover:bg-zinc-50">
                     <td className="px-5 py-3 text-zinc-500 whitespace-nowrap">
-                      {new Date(p.created_at).toLocaleDateString('fr-FR')}
+                      {formatDate(p.created_at)}
                     </td>
                     <td className="px-5 py-3">
                       {p.company_id ? (
@@ -168,13 +194,13 @@ export default function AdminBillingPage() {
                       {p.plan_name || '—'}
                       <span className="text-xs text-zinc-400"> · {p.provider}</span>
                     </td>
-                    <td className="px-5 py-3 font-medium text-zinc-900">{xof(Number(p.amount))}</td>
+                    <td className="px-5 py-3 font-medium text-zinc-900">{formatMoney(p.amount)}</td>
                     <td className="px-5 py-3">
                       <StatusBadge status={p.status} />
                     </td>
                     <td className="px-5 py-3 text-right">
                       {p.status === 'completed' && Number(p.amount) > 0 && (
-                        <Button size="sm" variant="outline" onClick={() => refund(p.id)} disabled={busy === p.id}>
+                        <Button size="sm" variant="outline" onClick={() => setToRefund(p)} disabled={busy === p.id}>
                           {busy === p.id ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           ) : (
@@ -201,6 +227,7 @@ export default function AdminBillingPage() {
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
+              aria-label="Page précédente"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -208,6 +235,7 @@ export default function AdminBillingPage() {
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
+              aria-label="Page suivante"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronRight className="h-4 w-4" />
@@ -215,6 +243,33 @@ export default function AdminBillingPage() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={!!toRefund} onOpenChange={(o) => !o && !busy && setToRefund(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Marquer ce paiement comme remboursé ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Le paiement de {toRefund ? formatMoney(toRefund.amount) : ''}
+              {toRefund?.company_name ? ` (${toRefund.company_name})` : ''} passera au statut « Remboursé » et
+              sortira du revenu. Aucun remboursement n’est effectué automatiquement : le reversement des fonds
+              doit être fait chez le prestataire de paiement. L’abonnement de l’entreprise n’est pas modifié.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!busy}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!busy}
+              onClick={(e) => {
+                e.preventDefault()
+                if (toRefund) refund(toRefund)
+              }}
+            >
+              {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Marquer remboursé
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

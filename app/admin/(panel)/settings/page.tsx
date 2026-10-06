@@ -8,9 +8,23 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
 import { Loader2, Check, Settings as SettingsIcon, ShieldCheck, Wrench, UserPlus } from 'lucide-react'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { ErrorState } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
 
 type Settings = {
   platform_name: string
@@ -26,11 +40,15 @@ type Settings = {
 }
 
 export default function AdminSettingsPage() {
-  const { data, isLoading, mutate } = useSWR<{ data: Settings }>('/api/admin/settings', fetcher)
+  const { data, error: loadError, isLoading, mutate } = useSWR<{ data: Settings }>('/api/admin/settings', fetcher, {
+    // Ne pas écraser une saisie en cours au retour sur l'onglet
+    revalidateOnFocus: false,
+  })
   const [form, setForm] = useState<Settings | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false)
 
   useEffect(() => {
     if (data?.data) setForm(data.data)
@@ -41,35 +59,56 @@ export default function AdminSettingsPage() {
     setSaved(false)
   }
 
+  /** Activer la maintenance coupe l'accès de toutes les entreprises : confirmation explicite. */
+  function requestSave() {
+    if (!form || saving) return
+    if (form.maintenance_mode && !data?.data?.maintenance_mode) {
+      setConfirmMaintenance(true)
+      return
+    }
+    save()
+  }
+
   async function save() {
-    if (!form) return
+    if (!form || saving) return
     setSaving(true)
     setError('')
     try {
-      const res = await fetch('/api/admin/settings', {
+      await apiFetch('/api/admin/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, trial_days: Number(form.trial_days) }),
+        body: { ...form, trial_days: Number(form.trial_days) },
       })
-      const json = await res.json()
-      if (!res.ok) {
-        setError(json.error || 'Erreur')
-        return
-      }
+      toast.success('Paramètres enregistrés')
+      setConfirmMaintenance(false)
       mutate()
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
-    } catch {
-      setError('Erreur réseau')
+    } catch (e) {
+      setConfirmMaintenance(false)
+      setError(errorMessage(e))
     } finally {
       setSaving(false)
     }
   }
 
-  if (isLoading || !form) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      <div className="p-4 sm:p-8 max-w-3xl mx-auto space-y-5" aria-busy="true" aria-label="Chargement">
+        <Skeleton className="h-8 w-48" />
+        {Array.from({ length: 4 }, (_, i) => (
+          <Skeleton key={i} className="h-40 rounded-xl" />
+        ))}
+      </div>
+    )
+  }
+
+  if (loadError || !form) {
+    return (
+      <div className="p-4 sm:p-8 max-w-3xl mx-auto">
+        <ErrorState
+          description={loadError ? errorMessage(loadError) : 'Les paramètres sont indisponibles.'}
+          onRetry={() => mutate()}
+        />
       </div>
     )
   }
@@ -81,7 +120,7 @@ export default function AdminSettingsPage() {
           <h1 className="text-2xl font-bold text-zinc-950">Paramètres</h1>
           <p className="text-sm text-zinc-500">Configuration globale de la plateforme</p>
         </div>
-        <Button onClick={save} disabled={saving}>
+        <Button onClick={requestSave} disabled={saving}>
           {saving ? (
             <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
           ) : saved ? (
@@ -91,7 +130,11 @@ export default function AdminSettingsPage() {
         </Button>
       </header>
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+          {error}
+        </p>
+      )}
 
       {/* Général */}
       <Card className="p-6 mb-5">
@@ -210,6 +253,32 @@ export default function AdminSettingsPage() {
           </div>
         </div>
       </Card>
+
+      <AlertDialog open={confirmMaintenance} onOpenChange={(o) => !saving && setConfirmMaintenance(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Activer le mode maintenance ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Toutes les entreprises perdront immédiatement l’accès à l’application et verront le message de
+              maintenance, jusqu’à ce que vous le désactiviez. Les administrateurs restent connectés.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault()
+                save()
+              }}
+            >
+              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Activer et enregistrer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -9,7 +9,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Search, FileText, Loader2, User, Calendar, Activity, Filter } from 'lucide-react'
+import { Search, FileText, User, RotateCw, ScrollText } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
+import { ROLE_LABELS } from '@/lib/permissions'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import type { UserRole } from '@/lib/types'
 
 interface AuditLog {
   id: string; action: string; entity_type: string; entity_id: string | null
@@ -29,9 +34,16 @@ const entityLabels: Record<string, string> = {
   breakage_record: 'Casse', price_rule: 'Règle prix', promotion: 'Promotion',
 }
 
+function formatDetailValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [entityType, setEntityType] = useState('all')
   const [action, setAction] = useState('all')
@@ -39,41 +51,34 @@ export default function AuditLogsPage() {
 
   const fetchData = useCallback(async () => {
     setIsLoading(true)
+    setLoadError(null)
     try {
       const params = new URLSearchParams({
         ...(entityType !== 'all' && { entity_type: entityType }),
         ...(action !== 'all' && { action }),
         limit,
       })
-      const res = await fetch(`/api/audit-logs?${params}`)
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`)
-      }
-      const json = await res.json()
+      const json = await apiFetch<{ data: AuditLog[] }>(`/api/audit-logs?${params}`)
       setLogs(Array.isArray(json.data) ? json.data : [])
-    } catch (e) { 
-      console.error('Error fetching audit logs:', e)
-      setLogs([])
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Erreur inconnue')
+    } finally {
+      setIsLoading(false)
     }
-    finally { setIsLoading(false) }
   }, [entityType, action, limit])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  const filtered = logs.filter(log =>
-    log.user_name?.toLowerCase().includes(search.toLowerCase()) ||
-    log.entity_type?.toLowerCase().includes(search.toLowerCase()) ||
-    log.action?.toLowerCase().includes(search.toLowerCase())
-  )
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Journal d'Audit" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
-      </div>
-    )
-  }
+  const term = search.trim().toLowerCase()
+  const filtered = term
+    ? logs.filter(log =>
+        log.user_name?.toLowerCase().includes(term) ||
+        log.entity_type?.toLowerCase().includes(term) ||
+        (entityLabels[log.entity_type] || '').toLowerCase().includes(term) ||
+        log.action?.toLowerCase().includes(term) ||
+        (actionLabels[log.action] || '').toLowerCase().includes(term)
+      )
+    : logs
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50/50">
@@ -85,15 +90,16 @@ export default function AuditLogsPage() {
           <CardContent className="p-4">
             <div className="flex flex-col lg:flex-row gap-4">
               <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" aria-hidden="true" />
                 <Input
                   placeholder="Rechercher par utilisateur, entité, action..."
+                  aria-label="Rechercher dans le journal"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9"
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <div>
                   <Label className="text-xs">Entité</Label>
                   <Select value={entityType} onValueChange={setEntityType}>
@@ -130,8 +136,8 @@ export default function AuditLogsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button size="sm" variant="outline" onClick={fetchData} className="mt-5">
-                  <Filter className="h-4 w-4 mr-2" /> Filtrer
+                <Button size="sm" variant="outline" onClick={fetchData} disabled={isLoading} className="mt-5">
+                  <RotateCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" /> Actualiser
                 </Button>
               </div>
             </div>
@@ -140,9 +146,17 @@ export default function AuditLogsPage() {
 
         {/* Logs table */}
         <Card>
-          <CardContent className="p-0">
-            {filtered.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucune entrée trouvée</div>
+          <CardContent className={isLoading || loadError || filtered.length === 0 ? 'p-4' : 'p-0'}>
+            {isLoading ? (
+              <TableSkeleton rows={8} columns={5} />
+            ) : loadError ? (
+              <ErrorState description={loadError} onRetry={fetchData} />
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                icon={ScrollText}
+                title={logs.length === 0 ? 'Aucune entrée dans le journal' : 'Aucune entrée ne correspond à la recherche'}
+                description={logs.length === 0 ? 'Les actions sensibles (créations, modifications, suppressions) apparaîtront ici.' : undefined}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -159,21 +173,19 @@ export default function AuditLogsPage() {
                 <TableBody>
                   {filtered.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell className="text-sm text-zinc-500">
-                        {new Date(log.created_at).toLocaleString('fr-FR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                      <TableCell className="text-sm text-zinc-500 whitespace-nowrap">
+                        {formatDateTime(log.created_at)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-zinc-400" />
+                          <User className="h-4 w-4 text-zinc-400" aria-hidden="true" />
                           <div>
                             <div className="text-sm font-medium">{log.user_name || 'Système'}</div>
-                            {log.user_role && <div className="text-xs text-zinc-400">{log.user_role}</div>}
+                            {log.user_role && (
+                              <div className="text-xs text-zinc-500">
+                                {ROLE_LABELS[log.user_role as UserRole] || log.user_role}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </TableCell>
@@ -184,7 +196,7 @@ export default function AuditLogsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-zinc-400" />
+                          <FileText className="h-4 w-4 text-zinc-400" aria-hidden="true" />
                           <span className="text-sm">{entityLabels[log.entity_type] || log.entity_type}</span>
                         </div>
                       </TableCell>
@@ -192,14 +204,14 @@ export default function AuditLogsPage() {
                         {log.details ? (
                           <span title={JSON.stringify(log.details)}>
                             {typeof log.details === 'object'
-                              ? Object.entries(log.details).map(([k, v]) => `${k}: ${v}`).join(', ')
+                              ? Object.entries(log.details).map(([k, v]) => `${k}: ${formatDetailValue(v)}`).join(', ')
                               : String(log.details)}
                           </span>
-                        ) : '-'}
+                        ) : '—'}
                       </TableCell>
-                      <TableCell className="text-sm text-zinc-500">{log.ip_address || '-'}</TableCell>
+                      <TableCell className="text-sm text-zinc-500">{log.ip_address || '—'}</TableCell>
                       <TableCell className="text-sm text-zinc-500 max-w-[150px] truncate" title={log.user_agent || ''}>
-                        {log.user_agent ? (log.user_agent as string).split(' ')[0] : '-'}
+                        {log.user_agent ? log.user_agent.split(' ')[0] : '—'}
                       </TableCell>
                     </TableRow>
                   ))}

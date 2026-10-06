@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import { BrandLogo } from '@/components/brand-logo'
 import { canAccessPath } from '@/lib/route-permissions'
+import { ROLE_LABELS } from '@/lib/permissions'
 import {
   Sidebar,
   SidebarContent,
@@ -39,6 +40,7 @@ import {
   Settings,
   ChevronsUpDown,
   LogOut,
+  KeyRound,
   CreditCard,
   PackageSearch,
   FileText,
@@ -244,12 +246,7 @@ export function DashboardSidebar({
   }
 
   const getRoleBadge = (role?: string) => {
-    const labels: Record<string, string> = {
-      owner: 'Propriétaire',
-      manager: 'Gérant',
-      cashier: 'Caissier',
-      warehouse_keeper: 'Magasinier',
-    }
+    const labels: Record<string, string> = ROLE_LABELS
     return labels[role ?? ''] ?? role ?? 'Utilisateur'
   }
 
@@ -414,11 +411,11 @@ export function DashboardSidebar({
                     <span className="font-medium truncate text-sm text-zinc-950">
                       {displayName}
                     </span>
-                    <span className="text-[10px] text-zinc-400">
+                    <span className="text-[10px] text-zinc-500">
                       {getRoleBadge(user?.role)}
                     </span>
                   </div>
-                  <ChevronsUpDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                  <ChevronsUpDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -433,22 +430,31 @@ export function DashboardSidebar({
                 </div>
                 <DropdownMenuItem asChild className="cursor-pointer">
                   <Link href="/dashboard/profile" className="flex items-center gap-2">
-                    <UserCircle className="h-4 w-4 text-zinc-500" />
+                    <UserCircle className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                     <span className="text-sm">Mon profil</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild className="cursor-pointer">
-                  <Link href="/dashboard/settings" className="flex items-center gap-2">
-                    <Settings className="h-4 w-4 text-zinc-500" />
-                    <span className="text-sm">Paramètres</span>
+                  <Link href="/dashboard/settings/security" className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                    <span className="text-sm">Mot de passe</span>
                   </Link>
                 </DropdownMenuItem>
+                {/* Paramètres de l'entreprise : seulement si le rôle y a accès (sinon redirection « accès refusé ») */}
+                {canSee({ href: '/dashboard/settings' }) && (
+                  <DropdownMenuItem asChild className="cursor-pointer">
+                    <Link href="/dashboard/settings" className="flex items-center gap-2">
+                      <Settings className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                      <span className="text-sm">Paramètres</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
                   onClick={() => signOut({ callbackUrl: '/' })}
                 >
-                  <LogOut className="h-4 w-4 mr-2" />
+                  <LogOut className="h-4 w-4 mr-2" aria-hidden="true" />
                   <span className="text-sm">Déconnexion</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>

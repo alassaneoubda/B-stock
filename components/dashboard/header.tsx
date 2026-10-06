@@ -1,5 +1,6 @@
 'use client'
 
+import useSWR from 'swr'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Bell, Plus, ShoppingCart, Users, Truck } from 'lucide-react'
 import Link from 'next/link'
+import { apiFetch } from '@/lib/api-client'
 
 interface DashboardHeaderProps {
   title: string
@@ -17,7 +19,36 @@ interface DashboardHeaderProps {
   actions?: React.ReactNode
 }
 
+const UNREAD_LIMIT = 100
+/** Clé SWR à invalider (mutate) après avoir marqué des alertes comme lues. */
+export const UNREAD_ALERTS_KEY = `/api/alerts?unreadOnly=true&limit=${UNREAD_LIMIT}`
+
+/**
+ * Nombre d'alertes non lues (null si inconnu : pas le droit alerts.read, réseau…).
+ * Partagé entre toutes les pages via SWR (une requête par minute au plus).
+ */
+async function fetchUnreadCount(url: string): Promise<number | null> {
+  try {
+    const json = await apiFetch<{ data: unknown[] }>(url)
+    return Array.isArray(json.data) ? json.data.length : 0
+  } catch {
+    // Indicateur secondaire : en cas d'échec on n'affiche simplement pas de pastille
+    return null
+  }
+}
+
 export function DashboardHeader({ title, description, actions }: DashboardHeaderProps) {
+  const { data: unreadCount } = useSWR(UNREAD_ALERTS_KEY, fetchUnreadCount, {
+    refreshInterval: 60_000,
+    dedupingInterval: 30_000,
+    revalidateOnFocus: true,
+  })
+  const hasUnread = typeof unreadCount === 'number' && unreadCount > 0
+  const countLabel = hasUnread ? (unreadCount >= UNREAD_LIMIT ? `${UNREAD_LIMIT - 1}+` : String(unreadCount)) : ''
+  const bellLabel = hasUnread
+    ? `Alertes : ${countLabel} non lue${unreadCount > 1 ? 's' : ''}`
+    : 'Alertes'
+
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 bg-white border-b border-zinc-200/60 px-4 lg:px-6 sticky top-0 z-40">
       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -37,38 +68,45 @@ export function DashboardHeader({ title, description, actions }: DashboardHeader
         {/* Quick Actions */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" className="h-8 px-3 gap-1.5 text-xs font-medium">
-              <Plus className="h-3.5 w-3.5" />
+            <Button size="sm" className="h-8 px-3 gap-1.5 text-xs font-medium" aria-label="Nouveau">
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Nouveau</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem asChild className="cursor-pointer">
               <Link href="/dashboard/sales/new" className="flex items-center gap-2">
-                <ShoppingCart className="h-4 w-4 text-zinc-500" />
+                <ShoppingCart className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                 <span className="text-sm">Nouvelle vente</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="cursor-pointer">
               <Link href="/dashboard/clients/new" className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-zinc-500" />
+                <Users className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                 <span className="text-sm">Nouveau client</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="cursor-pointer">
               <Link href="/dashboard/deliveries/new" className="flex items-center gap-2">
-                <Truck className="h-4 w-4 text-zinc-500" />
+                <Truck className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                 <span className="text-sm">Nouvelle tournée</span>
               </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Notifications */}
+        {/* Alertes : pastille uniquement s'il existe des alertes non lues */}
         <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-md hover:bg-zinc-100" asChild>
-          <Link href="/dashboard/alerts">
-            <Bell className="h-4 w-4 text-zinc-500" />
-            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-blue-500" />
+          <Link href="/dashboard/alerts" aria-label={bellLabel} title={bellLabel}>
+            <Bell className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+            {hasUnread && (
+              <span
+                className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center"
+                aria-hidden="true"
+              >
+                {countLabel}
+              </span>
+            )}
           </Link>
         </Button>
 

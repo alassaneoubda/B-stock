@@ -1,14 +1,9 @@
 'use client'
 
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-} from 'react'
+import { createContext, useContext, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { SessionProvider, signIn } from 'next-auth/react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -18,6 +13,14 @@ import { BrandLogo } from '@/components/brand-logo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Dialog, DialogOverlay, DialogPortal, DialogTitle } from '@/components/ui/dialog'
+import {
+  NETWORK_ERROR,
+  credentialsErrorMessage,
+  httpErrorMessage,
+  readJson,
+} from '@/components/auth/auth-errors'
+import { passwordPolicyError } from '@/lib/permissions'
 import { Loader2, Eye, EyeOff, ArrowRight, X, Check } from 'lucide-react'
 
 type Mode = 'login' | 'register'
@@ -58,6 +61,8 @@ export function AuthModalProvider({ children }: { children: React.ReactNode }) {
 
 /* ------------------------------------------------------------------ */
 /* Modal shell with descending animation                               */
+/* Basée sur le Dialog Radix (shadcn) : Échap, piège du focus, blocage */
+/* du défilement et restauration du focus à la fermeture.              */
 /* ------------------------------------------------------------------ */
 
 function AuthModal({
@@ -71,83 +76,48 @@ function AuthModal({
   setMode: (m: Mode) => void
   onClose: () => void
 }) {
-  const [render, setRender] = useState(false)
-  const [show, setShow] = useState(false)
-
-  useEffect(() => {
-    if (isOpen) {
-      setRender(true)
-      const raf = requestAnimationFrame(() => setShow(true))
-      return () => cancelAnimationFrame(raf)
-    }
-    setShow(false)
-    const t = setTimeout(() => setRender(false), 320)
-    return () => clearTimeout(t)
-  }, [isOpen])
-
-  // Lock body scroll + close on Escape
-  useEffect(() => {
-    if (!render) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
-    }
-  }, [render, onClose])
-
-  if (!render) return null
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-3 sm:p-6">
-      {/* Overlay */}
-      <div
-        onClick={onClose}
-        className="fixed inset-0 bg-zinc-950/50 backdrop-blur-sm transition-opacity duration-300"
-        style={{ opacity: show ? 1 : 0 }}
-      />
+    <Dialog open={isOpen} onOpenChange={(next) => !next && onClose()}>
+      <DialogPortal>
+        {/* L'overlay sert aussi de conteneur défilant (formulaire long sur mobile) ;
+            un clic en dehors du panneau ferme la modale. */}
+        <DialogOverlay className="z-[100] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-3 backdrop-blur-sm duration-300 sm:p-6">
+          {/* Panel — descend depuis le haut */}
+          <DialogPrimitive.Content
+            aria-describedby={undefined}
+            className="relative z-10 my-4 w-full max-w-md outline-none duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:slide-in-from-top-14 data-[state=closed]:slide-out-to-top-14 data-[state=open]:zoom-in-97 data-[state=closed]:zoom-out-97 sm:my-12"
+          >
+            <DialogTitle className="sr-only">
+              {mode === 'login' ? 'Connexion' : 'Créer un compte'}
+            </DialogTitle>
+            <div className="rounded-2xl bg-white shadow-2xl shadow-zinc-900/20 border border-zinc-200/80 overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 sm:px-6 pt-5 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <BrandLogo href={false} height={88} />
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
+                  aria-label="Fermer"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
 
-      {/* Panel — descend depuis le haut */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative z-10 w-full max-w-md my-4 sm:my-12"
-        style={{
-          opacity: show ? 1 : 0,
-          transform: show ? 'translateY(0) scale(1)' : 'translateY(-56px) scale(0.97)',
-          transition:
-            'transform 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 280ms ease-out',
-        }}
-      >
-        <div className="rounded-2xl bg-white shadow-2xl shadow-zinc-900/20 border border-zinc-200/80 overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 sm:px-6 pt-5 pb-3">
-            <div className="flex items-center gap-2.5">
-              <BrandLogo href={false} height={88} />
+              <div className="px-5 sm:px-6 pb-6">
+                {mode === 'login' ? (
+                  <LoginForm onSwitch={() => setMode('register')} onClose={onClose} />
+                ) : (
+                  <RegisterForm onSwitch={() => setMode('login')} />
+                )}
+              </div>
             </div>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
-              aria-label="Fermer"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="px-5 sm:px-6 pb-6">
-            {mode === 'login' ? (
-              <LoginForm onSwitch={() => setMode('register')} onClose={onClose} />
-            ) : (
-              <RegisterForm onSwitch={() => setMode('login')} />
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+          </DialogPrimitive.Content>
+        </DialogOverlay>
+      </DialogPortal>
+    </Dialog>
   )
 }
 
@@ -166,6 +136,8 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Verrou synchrone : empêche une double soumission avant le re-rendu
+  const submittingRef = useRef(false)
 
   const {
     register,
@@ -174,6 +146,8 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
   } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) })
 
   async function onSubmit(data: LoginValues) {
+    if (submittingRef.current) return
+    submittingRef.current = true
     setIsLoading(true)
     setError(null)
     try {
@@ -183,15 +157,18 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
         redirect: false,
       })
       if (result?.error) {
-        setError('Email ou mot de passe incorrect')
+        setError(credentialsErrorMessage(result.error, result.code))
+      } else if (result && !result.ok) {
+        setError('Une erreur est survenue lors de la connexion. Veuillez réessayer.')
       } else {
         onClose()
         router.push('/dashboard')
         router.refresh()
       }
     } catch {
-      setError('Une erreur est survenue. Veuillez réessayer.')
+      setError(NETWORK_ERROR)
     } finally {
+      submittingRef.current = false
       setIsLoading(false)
     }
   }
@@ -213,7 +190,10 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium">
+          <div
+            role="alert"
+            className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium"
+          >
             {error}
           </div>
         )}
@@ -234,9 +214,18 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="login-password" className="text-sm font-medium text-zinc-700">
-            Mot de passe
-          </Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="login-password" className="text-sm font-medium text-zinc-700">
+              Mot de passe
+            </Label>
+            <Link
+              href="/forgot-password"
+              onClick={onClose}
+              className="text-xs font-medium text-zinc-500 hover:text-zinc-950 hover:underline"
+            >
+              Mot de passe oublié ?
+            </Link>
+          </div>
           <div className="relative">
             <Input
               id="login-password"
@@ -250,6 +239,7 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
+              aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
@@ -263,7 +253,7 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
           disabled={isLoading}
         >
           {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" aria-label="Connexion en cours…" />
           ) : (
             <span className="flex items-center justify-center gap-2">
               Se connecter <ArrowRight className="h-4 w-4" />
@@ -274,7 +264,11 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
 
       <p className="text-center text-sm text-zinc-500">
         Pas encore de compte ?{' '}
-        <button onClick={onSwitch} className="font-medium text-zinc-950 hover:underline">
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-medium text-zinc-950 hover:underline"
+        >
           Créer un compte
         </button>
       </p>
@@ -292,11 +286,11 @@ const registerSchema = z
     fullName: z.string().min(2, 'Le nom complet doit contenir au moins 2 caractères'),
     email: z.string().email('Email invalide'),
     phone: z.string().optional(),
-    password: z
-      .string()
-      .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
-      .regex(/[A-Za-z]/, 'Le mot de passe doit contenir au moins une lettre')
-      .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre'),
+    // Mêmes règles que le serveur (lib/permissions)
+    password: z.string().superRefine((value, ctx) => {
+      const policyError = passwordPolicyError(value)
+      if (policyError) ctx.addIssue({ code: z.ZodIssueCode.custom, message: policyError })
+    }),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -310,6 +304,8 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  // Verrou synchrone : empêche une double soumission avant le re-rendu
+  const submittingRef = useRef(false)
   const switchRef = useRef(onSwitch)
   switchRef.current = onSwitch
 
@@ -320,6 +316,8 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   } = useForm<RegisterValues>({ resolver: zodResolver(registerSchema) })
 
   async function onSubmit(data: RegisterValues) {
+    if (submittingRef.current) return
+    submittingRef.current = true
     setIsLoading(true)
     setError(null)
     try {
@@ -334,25 +332,27 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
           password: data.password,
         }),
       })
-      const result = await response.json()
+      const result = await readJson(response)
       if (!response.ok) {
-        setError(result.error || 'Une erreur est survenue')
+        // Message précis du serveur (email déjà utilisé, inscriptions fermées, 429…)
+        setError(httpErrorMessage(response, result))
         return
       }
       setSuccess(true)
       setTimeout(() => switchRef.current(), 1600)
     } catch {
-      setError('Une erreur est survenue. Veuillez réessayer.')
+      setError(NETWORK_ERROR)
     } finally {
+      submittingRef.current = false
       setIsLoading(false)
     }
   }
 
   if (success) {
     return (
-      <div className="py-8 text-center space-y-3">
+      <div role="status" className="py-8 text-center space-y-3">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-          <Check className="h-6 w-6 text-green-600" />
+          <Check className="h-6 w-6 text-green-600" aria-hidden="true" />
         </div>
         <h2 className="text-lg font-bold text-zinc-950">Compte créé !</h2>
         <p className="text-sm text-zinc-500">Vous pouvez maintenant vous connecter.</p>
@@ -377,7 +377,10 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium">
+          <div
+            role="alert"
+            className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium"
+          >
             {error}
           </div>
         )}
@@ -462,6 +465,7 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -492,13 +496,21 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
           className="w-full h-10 bg-zinc-950 hover:bg-zinc-800 text-white text-sm font-semibold"
           disabled={isLoading}
         >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Créer mon compte'}
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-label="Création du compte…" />
+          ) : (
+            'Créer mon compte'
+          )}
         </Button>
       </form>
 
       <p className="text-center text-sm text-zinc-500">
         Déjà un compte ?{' '}
-        <button onClick={onSwitch} className="font-medium text-zinc-950 hover:underline">
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-medium text-zinc-950 hover:underline"
+        >
           Se connecter
         </button>
       </p>

@@ -19,10 +19,15 @@ import {
   CartesianGrid,
 } from 'recharts'
 import { Loader2, Download, TrendingUp, Building2, Users, CreditCard } from 'lucide-react'
+import { toast } from 'sonner'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ApiError, apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { ErrorState } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
-const xof = (n: number) => new Intl.NumberFormat('fr-FR').format(Math.round(n || 0)) + ' FCFA'
-const num = (n: number) => new Intl.NumberFormat('fr-FR').format(n || 0)
+const fetcher = (url: string) => apiFetch(url)
+const xof = formatMoney
+const num = formatNumber
 
 type ReportData = {
   months: number
@@ -47,15 +52,48 @@ const PIE_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#089
 
 export default function AdminReportsPage() {
   const [months, setMonths] = useState(12)
-  const { data, isLoading } = useSWR<{ data: ReportData }>(
+  const [exporting, setExporting] = useState<string | null>(null)
+  const { data, error, isLoading, mutate } = useSWR<{ data: ReportData }>(
     `/api/admin/reports?months=${months}`,
     fetcher
   )
   const r = data?.data
 
-  function exportCsv(type: string) {
-    const url = `/api/admin/reports/export?type=${type}&months=${months}`
-    window.open(url, '_blank')
+  /**
+   * Téléchargement du CSV dans la page (au lieu d'un onglet qui affichait le
+   * JSON d'erreur brut) : les échecs sont signalés par un toast.
+   */
+  async function exportCsv(type: string) {
+    if (exporting) return
+    setExporting(type)
+    try {
+      let res: Response
+      try {
+        res = await fetch(`/api/admin/reports/export?type=${type}&months=${months}`)
+      } catch {
+        throw new ApiError('Connexion impossible. Vérifiez votre réseau et réessayez.', 0, 'NETWORK')
+      }
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        throw new ApiError(payload?.error || 'L’export a échoué.', res.status)
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] || `${type}.csv`
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(href)
+      toast.success('Export téléchargé')
+    } catch (e) {
+      toastError(e, 'Export impossible')
+    } finally {
+      setExporting(null)
+    }
   }
 
   return (
@@ -70,6 +108,7 @@ export default function AdminReportsPage() {
             value={months}
             onChange={(e) => setMonths(Number(e.target.value))}
             className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+            aria-label="Période"
           >
             <option value={6}>6 mois</option>
             <option value={12}>12 mois</option>
@@ -78,10 +117,21 @@ export default function AdminReportsPage() {
         </div>
       </header>
 
-      {isLoading || !r ? (
-        <div className="flex items-center justify-center py-32">
-          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      {isLoading ? (
+        <div className="space-y-6" aria-busy="true" aria-label="Chargement">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-28 rounded-xl" />
+            ))}
+          </div>
+          <Skeleton className="h-14 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
         </div>
+      ) : error || !r ? (
+        <ErrorState
+          description={error ? errorMessage(error) : 'Les rapports sont indisponibles.'}
+          onRetry={() => mutate()}
+        />
       ) : (
         <>
           {/* KPIs */}
@@ -109,10 +159,15 @@ export default function AdminReportsPage() {
           {/* Exports */}
           <Card className="p-4 mb-6 flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-zinc-700 mr-2">Exports CSV :</span>
-            <ExportBtn label="Entreprises" onClick={() => exportCsv('companies')} />
-            <ExportBtn label="Utilisateurs" onClick={() => exportCsv('users')} />
-            <ExportBtn label="Paiements" onClick={() => exportCsv('payments')} />
-            <ExportBtn label="Revenus mensuels" onClick={() => exportCsv('revenue')} />
+            <ExportBtn label="Entreprises" busy={exporting === 'companies'} disabled={!!exporting} onClick={() => exportCsv('companies')} />
+            <ExportBtn label="Utilisateurs" busy={exporting === 'users'} disabled={!!exporting} onClick={() => exportCsv('users')} />
+            <ExportBtn label="Paiements" busy={exporting === 'payments'} disabled={!!exporting} onClick={() => exportCsv('payments')} />
+            <ExportBtn
+              label="Revenus mensuels"
+              busy={exporting === 'revenue'}
+              disabled={!!exporting}
+              onClick={() => exportCsv('revenue')}
+            />
           </Card>
 
           {/* Revenue chart */}
@@ -145,7 +200,7 @@ export default function AdminReportsPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#94a3b8" />
                   <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" allowDecimals={false} width={30} />
-                  <Tooltip />
+                  <Tooltip formatter={(v: number) => [formatNumber(v), 'Entreprises']} />
                   <Bar dataKey="count" fill="#16a34a" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -233,10 +288,24 @@ function Kpi({
   )
 }
 
-function ExportBtn({ label, onClick }: { label: string; onClick: () => void }) {
+function ExportBtn({
+  label,
+  onClick,
+  busy,
+  disabled,
+}: {
+  label: string
+  onClick: () => void
+  busy?: boolean
+  disabled?: boolean
+}) {
   return (
-    <Button variant="outline" size="sm" onClick={onClick}>
-      <Download className="h-3.5 w-3.5 mr-1.5" />
+    <Button variant="outline" size="sm" onClick={onClick} disabled={disabled}>
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+      ) : (
+        <Download className="h-3.5 w-3.5 mr-1.5" />
+      )}
       {label}
     </Button>
   )

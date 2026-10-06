@@ -6,9 +6,12 @@ import useSWR from 'swr'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Building2 } from 'lucide-react'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { formatDate, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
 
 type Company = {
   id: string
@@ -34,7 +37,7 @@ export default function AdminCompaniesPage() {
   const [page, setPage] = useState(1)
 
   const qs = new URLSearchParams({ search, status, page: String(page) }).toString()
-  const { data, isLoading } = useSWR<{
+  const { data, error, isLoading, mutate } = useSWR<{
     data: Company[]
     pagination: { page: number; pages: number; total: number }
   }>(`/api/admin/companies?${qs}`, fetcher)
@@ -47,7 +50,7 @@ export default function AdminCompaniesPage() {
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-zinc-950">Entreprises</h1>
         <p className="text-sm text-zinc-500">
-          {pagination ? `${pagination.total} entreprise(s)` : 'Gestion des tenants'}
+          {pagination ? `${formatNumber(pagination.total)} entreprise(s)` : 'Gestion des tenants'}
         </p>
       </header>
 
@@ -86,11 +89,18 @@ export default function AdminCompaniesPage() {
 
       <Card className="overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={5} />
           </div>
+        ) : error ? (
+          <ErrorState className="m-5" description={errorMessage(error)} onRetry={() => mutate()} />
         ) : companies.length === 0 ? (
-          <div className="py-20 text-center text-sm text-zinc-400">Aucune entreprise</div>
+          <EmptyState
+            className="m-5"
+            icon={Building2}
+            title="Aucune entreprise"
+            description={search || status ? 'Aucune entreprise ne correspond à ces filtres.' : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -118,9 +128,9 @@ export default function AdminCompaniesPage() {
                     <td className="px-5 py-3 capitalize text-zinc-700">
                       {c.subscription_plan_name || '—'}
                     </td>
-                    <td className="px-5 py-3 text-zinc-700">{c.user_count}</td>
+                    <td className="px-5 py-3 text-zinc-700">{formatNumber(c.user_count)}</td>
                     <td className="px-5 py-3 text-zinc-500">
-                      {new Date(c.created_at).toLocaleDateString('fr-FR')}
+                      {formatDate(c.created_at)}
                     </td>
                   </tr>
                 ))}
@@ -139,6 +149,7 @@ export default function AdminCompaniesPage() {
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
+              aria-label="Page précédente"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -146,6 +157,7 @@ export default function AdminCompaniesPage() {
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
+              aria-label="Page suivante"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronRight className="h-4 w-4" />

@@ -10,6 +10,20 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -28,7 +42,30 @@ import {
   AlertOctagon,
 } from 'lucide-react'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
+
+const STATUS_LABELS: Record<string, string> = {
+  trialing: 'Période d\u2019essai',
+  active: 'Actif',
+  past_due: 'Impayé',
+  canceled: 'Résilié',
+}
+
+/** ISO (UTC) → valeur d'un <input type="datetime-local"> en heure locale. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** Valeur datetime-local (heure locale) → ISO avec fuseau, pour le serveur. */
+function fromLocalInput(v: string): string | null {
+  if (!v) return null
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
 
 type Announcement = {
   id: string
@@ -59,7 +96,7 @@ const levelMeta: Record<string, { label: string; cls: string; icon: React.Elemen
 const audienceLabel = (a: Announcement) => {
   if (a.audience === 'all') return 'Toutes les entreprises'
   if (a.audience === 'company') return a.company_name ? `Entreprise : ${a.company_name}` : 'Entreprise ciblée'
-  if (a.audience === 'status') return `Statut : ${a.target_status}`
+  if (a.audience === 'status') return `Statut : ${STATUS_LABELS[a.target_status || ''] || a.target_status}`
   return a.audience
 }
 
@@ -77,7 +114,7 @@ const emptyForm = {
 }
 
 export default function AdminAnnouncementsPage() {
-  const { data, isLoading, mutate } = useSWR<{ data: Announcement[] }>(
+  const { data, error: loadError, isLoading, mutate } = useSWR<{ data: Announcement[] }>(
     '/api/admin/announcements',
     fetcher
   )
@@ -89,6 +126,8 @@ export default function AdminAnnouncementsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [companySearch, setCompanySearch] = useState('')
+  const [toDelete, setToDelete] = useState<Announcement | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   const { data: companiesData } = useSWR<{ data: Company[] }>(
     open && form.audience === 'company'
@@ -116,16 +155,25 @@ export default function AdminAnnouncementsPage() {
       target_status: a.target_status || 'trialing',
       dismissible: a.dismissible,
       is_active: a.is_active,
-      starts_at: a.starts_at ? a.starts_at.slice(0, 16) : '',
-      ends_at: a.ends_at ? a.ends_at.slice(0, 16) : '',
+      starts_at: toLocalInput(a.starts_at),
+      ends_at: toLocalInput(a.ends_at),
     })
     setError('')
     setOpen(true)
   }
 
   async function save() {
-    setSaving(true)
+    if (saving) return
     setError('')
+    if (!editing && form.audience === 'company' && !form.target_company_id) {
+      setError('Sélectionnez l\u2019entreprise ciblée.')
+      return
+    }
+    if (form.starts_at && form.ends_at && new Date(form.ends_at) <= new Date(form.starts_at)) {
+      setError('La date de fin doit être postérieure à la date de début.')
+      return
+    }
+    setSaving(true)
     try {
       const payload = {
         title: form.title,
@@ -133,8 +181,8 @@ export default function AdminAnnouncementsPage() {
         level: form.level,
         dismissible: form.dismissible,
         is_active: form.is_active,
-        starts_at: form.starts_at || null,
-        ends_at: form.ends_at || null,
+        starts_at: fromLocalInput(form.starts_at),
+        ends_at: fromLocalInput(form.ends_at),
         ...(editing
           ? {}
           : {
@@ -144,38 +192,48 @@ export default function AdminAnnouncementsPage() {
             }),
       }
       const url = editing ? `/api/admin/announcements/${editing.id}` : '/api/admin/announcements'
-      const res = await fetch(url, {
-        method: editing ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        setError(json.error || 'Erreur')
-        return
-      }
+      await apiFetch(url, { method: editing ? 'PATCH' : 'POST', body: payload })
+      toast.success(editing ? 'Annonce mise à jour' : 'Annonce créée')
       setOpen(false)
       mutate()
-    } catch {
-      setError('Erreur réseau')
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setSaving(false)
     }
   }
 
   async function toggleActive(a: Announcement) {
-    await fetch(`/api/admin/announcements/${a.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: !a.is_active }),
-    })
-    mutate()
+    if (busyId) return
+    setBusyId(a.id)
+    try {
+      await apiFetch(`/api/admin/announcements/${a.id}`, {
+        method: 'PATCH',
+        body: { is_active: !a.is_active },
+      })
+      toast.success(a.is_active ? 'Annonce désactivée' : 'Annonce activée')
+      await mutate()
+    } catch (e) {
+      toastError(e, 'Modification impossible')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   async function remove(a: Announcement) {
-    if (!confirm(`Supprimer l'annonce « ${a.title} » ?`)) return
-    await fetch(`/api/admin/announcements/${a.id}`, { method: 'DELETE' })
-    mutate()
+    if (busyId) return
+    setBusyId(a.id)
+    try {
+      await apiFetch(`/api/admin/announcements/${a.id}`, { method: 'DELETE' })
+      toast.success('Annonce supprimée')
+      setToDelete(null)
+      await mutate()
+    } catch (e) {
+      setToDelete(null)
+      toastError(e, 'Suppression impossible')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   return (
@@ -195,14 +253,18 @@ export default function AdminAnnouncementsPage() {
 
       <Card className="overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={6} />
           </div>
+        ) : loadError ? (
+          <ErrorState className="m-5" description={errorMessage(loadError)} onRetry={() => mutate()} />
         ) : items.length === 0 ? (
-          <div className="py-20 text-center">
-            <Megaphone className="h-10 w-10 mx-auto text-zinc-300 mb-3" />
-            <p className="text-sm text-zinc-400">Aucune annonce pour le moment</p>
-          </div>
+          <EmptyState
+            className="m-5"
+            icon={Megaphone}
+            title="Aucune annonce pour le moment"
+            action={{ label: 'Nouvelle annonce', onClick: openCreate }}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -234,7 +296,12 @@ export default function AdminAnnouncementsPage() {
                       </td>
                       <td className="px-5 py-3 text-zinc-600">{audienceLabel(a)}</td>
                       <td className="px-5 py-3">
-                        <button onClick={() => toggleActive(a)}>
+                        <button
+                          onClick={() => toggleActive(a)}
+                          disabled={!!busyId}
+                          className="disabled:opacity-60"
+                          aria-label={a.is_active ? `Désactiver l\u2019annonce « ${a.title} »` : `Activer l\u2019annonce « ${a.title} »`}
+                        >
                           <Badge
                             className={
                               a.is_active
@@ -246,20 +313,23 @@ export default function AdminAnnouncementsPage() {
                           </Badge>
                         </button>
                       </td>
-                      <td className="px-5 py-3 text-zinc-500">{a.dismissals}</td>
+                      <td className="px-5 py-3 text-zinc-500">{formatNumber(a.dismissals)}</td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => openEdit(a)}
-                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-500"
+                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-500 transition-colors"
                             title="Modifier"
+                            aria-label={`Modifier l\u2019annonce « ${a.title} »`}
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button
-                            onClick={() => remove(a)}
-                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-500"
+                            onClick={() => setToDelete(a)}
+                            disabled={!!busyId}
+                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-500 transition-colors disabled:opacity-60"
                             title="Supprimer"
+                            aria-label={`Supprimer l\u2019annonce « ${a.title} »`}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -274,7 +344,7 @@ export default function AdminAnnouncementsPage() {
         )}
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(o) => !saving && setOpen(o)}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Modifier l\u2019annonce' : 'Nouvelle annonce'}</DialogTitle>
@@ -412,7 +482,11 @@ export default function AdminAnnouncementsPage() {
               />
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-red-600">
+                {error}
+              </p>
+            )}
           </div>
 
           <DialogFooter>
@@ -426,6 +500,33 @@ export default function AdminAnnouncementsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && !busyId && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer l&apos;annonce « {toDelete?.title} » ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La bannière disparaîtra immédiatement pour toutes les entreprises ciblées, et son historique de
+              fermetures sera perdu. Cette action est irréversible : pour la masquer temporairement,
+              désactivez-la plutôt.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!busyId}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!busyId}
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault()
+                if (toDelete) remove(toDelete)
+              }}
+            >
+              {busyId && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Supprimer définitivement
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

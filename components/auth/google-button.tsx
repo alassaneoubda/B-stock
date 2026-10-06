@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,29 +36,54 @@ export function GoogleButton({
   callbackUrl?: string
 }) {
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  function handleClick() {
+  // Retour arrière depuis Google (cache bfcache) : on réactive le bouton
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setIsLoading(false)
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return () => window.removeEventListener('pageshow', onPageShow)
+  }, [])
+
+  async function handleClick() {
+    if (isLoading) return
     setIsLoading(true)
-    // Redirects to Google; on return, the user lands on callbackUrl
-    signIn('google', { callbackUrl })
+    setError(null)
+    try {
+      // Redirige vers Google ; au retour, l'utilisateur arrive sur callbackUrl.
+      // Les refus côté serveur reviennent sur /login?error=… (affichés par la page).
+      await signIn('google', { callbackUrl })
+    } catch {
+      setError('Impossible de lancer la connexion Google. Vérifiez votre réseau et réessayez.')
+      setIsLoading(false)
+    }
   }
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      onClick={handleClick}
-      disabled={isLoading}
-      className="w-full h-11 rounded-xl text-sm font-medium border-[#E7E0D6] bg-white text-[#334155] hover:bg-[#FBF9F6]"
-    >
-      {isLoading ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <span className="flex items-center justify-center gap-2">
-          <GoogleIcon className="h-4 w-4" />
-          {label}
-        </span>
+    <div className="space-y-2">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={handleClick}
+        disabled={isLoading}
+        className="w-full h-11 rounded-xl text-sm font-medium border-[#E7E0D6] bg-white text-[#334155] hover:bg-[#FBF9F6]"
+      >
+        {isLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-label="Redirection vers Google…" />
+        ) : (
+          <span className="flex items-center justify-center gap-2">
+            <GoogleIcon className="h-4 w-4" />
+            {label}
+          </span>
+        )}
+      </Button>
+      {error && (
+        <p role="alert" className="text-xs font-medium text-red-600">
+          {error}
+        </p>
       )}
-    </Button>
+    </div>
   )
 }

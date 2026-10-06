@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
+import { toast } from 'sonner'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -20,40 +22,33 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { ArrowLeft, Loader2, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { ASSIGNABLE_ROLES, ROLE_LABELS, passwordPolicyError } from '@/lib/permissions'
+import { MODULE_OPTIONS, MODULES_HELP_TEXT } from '@/components/dashboard/module-labels'
 
 const userSchema = z.object({
     fullName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
     email: z.string().email('Email invalide'),
-    password: z
-        .string()
-        .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
-        .regex(/[A-Za-z]/, 'Le mot de passe doit contenir au moins une lettre')
-        .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre'),
-    role: z.enum(['manager', 'cashier', 'warehouse_keeper']),
-    phone: z.string().optional(),
-    permissions: z.array(z.string()).default([]),
+    // Même politique que le serveur (lib/permissions)
+    password: z.string().superRefine((value, ctx) => {
+        const policyError = passwordPolicyError(value)
+        if (policyError) ctx.addIssue({ code: z.ZodIssueCode.custom, message: policyError })
+    }),
+    role: z.enum(ASSIGNABLE_ROLES),
+    phone: z.string().max(20, '20 caractères maximum').optional(),
+    permissions: z.array(z.string()),
 })
 
 type UserForm = z.infer<typeof userSchema>
 
-const roles = [
-    { value: 'manager', label: 'Gérant' },
-    { value: 'cashier', label: 'Caissier' },
-    { value: 'warehouse_keeper', label: 'Magasinier' },
-]
-
-const modules = [
-    { id: 'sales', label: 'Ventes & Clients' },
-    { id: 'deliveries', label: 'Livraisons' },
-    { id: 'products', label: 'Stock & Produits' },
-    { id: 'procurement', label: 'Approvisionnement' },
-    { id: 'reports', label: 'Rapports & Alertes' },
-    { id: 'vehicles', label: 'Véhicules' },
-    { id: 'settings', label: 'Configuration' },
-]
 
 export default function NewUserPage() {
     const router = useRouter()
+    const { data: session } = useSession()
+    // Seul le propriétaire peut créer un gérant (refusé par l'API sinon)
+    const roles = ASSIGNABLE_ROLES
+        .filter((role) => role !== 'manager' || session?.user?.role === 'owner')
+        .map((role) => ({ value: role, label: ROLE_LABELS[role] }))
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -67,34 +62,26 @@ export default function NewUserPage() {
         resolver: zodResolver(userSchema),
         defaultValues: {
             role: 'cashier',
+            permissions: [],
         }
     })
 
     const selectedRole = watch('role')
 
     async function onSubmit(data: UserForm) {
+        if (isLoading) return
         setIsLoading(true)
         setError(null)
 
         try {
-            const response = await fetch('/api/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+            await apiFetch('/api/users', { method: 'POST', body: data })
+            toast.success('Utilisateur créé', {
+                description: `Communiquez à ${data.fullName} son email et son mot de passe temporaire.`,
             })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
             router.push('/dashboard/settings/users')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
-        } finally {
+        } catch (e) {
+            setError(errorMessage(e))
             setIsLoading(false)
         }
     }
@@ -109,7 +96,7 @@ export default function NewUserPage() {
                 <div className="mb-6">
                     <Button variant="ghost" size="sm" asChild>
                         <Link href="/dashboard/settings/users">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
+                            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
                             Retour
                         </Link>
                     </Button>
@@ -117,7 +104,7 @@ export default function NewUserPage() {
 
                 <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                        <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                             {error}
                         </div>
                     )}
@@ -163,11 +150,14 @@ export default function NewUserPage() {
                                     <Input
                                         id="password"
                                         type="password"
+                                        autoComplete="new-password"
                                         {...register('password')}
                                         disabled={isLoading}
                                     />
-                                    {errors.password && (
+                                    {errors.password ? (
                                         <p className="text-sm text-destructive">{errors.password.message}</p>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground">8 caractères minimum, avec au moins une lettre et un chiffre.</p>
                                     )}
                                 </div>
 
@@ -176,9 +166,13 @@ export default function NewUserPage() {
                                     <Input
                                         id="phone"
                                         placeholder="Optionnel"
+                                        type="tel"
                                         {...register('phone')}
                                         disabled={isLoading}
                                     />
+                                    {errors.phone && (
+                                        <p className="text-sm text-destructive">{errors.phone.message}</p>
+                                    )}
                                 </div>
                             </div>
 
@@ -189,7 +183,7 @@ export default function NewUserPage() {
                                     value={selectedRole}
                                     disabled={isLoading}
                                 >
-                                    <SelectTrigger>
+                                    <SelectTrigger id="role">
                                         <SelectValue placeholder="Sélectionner un rôle" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -207,14 +201,18 @@ export default function NewUserPage() {
 
                             <div className="space-y-4 pt-4 border-t border-slate-100">
                                 <div className="flex items-center gap-2 text-slate-900 font-bold mb-2">
-                                    <ShieldCheck className="h-5 w-5 text-primary" />
-                                    <span>Permissions & Accès aux modules</span>
+                                    <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
+                                    <span>Rubriques affichées dans le menu</span>
                                 </div>
+                                <p className="text-xs text-muted-foreground -mt-2">
+                                    {MODULES_HELP_TEXT}
+                                </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    {modules.map((m) => (
+                                    {MODULE_OPTIONS.map((m) => (
                                         <div key={m.id} className="flex items-center space-x-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
                                             <Checkbox
-                                                id={m.id}
+                                                id={`module-${m.id}`}
+                                                disabled={isLoading}
                                                 checked={watch('permissions')?.includes(m.id)}
                                                 onCheckedChange={(checked) => {
                                                     const current = watch('permissions') || []
@@ -226,7 +224,7 @@ export default function NewUserPage() {
                                                 }}
                                             />
                                             <Label
-                                                htmlFor={m.id}
+                                                htmlFor={`module-${m.id}`}
                                                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer w-full"
                                             >
                                                 {m.label}
@@ -237,8 +235,8 @@ export default function NewUserPage() {
                             </div>
 
                             <Button type="submit" className="w-full h-12 rounded-xl font-bold text-base mt-4" disabled={isLoading}>
-                                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Créer l'utilisateur
+                                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
+                                {isLoading ? 'Création…' : "Créer l'utilisateur"}
                             </Button>
                         </CardContent>
                     </Card>

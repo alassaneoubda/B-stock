@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -17,7 +17,10 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
-import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { formatMoney, formatDateShort } from '@/lib/format'
+import { EmptyState, ErrorState } from '@/components/states'
+import { Skeleton } from '@/components/ui/skeleton'
 
 type PlanPrice = {
   interval: string
@@ -45,14 +48,6 @@ type Subscription = {
   trialEndsAt: string | null
 }
 
-function formatXOF(amount: number) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-  }).format(amount)
-}
-
 const intervalLabels: Record<string, string> = {
   monthly: 'Mensuel',
   quarterly: 'Trimestriel',
@@ -73,6 +68,8 @@ export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const checkoutLock = useRef(false)
   const [loadingCheckout, setLoadingCheckout] = useState<string | null>(null)
   const [selectedIntervals, setSelectedIntervals] = useState<Record<string, string>>({})
 
@@ -137,70 +134,91 @@ export default function PlansPage() {
     }
   }, [isReturn, returnRef])
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetch('/api/subscription')
-        if (res.ok) {
-          const json = await res.json()
-          setPlans(json.data.plans)
-          setSubscription(json.data.subscription)
+  const fetchData = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(null)
+    try {
+      const json = await apiFetch<{ data: { plans: Plan[]; subscription: Subscription } }>('/api/subscription')
+      const nextPlans = Array.isArray(json.data.plans) ? json.data.plans : []
+      setPlans(nextPlans)
+      setSubscription(json.data.subscription)
 
-          // Default to yearly for all plans
-          const defaults: Record<string, string> = {}
-          json.data.plans.forEach((p: Plan) => {
-            defaults[p.id] = p.prices.length > 1 ? 'yearly' : p.prices[0]?.interval || 'yearly'
-          })
-          setSelectedIntervals(defaults)
-        }
-      } catch (e) {
-        console.error('Error fetching plans:', e)
-      } finally {
-        setIsLoading(false)
-      }
+      // Annuel par défaut quand plusieurs durées sont proposées
+      const defaults: Record<string, string> = {}
+      nextPlans.forEach((p) => {
+        defaults[p.id] = p.prices.some((pr) => pr.interval === 'yearly')
+          ? 'yearly'
+          : p.prices[0]?.interval || 'yearly'
+      })
+      setSelectedIntervals(defaults)
+    } catch (e) {
+      setLoadError(errorMessage(e))
+    } finally {
+      setIsLoading(false)
     }
-    fetchData()
   }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
 
   async function handleCheckout(planId: string) {
     const interval = selectedIntervals[planId]
-    if (!interval) return
-
+    if (!interval || checkoutLock.current) return
+    checkoutLock.current = true
     setLoadingCheckout(`${planId}-${interval}`)
 
     try {
-      const res = await fetch('/api/geniuspay/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId, interval }),
-      })
-      const json = await res.json()
+      const json = await apiFetch<{ directActivation?: boolean; url?: string; error?: string }>(
+        '/api/geniuspay/checkout',
+        { method: 'POST', body: { planId, interval } }
+      )
 
       if (json.directActivation) {
-        // Free plan activated directly
+        // Offre gratuite activée directement
         window.location.reload()
         return
       }
 
       if (json.url) {
+        // Le bouton reste désactivé pendant la redirection vers GeniusPay
         window.location.href = json.url
         return
       }
-      toast.error('Paiement impossible', { description: json.error || 'Veuillez réessayer dans un instant.' })
-    } catch {
-      toast.error('Erreur réseau', { description: 'Vérifiez votre connexion et réessayez.' })
-    } finally {
-      setLoadingCheckout(null)
+      toastError(new Error(json.error || 'Veuillez réessayer dans un instant.'), 'Paiement impossible')
+    } catch (e) {
+      toastError(e, 'Paiement impossible')
     }
+    checkoutLock.current = false
+    setLoadingCheckout(null)
   }
 
   if (isLoading) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Abonnement" />
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-zinc-400" />
-        </div>
+        <DashboardHeader title="Choisir un plan" />
+        <main className="flex-1 p-4 lg:p-6">
+          <div className="max-w-5xl mx-auto space-y-6" aria-busy="true" aria-label="Chargement des offres">
+            <Skeleton className="h-28 rounded-lg" />
+            <div className="grid gap-4 sm:gap-6 md:grid-cols-3">
+              {Array.from({ length: 3 }, (_, i) => (
+                <Skeleton key={i} className="h-96 rounded-xl" />
+              ))}
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <DashboardHeader title="Choisir un plan" />
+        <main className="flex-1 p-4 lg:p-6">
+          <div className="max-w-5xl mx-auto space-y-6">
+            <PaymentBanner state={paymentState} message={paymentMessage} />
+            <ErrorState title="Impossible de charger les offres" description={loadError} onRetry={fetchData} />
+          </div>
+        </main>
       </div>
     )
   }
@@ -212,7 +230,7 @@ export default function PlansPage() {
         actions={
           <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
             <Link href="/dashboard">
-              <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+              <ArrowLeft className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
               Retour
             </Link>
           </Button>
@@ -225,7 +243,7 @@ export default function PlansPage() {
           <PaymentBanner state={paymentState} message={paymentMessage} />
           {canceled && paymentState === 'idle' && (
             <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <XCircle className="h-5 w-5 text-amber-600 shrink-0" />
+              <XCircle className="h-5 w-5 text-amber-600 shrink-0" aria-hidden="true" />
               <div>
                 <p className="text-sm font-semibold text-amber-900">Paiement annulé</p>
                 <p className="text-xs text-amber-700">Aucun montant n&apos;a été débité. Vous pouvez réessayer à tout moment.</p>
@@ -259,31 +277,14 @@ export default function PlansPage() {
                   {subscription.isActive && subscription.daysRemaining < 999 && (
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-zinc-800">
+                        <span className={`text-sm font-semibold ${subscription.daysRemaining <= 5 ? 'text-red-700' : subscription.daysRemaining <= 10 ? 'text-amber-700' : 'text-zinc-800'}`}>
                           {subscription.daysRemaining} jour{subscription.daysRemaining > 1 ? 's' : ''} restant{subscription.daysRemaining > 1 ? 's' : ''}
                         </span>
                         {subscription.endsAt && (
                           <span className="text-xs text-zinc-500">
-                            Expire le {new Date(subscription.endsAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            Expire le {formatDateShort(subscription.endsAt)}
                           </span>
                         )}
-                      </div>
-                      {/* Progress bar */}
-                      <div className="w-full bg-zinc-200 rounded-full h-2 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            subscription.daysRemaining <= 5
-                              ? 'bg-red-500'
-                              : subscription.daysRemaining <= 10
-                                ? 'bg-amber-500'
-                                : subscription.status === 'trialing'
-                                  ? 'bg-blue-500'
-                                  : 'bg-emerald-500'
-                          }`}
-                          style={{
-                            width: `${Math.min(100, Math.max(3, (subscription.daysRemaining / (subscription.status === 'trialing' ? 30 : subscription.daysRemaining + 1)) * 100))}%`,
-                          }}
-                        />
                       </div>
                       {subscription.status === 'trialing' && (
                         <p className="text-xs text-blue-600">
@@ -321,6 +322,13 @@ export default function PlansPage() {
           )}
 
           {/* Plans grid */}
+          {plans.length === 0 && (
+            <EmptyState
+              title="Aucune offre disponible pour le moment"
+              description="Contactez le support pour souscrire un abonnement."
+              action={{ label: 'Contacter le support', href: '/contact' }}
+            />
+          )}
           <div className="grid gap-4 sm:gap-6 md:grid-cols-3">
             {plans.map((plan) => {
               const Icon = planIcons[plan.id] || Zap
@@ -357,7 +365,7 @@ export default function PlansPage() {
                             ? 'bg-blue-100 text-blue-700'
                             : 'bg-zinc-100 text-zinc-700'
                       }`}>
-                        <Icon className="h-4 w-4" />
+                        <Icon className="h-4 w-4" aria-hidden="true" />
                       </div>
                       <h3 className="text-base font-bold text-zinc-950">{plan.name}</h3>
                     </div>
@@ -366,10 +374,13 @@ export default function PlansPage() {
 
                   {/* Interval selector */}
                   {plan.prices.length > 1 && (
-                    <div className="flex flex-wrap gap-1 mb-4">
+                    <div className="flex flex-wrap gap-1 mb-4" role="group" aria-label={`Durée de l'offre ${plan.name}`}>
                       {plan.prices.map((pr) => (
                         <button
                           key={pr.interval}
+                          type="button"
+                          aria-pressed={selectedInterval === pr.interval}
+                          disabled={!!loadingCheckout}
                           onClick={() => setSelectedIntervals((prev) => ({ ...prev, [plan.id]: pr.interval }))}
                           className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${
                             selectedInterval === pr.interval
@@ -389,7 +400,7 @@ export default function PlansPage() {
                       <>
                         <div className="flex items-baseline gap-1">
                           <span className="text-2xl sm:text-3xl font-bold text-zinc-950 tracking-tight">
-                            {formatXOF(currentPrice.price)}
+                            {formatMoney(currentPrice.price)}
                           </span>
                         </div>
                         <p className="text-[10px] text-zinc-400 mt-0.5 uppercase tracking-wider">
@@ -403,7 +414,7 @@ export default function PlansPage() {
                   <ul className="space-y-2 mb-6 flex-1">
                     {plan.features.map((f) => (
                       <li key={f} className="flex items-start gap-2">
-                        <Check className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                        <Check className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" aria-hidden="true" />
                         <span className="text-xs text-zinc-700">{f}</span>
                       </li>
                     ))}
@@ -425,7 +436,7 @@ export default function PlansPage() {
                       className="w-full h-10 text-xs font-semibold"
                       disabled
                     >
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
                       Plan actuel
                     </Button>
                   ) : (
@@ -437,12 +448,12 @@ export default function PlansPage() {
                           : ''
                       }`}
                       onClick={() => handleCheckout(plan.id)}
-                      disabled={!!loadingCheckout}
+                      disabled={!!loadingCheckout || (!isOnQuote && plan.pricingType !== 'free' && !currentPrice)}
                     >
                       {loadingCheckout === `${plan.id}-${selectedInterval}` ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" aria-hidden="true" />
                       ) : (
-                        <Building2 className="h-3.5 w-3.5 mr-1.5" />
+                        <Building2 className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
                       )}
                       {plan.pricingType === 'free' ? 'Activer gratuitement' : subscription?.status === 'active' ? 'Renouveler / changer' : 'Choisir ce plan'}
                     </Button>
@@ -500,7 +511,7 @@ function PaymentBanner({ state, message }: { state: PaymentState; message: strin
   const Icon = state === 'completed' ? CheckCircle2 : c.spin ? Loader2 : XCircle
   return (
     <div className={`flex items-start gap-3 border rounded-lg p-4 ${c.tone}`} role="status" aria-live="polite">
-      <Icon className={`h-5 w-5 shrink-0 mt-0.5 ${c.spin ? 'animate-spin' : ''}`} />
+      <Icon className={`h-5 w-5 shrink-0 mt-0.5 ${c.spin ? 'animate-spin' : ''}`} aria-hidden="true" />
       <div>
         <p className="text-sm font-semibold">{c.title}</p>
         <p className="text-xs opacity-80">{message || c.text}</p>

@@ -1,20 +1,24 @@
 import Link from 'next/link'
 import { ArrowLeft, KeyRound, Building2, LifeBuoy, Mail, Phone } from 'lucide-react'
-import { getSettings } from '@/lib/settings'
+import { DEFAULT_SETTINGS, getSettings } from '@/lib/settings'
 
 export const metadata = {
     title: 'Mot de passe oublié — B-Stock',
 }
 
+// Contacts lus dans la configuration plateforme : on ne fige pas la valeur du build
+export const revalidate = 60
+
 export default async function ForgotPasswordPage() {
-    let supportEmail = ''
+    // Repli : l'email de support par défaut, pour toujours proposer un contact
+    let supportEmail = DEFAULT_SETTINGS.support_email
     let supportPhone = ''
     try {
         const settings = await getSettings()
-        supportEmail = settings.support_email || ''
-        supportPhone = settings.support_phone || ''
+        supportEmail = settings.support_email?.trim() || DEFAULT_SETTINGS.support_email
+        supportPhone = settings.support_phone?.trim() || ''
     } catch {
-        // valeurs par défaut vides : on affiche quand même les instructions
+        // getSettings retombe déjà sur les valeurs par défaut ; ceinture et bretelles
     }
 
     return (
@@ -56,21 +60,19 @@ export default async function ForgotPasswordPage() {
                             <div className="text-sm">
                                 <p className="font-semibold text-zinc-900">Vous êtes le propriétaire du compte ?</p>
                                 <p className="text-zinc-500 mt-1">
+                                    La réinitialisation en libre-service n&apos;est pas encore disponible.
                                     Contactez le support B-Stock pour réinitialiser votre accès :
                                 </p>
                                 <div className="mt-2 space-y-1">
                                     {supportEmail && (
                                         <a href={`mailto:${supportEmail}`} className="flex items-center gap-2 text-blue-600 hover:underline">
-                                            <Mail className="h-4 w-4" /> {supportEmail}
+                                            <Mail className="h-4 w-4" aria-hidden="true" /> {supportEmail}
                                         </a>
                                     )}
                                     {supportPhone && (
                                         <a href={`tel:${supportPhone}`} className="flex items-center gap-2 text-blue-600 hover:underline">
-                                            <Phone className="h-4 w-4" /> {supportPhone}
+                                            <Phone className="h-4 w-4" aria-hidden="true" /> {supportPhone}
                                         </a>
-                                    )}
-                                    {!supportEmail && !supportPhone && (
-                                        <p className="text-zinc-500">Contactez votre interlocuteur B-Stock habituel.</p>
                                     )}
                                 </div>
                             </div>

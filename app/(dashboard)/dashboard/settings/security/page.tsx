@@ -11,6 +11,8 @@ import { ArrowLeft, Loader2, ShieldCheck, KeyRound } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { signOut } from 'next-auth/react'
+import { apiFetch, toastError } from '@/lib/api-client'
+import { passwordPolicyError } from '@/lib/permissions'
 
 export default function SecuritySettingsPage() {
     const router = useRouter()
@@ -27,6 +29,14 @@ export default function SecuritySettingsPage() {
 
     const handleUpdatePassword = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (isLoading) return
+
+        // Même règle que le serveur, pour un retour immédiat
+        const policyError = passwordPolicyError(passwords.newPass)
+        if (policyError) {
+            toast.error('Mot de passe trop faible', { description: policyError })
+            return
+        }
 
         if (passwords.newPass !== passwords.confirm) {
             toast.error('Les mots de passe ne correspondent pas', {
@@ -37,19 +47,13 @@ export default function SecuritySettingsPage() {
 
         setIsLoading(true)
         try {
-            const res = await fetch('/api/profile/password', {
+            await apiFetch('/api/profile/password', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    currentPassword: passwords.current,
+                body: {
+                    currentPassword: passwords.current || undefined,
                     newPassword: passwords.newPass,
-                }),
+                },
             })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok) {
-                toast.error('Modification impossible', { description: data.error || 'Veuillez réessayer.' })
-                return
-            }
 
             setPasswords({ current: '', newPass: '', confirm: '' })
             toast.success('Mot de passe mis à jour', {
@@ -58,8 +62,8 @@ export default function SecuritySettingsPage() {
             // Toutes les sessions ont été invalidées côté serveur
             await signOut({ redirect: false })
             router.push('/login')
-        } catch {
-            toast.error('Erreur réseau', { description: 'Vérifiez votre connexion et réessayez.' })
+        } catch (err) {
+            toastError(err, 'Modification impossible')
         } finally {
             setIsLoading(false)
         }
@@ -75,7 +79,7 @@ export default function SecuritySettingsPage() {
                 <div className="mb-6">
                     <Button variant="ghost" size="sm" asChild>
                         <Link href="/dashboard/settings">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
+                            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
                             Retour aux paramètres
                         </Link>
                     </Button>
@@ -85,11 +89,14 @@ export default function SecuritySettingsPage() {
                     <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
                         <CardHeader className="px-8 py-8 border-b border-slate-100 flex flex-row items-center gap-4">
                             <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-                                <ShieldCheck className="h-6 w-6" />
+                                <ShieldCheck className="h-6 w-6" aria-hidden="true" />
                             </div>
                             <div>
                                 <CardTitle className="text-xl font-semibold text-slate-950">Changer le mot de passe</CardTitle>
-                                <CardDescription>Assurez-vous d'utiliser un mot de passe long et complexe.</CardDescription>
+                                <CardDescription>
+                                    Au moins 8 caractères, avec au moins une lettre et un chiffre. Après le changement,
+                                    toutes vos sessions (sur tous vos appareils) sont fermées et vous devrez vous reconnecter.
+                                </CardDescription>
                             </div>
                         </CardHeader>
                         <form onSubmit={handleUpdatePassword}>
@@ -99,12 +106,16 @@ export default function SecuritySettingsPage() {
                                     <Input
                                         type="password"
                                         id="current"
-                                        required
+                                        autoComplete="current-password"
+                                        aria-describedby="current-hint"
                                         value={passwords.current}
                                         onChange={handleChange}
                                         disabled={isLoading}
                                         placeholder="••••••••"
                                     />
+                                    <p id="current-hint" className="text-xs text-slate-500">
+                                        Laissez vide si vous vous connectez uniquement avec Google et n&apos;avez jamais défini de mot de passe.
+                                    </p>
                                 </div>
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <div className="space-y-2">
@@ -112,6 +123,7 @@ export default function SecuritySettingsPage() {
                                         <Input
                                             type="password"
                                             id="newPass"
+                                            autoComplete="new-password"
                                             required
                                             value={passwords.newPass}
                                             onChange={handleChange}
@@ -125,6 +137,7 @@ export default function SecuritySettingsPage() {
                                         <Input
                                             type="password"
                                             id="confirm"
+                                            autoComplete="new-password"
                                             required
                                             value={passwords.confirm}
                                             onChange={handleChange}
@@ -136,11 +149,11 @@ export default function SecuritySettingsPage() {
                                 </div>
                             </CardContent>
                             <CardFooter className="px-8 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-                                <Button type="submit" disabled={isLoading || !passwords.current || !passwords.newPass || !passwords.confirm}>
+                                <Button type="submit" disabled={isLoading || !passwords.newPass || !passwords.confirm}>
                                     {isLoading ? (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                                     ) : (
-                                        <KeyRound className="mr-2 h-4 w-4" />
+                                        <KeyRound className="mr-2 h-4 w-4" aria-hidden="true" />
                                     )}
                                     Mettre à jour le mot de passe
                                 </Button>

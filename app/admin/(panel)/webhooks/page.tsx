@@ -6,9 +6,23 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Search, RefreshCw, ChevronLeft, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { Loader2, Search, RefreshCw, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Webhook } from 'lucide-react'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { formatDateTime, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
 
 type Event = {
   id: string
@@ -34,10 +48,10 @@ export default function AdminWebhooksPage() {
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [toReplay, setToReplay] = useState<Event | null>(null)
 
   const qs = new URLSearchParams({ search, status, page: String(page) }).toString()
-  const { data, isLoading, mutate } = useSWR<{
+  const { data, error, isLoading, mutate } = useSWR<{
     data: Event[]
     summary: { processed: number; failed: number; replayed: number; total: number }
     pagination: { page: number; pages: number; total: number }
@@ -47,15 +61,20 @@ export default function AdminWebhooksPage() {
   const summary = data?.summary
   const pagination = data?.pagination
 
-  async function replay(id: string) {
-    if (!confirm('Rejouer cet événement webhook ?')) return
-    setBusy(id)
-    setMsg(null)
+  async function replay(ev: Event) {
+    if (busy) return
+    setBusy(ev.id)
     try {
-      const res = await fetch(`/api/admin/webhooks/${id}/replay`, { method: 'POST' })
-      const json = await res.json()
-      setMsg(res.ok ? (json.alreadyApplied ? 'Déjà appliqué.' : 'Rejoué avec succès.') : json.error || 'Erreur')
+      const json = await apiFetch<{ alreadyApplied?: boolean }>(`/api/admin/webhooks/${ev.id}/replay`, {
+        method: 'POST',
+      })
+      if (json.alreadyApplied) toast.info('Paiement déjà appliqué : rien n’a été modifié.')
+      else toast.success('Événement rejoué avec succès')
+      setToReplay(null)
       await mutate()
+    } catch (e) {
+      setToReplay(null)
+      toastError(e, 'Rejeu impossible')
     } finally {
       setBusy(null)
     }
@@ -74,10 +93,6 @@ export default function AdminWebhooksPage() {
         <Mini label="Échoués" value={summary?.failed ?? 0} tone="red" />
         <Mini label="Rejoués" value={summary?.replayed ?? 0} tone="blue" />
       </div>
-
-      {msg && (
-        <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700 mb-4">{msg}</div>
-      )}
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
@@ -114,11 +129,18 @@ export default function AdminWebhooksPage() {
 
       <Card className="overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={6} />
           </div>
+        ) : error ? (
+          <ErrorState className="m-5" description={errorMessage(error)} onRetry={() => mutate()} />
         ) : events.length === 0 ? (
-          <div className="py-20 text-center text-sm text-zinc-400">Aucun événement</div>
+          <EmptyState
+            className="m-5"
+            icon={Webhook}
+            title="Aucun événement"
+            description={search || status ? 'Aucun événement ne correspond à ces filtres.' : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -136,26 +158,30 @@ export default function AdminWebhooksPage() {
                 {events.map((e) => (
                   <tr key={e.id} className="border-b border-zinc-50 hover:bg-zinc-50">
                     <td className="px-5 py-3 text-zinc-500 whitespace-nowrap">
-                      {new Date(e.created_at).toLocaleString('fr-FR')}
+                      {formatDateTime(e.created_at)}
                     </td>
                     <td className="px-5 py-3 font-mono text-xs text-zinc-700">{e.event_type || '—'}</td>
                     <td className="px-5 py-3 font-mono text-xs text-zinc-500">{e.reference || '—'}</td>
                     <td className="px-5 py-3">
                       {e.signature_valid === true ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <CheckCircle2 className="h-4 w-4 text-green-600" aria-label="Signature valide" />
                       ) : e.signature_valid === false ? (
-                        <XCircle className="h-4 w-4 text-red-600" />
+                        <XCircle className="h-4 w-4 text-red-600" aria-label="Signature invalide" />
                       ) : (
                         <span className="text-zinc-400">—</span>
                       )}
                     </td>
                     <td className="px-5 py-3">
                       <StatusBadge status={e.status} />
-                      {e.error && <p className="text-xs text-red-400 mt-0.5 max-w-[200px] truncate">{e.error}</p>}
+                      {e.error && (
+                        <p className="text-xs text-red-400 mt-0.5 max-w-[200px] truncate" title={e.error}>
+                          {e.error}
+                        </p>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-right">
                       {e.event_type === 'payment.success' && (
-                        <Button size="sm" variant="outline" onClick={() => replay(e.id)} disabled={busy === e.id}>
+                        <Button size="sm" variant="outline" onClick={() => setToReplay(e)} disabled={!!busy}>
                           {busy === e.id ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           ) : (
@@ -182,6 +208,7 @@ export default function AdminWebhooksPage() {
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
+              aria-label="Page précédente"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -189,6 +216,7 @@ export default function AdminWebhooksPage() {
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
+              aria-label="Page suivante"
               className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
             >
               <ChevronRight className="h-4 w-4" />
@@ -196,6 +224,32 @@ export default function AdminWebhooksPage() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={!!toReplay} onOpenChange={(o) => !o && !busy && setToReplay(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rejouer cet événement webhook ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Le paiement {toReplay?.reference ? `« ${toReplay.reference} » ` : ''}sera traité à nouveau : s’il
+              n’a pas encore été appliqué, l’abonnement de l’entreprise sera activé ou prolongé. Un paiement déjà
+              appliqué ne l’est jamais deux fois.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!busy}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!busy}
+              onClick={(ev) => {
+                ev.preventDefault()
+                if (toReplay) replay(toReplay)
+              }}
+            >
+              {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Rejouer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -208,7 +262,7 @@ function Mini({ label, value, tone }: { label: string; value: number; tone?: 'gr
   }
   return (
     <Card className="p-4">
-      <p className={`text-2xl font-bold ${tone ? tones[tone] : 'text-zinc-950'}`}>{value}</p>
+      <p className={`text-2xl font-bold ${tone ? tones[tone] : 'text-zinc-950'}`}>{formatNumber(value)}</p>
       <p className="text-xs text-zinc-500">{label}</p>
     </Card>
   )

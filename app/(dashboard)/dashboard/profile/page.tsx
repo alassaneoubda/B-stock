@@ -4,14 +4,10 @@ import { useSession } from 'next-auth/react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { UserCircle, Mail, Shield, Building2, Calendar } from 'lucide-react'
+import { Mail, Shield, Building2 } from 'lucide-react'
+import { ROLE_LABELS } from '@/lib/permissions'
 
-const roleLabels: Record<string, string> = {
-    owner: 'Propriétaire',
-    manager: 'Gérant',
-    cashier: 'Caissier',
-    warehouse_keeper: 'Magasinier',
-}
+const roleLabels: Record<string, string> = ROLE_LABELS
 
 export default function ProfilePage() {
     const { data: session } = useSession()

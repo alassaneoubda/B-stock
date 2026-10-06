@@ -11,67 +11,79 @@ import {
   ShoppingCart,
   ArrowRight,
   ArrowUpRight,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react'
 import Link from 'next/link'
+import { formatMoney, formatDateTime } from '@/lib/format'
 
+// Les erreurs SQL ne sont plus converties en zéros trompeurs : elles remontent
+// jusqu'à error.tsx, qui propose de réessayer.
 async function getDashboardStats(companyId: string) {
-  try {
-    const products = await sql`SELECT COUNT(*) as count FROM products WHERE company_id = ${companyId} AND is_active = true`
-    const clients = await sql`SELECT COUNT(*) as count FROM clients WHERE company_id = ${companyId} AND is_active = true`
-    const todaySales = await sql`
+  const [products, clients, todaySales, pendingDeliveries, recentSales, openCash, anySale] = await Promise.all([
+    sql`SELECT COUNT(*) as count FROM products WHERE company_id = ${companyId} AND is_active = true`,
+    sql`SELECT COUNT(*) as count FROM clients WHERE company_id = ${companyId} AND is_active = true`,
+    sql`
       SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count
-      FROM sales_orders 
-      WHERE company_id = ${companyId} 
+      FROM sales_orders
+      WHERE company_id = ${companyId}
       AND DATE(created_at) = CURRENT_DATE
       AND status != 'cancelled'
-    `
-    const pendingDeliveries = await sql`
+    `,
+    sql`
       SELECT COUNT(*) as count FROM delivery_tours WHERE company_id = ${companyId} AND status IN ('planned', 'in_progress')
-    `
-    const recentSales = await sql`
-      SELECT so.*, c.name as client_name
+    `,
+    sql`
+      SELECT so.id, so.order_number, so.status, so.total_amount, so.created_at, c.name as client_name
       FROM sales_orders so
-      LEFT JOIN clients c ON so.client_id = c.id
+      LEFT JOIN clients c ON c.id = so.client_id AND c.company_id = so.company_id
       WHERE so.company_id = ${companyId}
       ORDER BY so.created_at DESC
       LIMIT 5
-    `
+    `,
+    sql`SELECT 1 FROM cash_sessions WHERE company_id = ${companyId} AND status = 'open' LIMIT 1`,
+    sql`SELECT 1 FROM sales_orders WHERE company_id = ${companyId} LIMIT 1`,
+  ])
 
-    return {
-      totalProducts: Number(products[0]?.count || 0),
-      totalClients: Number(clients[0]?.count || 0),
-      todaySalesTotal: Number(todaySales[0]?.total || 0),
-      todaySalesCount: Number(todaySales[0]?.count || 0),
-      pendingDeliveries: Number(pendingDeliveries[0]?.count || 0),
-      recentSales: recentSales || [],
-    }
-  } catch (error) {
-    return { totalProducts: 0, totalClients: 0, todaySalesTotal: 0, todaySalesCount: 0, pendingDeliveries: 0, recentSales: [] }
+  return {
+    totalProducts: Number(products[0]?.count || 0),
+    totalClients: Number(clients[0]?.count || 0),
+    todaySalesTotal: Number(todaySales[0]?.total || 0),
+    todaySalesCount: Number(todaySales[0]?.count || 0),
+    pendingDeliveries: Number(pendingDeliveries[0]?.count || 0),
+    recentSales,
+    hasOpenCashSession: openCash.length > 0,
+    hasAnySale: anySale.length > 0,
   }
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-  }).format(amount)
+// Le statut est toujours écrit en toutes lettres (la couleur n'est qu'un appoint)
+const STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  pending: { label: 'En attente', className: 'bg-amber-50 text-amber-700' },
+  confirmed: { label: 'Confirmée', className: 'bg-emerald-50 text-emerald-700' },
+  preparing: { label: 'En préparation', className: 'bg-blue-50 text-blue-700' },
+  ready: { label: 'Prête', className: 'bg-blue-50 text-blue-700' },
+  delivered: { label: 'Livrée', className: 'bg-emerald-50 text-emerald-700' },
+  completed: { label: 'Terminée', className: 'bg-emerald-50 text-emerald-700' },
+  cancelled: { label: 'Annulée', className: 'bg-zinc-100 text-zinc-600' },
 }
 
-function translateStatus(status: string) {
-  const map: Record<string, string> = {
-    confirmed: 'Confirmée',
-    completed: 'Terminée',
-    cancelled: 'Annulée',
-    pending: 'En attente',
-  }
-  return map[status] || status
+function statusBadge(status: string) {
+  return STATUS_BADGES[status] ?? { label: status, className: 'bg-zinc-100 text-zinc-600' }
 }
 
 export default async function DashboardPage() {
   const session = await requirePageSession()
   const companyId = session?.user?.companyId || ''
   const stats = await getDashboardStats(companyId)
+
+  const onboardingSteps = [
+    { done: stats.totalProducts > 0, label: 'Ajouter vos produits', href: '/dashboard/products/new' },
+    { done: stats.totalClients > 0, label: 'Ajouter un premier client', href: '/dashboard/clients/new' },
+    { done: stats.hasOpenCashSession || stats.hasAnySale, label: 'Ouvrir la caisse', href: '/dashboard/cash' },
+    { done: stats.hasAnySale, label: 'Enregistrer une première vente', href: '/dashboard/sales/new' },
+  ]
+  const completedSteps = onboardingSteps.filter((step) => step.done).length
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50/50">
@@ -82,6 +94,37 @@ export default async function DashboardPage() {
         {/* Subscription Banner */}
         <SubscriptionBanner />
 
+        {/* Démarrage : visible tant qu'au moins une étape reste à faire */}
+        {completedSteps < onboardingSteps.length && (
+          <section className="bg-white rounded-lg border border-zinc-200/80" aria-labelledby="onboarding-title">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+              <h2 id="onboarding-title" className="text-sm font-semibold text-zinc-950">Bien démarrer</h2>
+              <span className="text-xs text-zinc-500">
+                {completedSteps}/{onboardingSteps.length} étapes terminées
+              </span>
+            </div>
+            <ul className="divide-y divide-zinc-100">
+              {onboardingSteps.map((step) => (
+                <li key={step.href}>
+                  {step.done ? (
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                      <span className="text-sm text-zinc-500 line-through">{step.label}</span>
+                      <span className="sr-only">(terminé)</span>
+                    </div>
+                  ) : (
+                    <Link href={step.href} className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors group">
+                      <Circle className="h-4 w-4 text-zinc-300" aria-hidden="true" />
+                      <span className="text-sm font-medium text-zinc-800 group-hover:text-zinc-950">{step.label}</span>
+                      <ArrowRight className="h-3.5 w-3.5 text-zinc-400 ml-auto" aria-hidden="true" />
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-white rounded-lg border border-zinc-200/80 p-4">
@@ -89,7 +132,7 @@ export default async function DashboardPage() {
               <span className="text-xs font-medium text-zinc-500">CA du jour</span>
               <DollarSign className="h-3.5 w-3.5 text-zinc-400" />
             </div>
-            <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight truncate">{formatCurrency(stats.todaySalesTotal)}</p>
+            <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight truncate">{formatMoney(stats.todaySalesTotal)}</p>
             <p className="text-xs text-zinc-500 mt-1">{stats.todaySalesCount} vente{stats.todaySalesCount !== 1 ? 's' : ''}</p>
           </div>
 
@@ -154,27 +197,39 @@ export default async function DashboardPage() {
               </Link>
             </div>
             {stats.recentSales.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucune vente récente</div>
+              <div className="p-8 text-center text-sm text-zinc-500">
+                Aucune vente pour l&apos;instant.{' '}
+                <Link href="/dashboard/sales/new" className="font-medium text-blue-600 hover:text-blue-700">
+                  Enregistrer une vente
+                </Link>
+              </div>
             ) : (
               <div className="divide-y divide-zinc-100">
-                {stats.recentSales.map((sale: any) => (
-                  <div key={sale.id} className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50/50 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-zinc-900 truncate">
-                        {sale.client_name || 'Client passager'}
-                      </p>
-                      <p className="text-xs text-zinc-400">
-                        #{sale.order_number} · {new Date(sale.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold text-zinc-950">{formatCurrency(Number(sale.total_amount))}</p>
-                      <p className={`text-[10px] font-medium ${sale.status === 'completed' || sale.status === 'confirmed' ? 'text-emerald-600' : 'text-zinc-400'}`}>
-                        {translateStatus(sale.status)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                {stats.recentSales.map((sale: any) => {
+                  const badge = statusBadge(sale.status)
+                  return (
+                    <Link
+                      key={sale.id}
+                      href={`/dashboard/sales/${sale.id}`}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-zinc-900 truncate">
+                          {sale.client_name || 'Client passager'}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          #{sale.order_number} · {formatDateTime(sale.created_at)}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0 space-y-1">
+                        <p className="text-sm font-semibold text-zinc-950">{formatMoney(sale.total_amount)}</p>
+                        <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+                    </Link>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -197,7 +252,7 @@ export default async function DashboardPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-zinc-600">Revenus du jour</span>
-                <span className="text-sm font-medium text-zinc-950">{formatCurrency(stats.todaySalesTotal)}</span>
+                <span className="text-sm font-medium text-zinc-950">{formatMoney(stats.todaySalesTotal)}</span>
               </div>
               <div className="pt-3 border-t border-zinc-100">
                 <Link href="/dashboard/reports" className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1">

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { signIn, signOut } from 'next-auth/react'
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { GoogleButton } from '@/components/auth/google-button'
 import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
+import { NETWORK_ERROR, credentialsErrorMessage } from '@/components/auth/auth-errors'
 import { Loader2, Eye, EyeOff, ArrowRight } from 'lucide-react'
 
 const loginSchema = z.object({
@@ -82,6 +83,8 @@ function LoginContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(urlError ? mapAuthError(urlError) : null)
+  // Verrou synchrone : empêche une double soumission avant le re-rendu
+  const submittingRef = useRef(false)
 
   const {
     register,
@@ -92,9 +95,12 @@ function LoginContent() {
   })
 
   async function onSubmit(data: LoginForm) {
+    if (submittingRef.current) return
+    submittingRef.current = true
     setIsLoading(true)
     setError(null)
 
+    let redirecting = false
     try {
       const result = await signIn('credentials', {
         email: data.email,
@@ -103,14 +109,21 @@ function LoginContent() {
       })
 
       if (result?.error) {
-        setError('Email ou mot de passe incorrect')
+        setError(credentialsErrorMessage(result.error, result.code))
+      } else if (result && !result.ok) {
+        setError('Une erreur est survenue lors de la connexion. Veuillez réessayer.')
       } else {
+        // On garde le bouton désactivé pendant la navigation
+        redirecting = true
         window.location.assign(callbackUrl)
       }
     } catch {
-      setError('Une erreur est survenue. Veuillez réessayer.')
+      setError(NETWORK_ERROR)
     } finally {
-      setIsLoading(false)
+      if (!redirecting) {
+        submittingRef.current = false
+        setIsLoading(false)
+      }
     }
   }
 
@@ -143,7 +156,7 @@ function LoginContent() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
             {error}
           </div>
         )}

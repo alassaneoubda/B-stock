@@ -3,8 +3,10 @@
 import useSWR from 'swr'
 import { useState } from 'react'
 import { Info, CheckCircle2, AlertTriangle, AlertOctagon, X } from 'lucide-react'
+import { apiFetch, toastError } from '@/lib/api-client'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+// Bandeau informatif : une erreur de chargement n'affiche simplement rien
+const fetcher = (url: string) => apiFetch<{ data: Announcement[] }>(url)
 
 type Announcement = {
   id: string
@@ -34,10 +36,11 @@ export function AnnouncementBanner() {
     setHidden((prev) => new Set(prev).add(a.id))
     if (a.dismissible) {
       try {
-        await fetch(`/api/announcements/${a.id}/dismiss`, { method: 'POST' })
+        await apiFetch(`/api/announcements/${a.id}/dismiss`, { method: 'POST' })
         mutate()
-      } catch {
-        // optimistic — already hidden locally
+      } catch (e) {
+        // Masquée localement, mais elle réapparaîtra au prochain chargement
+        toastError(e, "L'annonce n'a pas pu être masquée durablement")
       }
     }
   }
@@ -48,19 +51,24 @@ export function AnnouncementBanner() {
         const s = styles[a.level] || styles.info
         const Icon = s.icon
         return (
-          <div key={a.id} className={`${s.bg} px-4 py-2.5 flex items-start gap-3 text-sm`}>
-            <Icon className="h-4 w-4 mt-0.5 shrink-0" />
+          <div
+            key={a.id}
+            role={a.level === 'critical' || a.level === 'warning' ? 'alert' : 'status'}
+            className={`${s.bg} px-4 py-2.5 flex items-start gap-3 text-sm`}
+          >
+            <Icon className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
             <div className="flex-1 min-w-0">
               <span className="font-semibold">{a.title}</span>
               <span className="opacity-90"> — {a.body}</span>
             </div>
             {a.dismissible && (
               <button
+                type="button"
                 onClick={() => dismiss(a)}
                 className="shrink-0 rounded p-0.5 hover:bg-black/10 transition-colors"
-                aria-label="Fermer"
+                aria-label={`Masquer l'annonce « ${a.title} »`}
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
           </div>
