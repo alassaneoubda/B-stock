@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { requirePageSession } from '@/lib/page-auth'
 import { AuthProvider } from '@/components/providers/session-provider'
@@ -9,6 +10,7 @@ import { ImpersonationBanner } from '@/components/dashboard/impersonation-banner
 import { AnnouncementBanner } from '@/components/dashboard/announcement-banner'
 import { getSettings } from '@/lib/settings'
 import { Wrench } from 'lucide-react'
+import { ForbiddenNotice } from '@/components/dashboard/forbidden-notice'
 
 export default async function DashboardLayout({
   children,
@@ -44,14 +46,17 @@ export default async function DashboardLayout({
         <ImpersonationBanner companyName={session.user.companyName} />
       )}
       <SidebarProvider defaultOpen>
-        <DashboardSidebar user={session.user} />
+        <DashboardSidebar user={session.user} permissions={session.access.permissions} />
         <SidebarInset className="has-bottom-nav">
+          <Suspense fallback={null}>
+            <ForbiddenNotice />
+          </Suspense>
           <AnnouncementBanner />
           <SubscriptionGate>
             {children}
           </SubscriptionGate>
         </SidebarInset>
-        <MobileBottomNav />
+        <MobileBottomNav permissions={session.access.permissions} />
       </SidebarProvider>
     </AuthProvider>
   )

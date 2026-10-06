@@ -78,7 +78,11 @@ export async function proxy(req: NextRequest) {
     )
   }
 
-  return NextResponse.next()
+  // Chemin demandé, lu par le garde des pages serveur (lib/page-auth.ts).
+  // Écrasé ici : la valeur envoyée par le client n'est jamais utilisée.
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set('x-pathname', pathname)
+  return NextResponse.next({ request: { headers: requestHeaders } })
 }
 
 export const config = {

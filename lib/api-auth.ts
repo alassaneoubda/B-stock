@@ -147,6 +147,13 @@ async function getRolePermissionMap(): Promise<Map<string, Set<string>>> {
   return map
 }
 
+/** Permissions effectives d'un rôle, pour l'UI ('*' = toutes, cas du propriétaire). */
+export async function getEffectivePermissions(role: UserRole): Promise<string[]> {
+  if (role === 'owner') return ['*']
+  const map = await getRolePermissionMap()
+  return [...(map.get(role) ?? [])]
+}
+
 export async function roleHasPermission(role: UserRole, permission: string): Promise<boolean> {
   if (role === 'owner') return true
   const map = await getRolePermissionMap()

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import { BrandLogo } from '@/components/brand-logo'
+import { canAccessPath } from '@/lib/route-permissions'
 import {
   Sidebar,
   SidebarContent,
@@ -71,43 +72,36 @@ const mainNavItems = [
     title: 'Caisse',
     href: '/dashboard/cash',
     icon: Wallet,
-    requiredPermission: 'sales',
   },
   {
     title: 'Validation Caisse',
     href: '/dashboard/cash/validation',
     icon: Shield,
-    requiredPermission: 'manager',
   },
   {
     title: 'Ventes',
     href: '/dashboard/sales',
     icon: ShoppingCart,
-    requiredPermission: 'sales',
   },
   {
     title: 'Clients',
     href: '/dashboard/clients',
     icon: Users,
-    requiredPermission: 'sales',
   },
   {
     title: 'Crédits',
     href: '/dashboard/credits',
     icon: CreditIcon,
-    requiredPermission: 'sales',
   },
   {
     title: 'Factures',
     href: '/dashboard/invoices',
     icon: FileText,
-    requiredPermission: 'sales',
   },
   {
     title: 'Livraisons',
     href: '/dashboard/deliveries',
     icon: Truck,
-    requiredPermission: 'deliveries',
   },
 ]
 
@@ -116,55 +110,46 @@ const stockNavItems = [
     title: 'Produits',
     href: '/dashboard/products',
     icon: Package,
-    requiredPermission: 'products',
   },
   {
     title: 'Emballages',
     href: '/dashboard/packaging',
     icon: BoxesIcon,
-    requiredPermission: 'products',
   },
   {
     title: 'Stock',
     href: '/dashboard/stock',
     icon: Warehouse,
-    requiredPermission: 'products',
   },
   {
     title: 'Inventaire',
     href: '/dashboard/inventory',
     icon: ClipboardList,
-    requiredPermission: 'products',
   },
   {
     title: 'Transferts',
     href: '/dashboard/transfers',
     icon: ArrowLeftRight,
-    requiredPermission: 'products',
   },
   {
     title: 'Retours',
     href: '/dashboard/returns',
     icon: RotateCcw,
-    requiredPermission: 'products',
   },
   {
     title: 'Casse & Pertes',
     href: '/dashboard/breakage',
     icon: AlertTriangle,
-    requiredPermission: 'products',
   },
   {
     title: 'Approvisionnement',
     href: '/dashboard/procurement',
     icon: ArchiveRestore,
-    requiredPermission: 'procurement',
   },
   {
     title: 'Fournisseurs',
     href: '/dashboard/suppliers',
     icon: PackageSearch,
-    requiredPermission: 'procurement',
   },
 ]
 
@@ -173,25 +158,21 @@ const reportNavItems = [
     title: 'Rapports',
     href: '/dashboard/reports',
     icon: BarChart3,
-    requiredPermission: 'reports',
   },
   {
     title: 'Alertes',
     href: '/dashboard/alerts',
     icon: Bell,
-    requiredPermission: 'reports',
   },
   {
     title: 'Journal d\'audit',
     href: '/dashboard/audit-logs',
     icon: FileSearch,
-    requiredPermission: 'reports',
   },
   {
     title: 'Véhicules',
     href: '/dashboard/vehicles',
     icon: Car,
-    requiredPermission: 'vehicles',
   },
 ]
 
@@ -200,38 +181,32 @@ const settingsNavItems = [
     title: 'Commerciaux',
     href: '/dashboard/agents',
     icon: UsersIcon,
-    requiredPermission: 'settings',
   },
   {
     title: 'Tarification',
     href: '/dashboard/pricing',
     icon: Tag,
-    requiredPermission: 'settings',
   },
   {
     title: 'Dépôts',
     href: '/dashboard/depots',
     icon: Building2,
-    requiredPermission: 'settings',
   },
   {
     title: 'Utilisateurs',
     href: '/dashboard/settings/users',
     icon: UserCog,
-    requiredPermission: 'settings',
   },
   {
     title: 'Paramètres',
     href: '/dashboard/settings',
     icon: Settings,
     exact: true,
-    requiredPermission: 'settings',
   },
   {
     title: 'Abonnement',
     href: '/dashboard/plans',
     icon: CreditCard,
-    requiredPermission: 'settings',
   },
 ]
 
@@ -242,7 +217,10 @@ function isActive(pathname: string, href: string, exact?: boolean) {
 
 export function DashboardSidebar({
   user: serverUser,
+  permissions = [],
 }: {
+  /** Permissions effectives calculées côté serveur ('*' = propriétaire). */
+  permissions?: string[]
   user?: {
     name?: string | null
     email?: string | null
@@ -275,12 +253,9 @@ export function DashboardSidebar({
     return labels[role ?? ''] ?? role ?? 'Utilisateur'
   }
 
-  const canSee = (item: { requiredPermission?: string }) => {
-    if (!user) return true
-    if (user.role === 'owner' || user.isPlatformAdmin) return true
-    if (!item.requiredPermission) return true
-    return user.permissions?.includes(item.requiredPermission) ?? false
-  }
+  // Même règle que l'API et le garde des pages : on ne montre jamais une
+  // section dont l'API répondrait 403.
+  const canSee = (item: { href: string }) => canAccessPath(item.href, permissions)
 
   const displayName = user?.name || user?.companyName || user?.email || 'Mon compte'
 
