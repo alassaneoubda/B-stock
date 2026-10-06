@@ -3,6 +3,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/components/providers/session-provider'
 import { RegisterSW } from '@/components/pwa/register-sw'
 import { InstallPrompt } from '@/components/pwa/install-prompt'
+import { Toaster } from '@/components/ui/sonner'
 import { auth } from '@/lib/auth'
 import './globals.css'
 
@@ -61,6 +62,8 @@ export default async function RootLayout({
       <body className="font-sans antialiased">
         <AuthProvider session={session}>
           {children}
+          {/* Notifications globales (aucun Toaster n'était monté : les toasts ne s'affichaient jamais) */}
+          <Toaster position="top-center" theme="light" richColors closeButton />
           <RegisterSW />
           <InstallPrompt />
           <Analytics />

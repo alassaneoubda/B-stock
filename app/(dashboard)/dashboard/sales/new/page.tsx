@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -229,8 +230,18 @@ export default function NewSalePage() {
     const totalPackagingOut = packagingItems.reduce((s, i) => s + i.quantityOut * i.depositPrice, 0)
     const totalPackagingIn = packagingItems.reduce((s, i) => s + i.quantityIn * i.depositPrice, 0)
     const totalPackaging = totalPackagingOut - totalPackagingIn
-    const totalAmount = totalProducts + totalPackaging
+    const totalAmount = Math.max(0, totalProducts + totalPackaging)
     const remainingToPay = totalAmount - paidAmount
+
+    // Espèces / Mobile Money = paiement intégral : le montant encaissé suit le total.
+    // (Auparavant il restait à 0 et une vente « Espèces » créait une dette fictive.)
+    useEffect(() => {
+        if (paymentMethod === 'cash' || paymentMethod === 'mobile_money') {
+            setPaidAmount(totalAmount)
+        } else if (paymentMethod === 'credit') {
+            setPaidAmount(0)
+        }
+    }, [paymentMethod, totalAmount])
 
     function addItem(variant: ProductVariant) {
         setOrderItems(prev => {
@@ -305,6 +316,10 @@ export default function NewSalePage() {
                 return
             }
 
+            toast.success(`Vente ${result.data.order_number} enregistrée`)
+            for (const warning of result.warnings ?? []) {
+                toast.warning(warning, { duration: 10000 })
+            }
             router.push(`/dashboard/sales/${result.data.id}`)
             router.refresh()
         } catch {

@@ -1,11 +1,11 @@
 'use client'
 
 import { Check } from 'lucide-react'
+import Link from 'next/link'
 import { AuthTrigger } from '@/components/auth/auth-trigger'
 import type { Plan } from '@/lib/plans'
 
 function formatPrice(price: number): string {
-  if (price === 0) return 'Sur devis'
   return new Intl.NumberFormat('fr-FR').format(price)
 }
 
@@ -19,6 +19,7 @@ export function LandingPricing({ plans }: { plans: Plan[] }) {
             name: 'Pack Essentiel',
             description: 'Pour les petits commerces et dépôts.',
             popular: false,
+            pricingType: 'paid' as const,
             features: [
               'Gestion des ventes',
               'Gestion du stock',
@@ -33,6 +34,7 @@ export function LandingPricing({ plans }: { plans: Plan[] }) {
             name: 'Pack Business',
             description: 'Pour les distributeurs et grossistes.',
             popular: true,
+            pricingType: 'paid' as const,
             features: [
               'Tout du Pack Essentiel',
               'Multi-dépôts',
@@ -47,6 +49,7 @@ export function LandingPricing({ plans }: { plans: Plan[] }) {
             name: 'Pack Entreprise',
             description: 'Pour les grandes entreprises.',
             popular: false,
+            pricingType: 'on_quote' as const,
             features: [
               'Tout du Pack Business',
               'Utilisateurs illimités',
@@ -78,7 +81,7 @@ export function LandingPricing({ plans }: { plans: Plan[] }) {
             const monthly =
               plan.prices.find((p) => p.interval === 'monthly') || plan.prices[0]
             const price = monthly ? Number(monthly.price) : 0
-            const isCustom = price === 0
+            const isCustom = plan.pricingType === 'on_quote'
 
             return (
               <div
@@ -102,7 +105,7 @@ export function LandingPricing({ plans }: { plans: Plan[] }) {
                 </p>
                 <div className="mt-6">
                   <span className="text-4xl font-bold tracking-tight">
-                    {formatPrice(price)}
+                    {isCustom ? 'Sur devis' : formatPrice(price)}
                   </span>
                   {!isCustom && (
                     <span
@@ -126,6 +129,15 @@ export function LandingPricing({ plans }: { plans: Plan[] }) {
                     </li>
                   ))}
                 </ul>
+                {isCustom ? (
+                  <Link href="/contact" className={`mt-8 block w-full rounded-full py-3 text-center text-sm font-semibold transition-colors ${
+                  plan.popular
+                    ? 'bg-[#2563EB] text-white hover:bg-[#1D4ED8]'
+                    : 'bg-[#0F172A] text-white hover:bg-slate-800'
+                }`}>
+                    Nous contacter
+                  </Link>
+                ) : (
                 <AuthTrigger
                   mode="register"
                   className={`mt-8 block w-full rounded-full py-3 text-center text-sm font-semibold transition-colors ${
@@ -134,8 +146,9 @@ export function LandingPricing({ plans }: { plans: Plan[] }) {
                       : 'bg-[#0F172A] text-white hover:bg-slate-800'
                   }`}
                 >
-                  {isCustom ? 'Nous contacter' : 'Commencer gratuitement'}
+                  Commencer gratuitement
                 </AuthTrigger>
+                )}
               </div>
             )
           })}

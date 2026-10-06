@@ -2,6 +2,18 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import Link from 'next/link'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -114,19 +126,32 @@ export default function SaleDetailPage() {
         fetchSale()
     }, [params.id])
 
+    const [updating, setUpdating] = useState(false)
+
     async function updateStatus(newStatus: string) {
+        if (updating) return
+        setUpdating(true)
         try {
             const res = await fetch(`/api/sales/${params.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus }),
             })
-            const data = await res.json()
-            if (data.success) {
-                setSale((prev) => prev ? { ...prev, status: newStatus } : prev)
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || !data.success) {
+                toast.error('Action impossible', { description: data.error || 'Veuillez réessayer.' })
+                return
             }
-        } catch (error) {
-            console.error('Error updating status:', error)
+            setSale((prev) => prev ? { ...prev, status: newStatus } : prev)
+            toast.success(data.message || 'Statut mis à jour')
+            for (const warning of data.warnings ?? []) {
+                toast.warning(warning, { duration: 10000 })
+            }
+            if (newStatus === 'cancelled') router.refresh()
+        } catch {
+            toast.error('Erreur réseau', { description: 'Vérifiez votre connexion et réessayez.' })
+        } finally {
+            setUpdating(false)
         }
     }
 
@@ -279,9 +304,31 @@ export default function SaleDetailPage() {
                                     Marquer comme livrée
                                 </Button>
                             )}
-                            <Button onClick={() => updateStatus('cancelled')} variant="destructive" className="rounded-md font-bold ml-auto">
-                                Annuler
-                            </Button>
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="destructive" className="rounded-md font-bold ml-auto" disabled={updating}>
+                                        Annuler la vente
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Annuler la vente {sale.order_number} ?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Les produits et emballages seront remis en stock, la dette du client sera
+                                            effacée et la facture annulée. Cette action est définitive.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Conserver la vente</AlertDialogCancel>
+                                        <AlertDialogAction
+                                            onClick={() => updateStatus('cancelled')}
+                                            className="bg-destructive text-white hover:bg-destructive/90"
+                                        >
+                                            Oui, annuler la vente
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
                         </CardContent>
                     </Card>
                 )}

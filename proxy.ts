@@ -31,7 +31,8 @@ export async function proxy(req: NextRequest) {
   const isProtectedApiRoute =
     pathname.startsWith('/api/') &&
     !pathname.startsWith('/api/auth') &&
-    !pathname.startsWith('/api/webhooks')
+    !pathname.startsWith('/api/webhooks') &&
+    !pathname.startsWith('/api/cron') // authentifié par CRON_SECRET
 
   const isDashboardRoute = pathname.startsWith('/dashboard')
 
@@ -82,6 +83,6 @@ export async function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icon.*|apple-icon.*|images|api/webhooks).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icon.*|apple-icon.*|images|api/webhooks|api/cron).*)',
   ],
 }

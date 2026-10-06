@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 
 type PlanPrice = {
   interval: string
@@ -30,6 +31,7 @@ type Plan = {
   name: string
   description: string
   popular: boolean
+  pricingType?: 'paid' | 'free' | 'on_quote'
   features: string[]
   prices: PlanPrice[]
 }
@@ -58,6 +60,8 @@ const intervalLabels: Record<string, string> = {
   yearly: 'Annuel',
 }
 
+type PaymentState = 'idle' | 'checking' | 'pending' | 'completed' | 'failed' | 'expired' | 'timeout' | 'error'
+
 const planIcons: Record<string, any> = {
   essentiel: Zap,
   business: Sparkles,
@@ -72,39 +76,66 @@ export default function PlansPage() {
   const [loadingCheckout, setLoadingCheckout] = useState<string | null>(null)
   const [selectedIntervals, setSelectedIntervals] = useState<Record<string, string>>({})
 
-  const success = searchParams.get('success')
-  const canceled = searchParams.get('canceled')
-  const successPlan = searchParams.get('plan')
-  const successInterval = searchParams.get('interval')
-  const successMonths = searchParams.get('months')
-  const successRef = searchParams.get('reference')
-  const [activated, setActivated] = useState(false)
+  // Retour de GeniusPay : ?checkout=return&reference=... (ancien format : ?success=true)
+  const isReturn = searchParams.get('checkout') === 'return' || searchParams.get('success') === 'true'
+  const canceled = searchParams.get('checkout') === 'canceled' || searchParams.get('canceled') === 'true'
+  const returnRef = searchParams.get('reference')
+  const [paymentState, setPaymentState] = useState<PaymentState>(isReturn ? 'checking' : 'idle')
+  const [paymentMessage, setPaymentMessage] = useState<string | null>(null)
 
-  // After successful payment redirect, activate subscription (fallback for webhook)
+  // Vérifie le paiement auprès du serveur, qui interroge GeniusPay. Tant que le
+  // paiement est en attente (Mobile Money à valider sur le téléphone), on
+  // re-vérifie toutes les 5 s pendant 3 minutes.
   useEffect(() => {
-    if (success && successPlan && successInterval && !activated) {
-      setActivated(true)
-      fetch('/api/subscription/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planId: successPlan,
-          interval: successInterval,
-          reference: successRef || undefined,
-        }),
-      })
-        .then((r) => r.json())
-        .then(() => {
-          // Re-fetch subscription to update UI
-          return fetch('/api/subscription')
+    if (!isReturn) return
+    let cancelled = false
+    let attempts = 0
+
+    async function check() {
+      attempts++
+      try {
+        const res = await fetch('/api/subscription/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference: returnRef || undefined }),
         })
-        .then((r) => r.json())
-        .then((json) => {
-          if (json.data?.subscription) setSubscription(json.data.subscription)
-        })
-        .catch((e) => console.error('Activation error:', e))
+        const json = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (!res.ok) {
+          setPaymentState('error')
+          setPaymentMessage(json.error || 'Vérification du paiement impossible.')
+          return
+        }
+        if (json.status === 'completed') {
+          setPaymentState('completed')
+          const sub = await fetch('/api/subscription').then((r) => r.json()).catch(() => null)
+          if (!cancelled && sub?.data?.subscription) setSubscription(sub.data.subscription)
+          return
+        }
+        if (json.status === 'failed' || json.status === 'expired') {
+          setPaymentState(json.status)
+          return
+        }
+        if (json.status === 'none') {
+          setPaymentState('error')
+          setPaymentMessage('Aucun paiement en cours trouvé pour votre compte.')
+          return
+        }
+        setPaymentState('pending')
+        if (json.message) setPaymentMessage(json.message)
+        if (attempts < 36) setTimeout(check, 5000)
+        else setPaymentState('timeout')
+      } catch {
+        if (cancelled) return
+        if (attempts < 36) setTimeout(check, 5000)
+        else setPaymentState('timeout')
+      }
     }
-  }, [success, successPlan, successInterval, successRef, activated])
+    check()
+    return () => {
+      cancelled = true
+    }
+  }, [isReturn, returnRef])
 
   useEffect(() => {
     async function fetchData() {
@@ -153,11 +184,11 @@ export default function PlansPage() {
 
       if (json.url) {
         window.location.href = json.url
-      } else {
-        console.error('No checkout URL returned')
+        return
       }
-    } catch (e) {
-      console.error('Checkout error:', e)
+      toast.error('Paiement impossible', { description: json.error || 'Veuillez réessayer dans un instant.' })
+    } catch {
+      toast.error('Erreur réseau', { description: 'Vérifiez votre connexion et réessayez.' })
     } finally {
       setLoadingCheckout(null)
     }
@@ -191,21 +222,13 @@ export default function PlansPage() {
       <main className="flex-1 p-4 lg:p-6">
         <div className="max-w-5xl mx-auto space-y-6">
           {/* Success / Cancel banners */}
-          {success && (
-            <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-emerald-900">Paiement réussi !</p>
-                <p className="text-xs text-emerald-700">Votre abonnement est maintenant actif.</p>
-              </div>
-            </div>
-          )}
-          {canceled && (
+          <PaymentBanner state={paymentState} message={paymentMessage} />
+          {canceled && paymentState === 'idle' && (
             <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
               <XCircle className="h-5 w-5 text-amber-600 shrink-0" />
               <div>
                 <p className="text-sm font-semibold text-amber-900">Paiement annulé</p>
-                <p className="text-xs text-amber-700">Vous pouvez réessayer à tout moment.</p>
+                <p className="text-xs text-amber-700">Aucun montant n&apos;a été débité. Vous pouvez réessayer à tout moment.</p>
               </div>
             </div>
           )}
@@ -264,7 +287,7 @@ export default function PlansPage() {
                       </div>
                       {subscription.status === 'trialing' && (
                         <p className="text-xs text-blue-600">
-                          Votre essai gratuit de 30 jours est en cours. Choisissez un plan pour continuer après l\u2019expiration.
+                          Votre essai gratuit est en cours. Choisissez un plan pour continuer après l\u2019expiration.
                         </p>
                       )}
                     </div>
@@ -303,7 +326,9 @@ export default function PlansPage() {
               const Icon = planIcons[plan.id] || Zap
               const selectedInterval = selectedIntervals[plan.id] || plan.prices[0]?.interval
               const currentPrice = plan.prices.find((p) => p.interval === selectedInterval)
-              const isCurrentPlan = subscription?.planName === plan.name && subscription?.isActive
+              const isCurrentPlan =
+                subscription?.isActive && subscription.status === 'active' && !!subscription.planName?.startsWith(plan.name)
+              const isOnQuote = plan.pricingType === 'on_quote'
 
               return (
                 <div
@@ -384,8 +409,16 @@ export default function PlansPage() {
                     ))}
                   </ul>
 
+                  {isOnQuote && (
+                    <p className="mb-4 text-2xl font-bold text-zinc-950 tracking-tight">Sur devis</p>
+                  )}
+
                   {/* CTA button */}
-                  {isCurrentPlan ? (
+                  {isOnQuote && !isCurrentPlan ? (
+                    <Button variant="outline" size="sm" className="w-full h-10 text-xs font-semibold" asChild>
+                      <Link href="/contact">Nous contacter</Link>
+                    </Button>
+                  ) : isCurrentPlan ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -411,7 +444,7 @@ export default function PlansPage() {
                       ) : (
                         <Building2 className="h-3.5 w-3.5 mr-1.5" />
                       )}
-                      {currentPrice && currentPrice.price === 0 ? 'Activer gratuitement' : 'Choisir ce plan'}
+                      {plan.pricingType === 'free' ? 'Activer gratuitement' : subscription?.status === 'active' ? 'Renouveler / changer' : 'Choisir ce plan'}
                     </Button>
                   )}
                 </div>
@@ -448,6 +481,30 @@ export default function PlansPage() {
           </div>
         </div>
       </main>
+    </div>
+  )
+}
+
+function PaymentBanner({ state, message }: { state: PaymentState; message: string | null }) {
+  if (state === 'idle') return null
+  const config: Record<Exclude<PaymentState, 'idle'>, { tone: string; title: string; text: string; spin?: boolean }> = {
+    checking: { tone: 'bg-blue-50 border-blue-200 text-blue-900', title: 'Vérification du paiement…', text: 'Nous confirmons votre paiement auprès de GeniusPay.', spin: true },
+    pending: { tone: 'bg-blue-50 border-blue-200 text-blue-900', title: 'Paiement en attente de confirmation', text: 'Validez le paiement sur votre téléphone si demandé. Cette page se met à jour automatiquement.', spin: true },
+    completed: { tone: 'bg-emerald-50 border-emerald-200 text-emerald-900', title: 'Paiement confirmé', text: 'Votre abonnement est actif. Merci pour votre confiance !' },
+    failed: { tone: 'bg-red-50 border-red-200 text-red-900', title: 'Paiement refusé', text: "Aucun montant n'a été débité. Vous pouvez réessayer ou choisir un autre moyen de paiement." },
+    expired: { tone: 'bg-amber-50 border-amber-200 text-amber-900', title: 'Paiement expiré', text: "Le délai de paiement est dépassé. Relancez le paiement depuis l'offre choisie." },
+    timeout: { tone: 'bg-amber-50 border-amber-200 text-amber-900', title: 'Confirmation toujours en attente', text: 'Si vous avez payé, votre abonnement sera activé automatiquement dans quelques minutes. Sinon, contactez le support.' },
+    error: { tone: 'bg-red-50 border-red-200 text-red-900', title: 'Vérification impossible', text: 'Réessayez dans un instant ou contactez le support.' },
+  }
+  const c = config[state]
+  const Icon = state === 'completed' ? CheckCircle2 : c.spin ? Loader2 : XCircle
+  return (
+    <div className={`flex items-start gap-3 border rounded-lg p-4 ${c.tone}`} role="status" aria-live="polite">
+      <Icon className={`h-5 w-5 shrink-0 mt-0.5 ${c.spin ? 'animate-spin' : ''}`} />
+      <div>
+        <p className="text-sm font-semibold">{c.title}</p>
+        <p className="text-xs opacity-80">{message || c.text}</p>
+      </div>
     </div>
   )
 }

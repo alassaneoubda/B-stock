@@ -1,8 +1,12 @@
 // GeniusPay API Client — https://pay.genius.ci/docs/api
+import { createHmac, timingSafeEqual } from 'crypto'
 
 const BASE_URL = process.env.GENIUSPAY_BASE_URL || 'https://pay.genius.ci/api/v1/merchant'
 const API_KEY = process.env.GENIUSPAY_API_KEY || ''
 const API_SECRET = process.env.GENIUSPAY_API_SECRET || ''
+
+/** Délai maximal d'un appel à GeniusPay (évite de bloquer une requête utilisateur). */
+const REQUEST_TIMEOUT_MS = 15_000
 
 export function isGeniusPayConfigured(): boolean {
   return API_KEY.length > 5 && API_SECRET.length > 5
@@ -70,6 +74,7 @@ export async function createPayment(params: CreatePaymentParams): Promise<Genius
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
   if (!res.ok) {
@@ -112,6 +117,7 @@ export async function getPayment(reference: string): Promise<GeniusPayPayment> {
       'X-API-Secret': API_SECRET,
     },
     cache: 'no-store',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 
   if (!res.ok) {
@@ -124,8 +130,6 @@ export async function getPayment(reference: string): Promise<GeniusPayPayment> {
 }
 
 // ===== Webhook Signature Verification =====
-
-import { createHmac, timingSafeEqual } from 'crypto'
 
 export function verifyWebhookSignature(
   payload: string,
@@ -141,93 +145,6 @@ export function verifyWebhookSignature(
   } catch {
     return false
   }
-}
-
-// ===== Plans Configuration =====
-
-export type PlanInterval = 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
-
-export interface PlanPrice {
-  interval: PlanInterval
-  months: number
-  price: number
-  label: string
-}
-
-export interface Plan {
-  id: string
-  name: string
-  description: string
-  popular?: boolean
-  features: string[]
-  prices: PlanPrice[]
-}
-
-export const PLANS: Plan[] = [
-  {
-    id: 'essentiel',
-    name: 'Pack Essentiel',
-    description: 'Pour les petits commerces et dépôts',
-    features: [
-      'Gestion des ventes',
-      'Gestion du stock',
-      'Gestion des clients',
-      'Factures automatiques',
-      'Support email',
-    ],
-    prices: [
-      { interval: 'monthly', months: 1, price: 25000, label: '25 000 XOF / mois' },
-      { interval: 'quarterly', months: 3, price: 70000, label: '70 000 XOF / 3 mois' },
-      { interval: 'semiannual', months: 6, price: 130000, label: '130 000 XOF / 6 mois' },
-      { interval: 'yearly', months: 12, price: 250000, label: '250 000 XOF / an' },
-    ],
-  },
-  {
-    id: 'business',
-    name: 'Pack Business',
-    description: 'Pour les distributeurs et grossistes',
-    popular: true,
-    features: [
-      'Tout du Pack Essentiel',
-      'Multi-dépôts',
-      'Rapports avancés',
-      'Gestion des tournées',
-      'Support prioritaire',
-      'Accès API',
-    ],
-    prices: [
-      { interval: 'monthly', months: 1, price: 45000, label: '45 000 XOF / mois' },
-      { interval: 'quarterly', months: 3, price: 130000, label: '130 000 XOF / 3 mois' },
-      { interval: 'semiannual', months: 6, price: 250000, label: '250 000 XOF / 6 mois' },
-      { interval: 'yearly', months: 12, price: 500000, label: '500 000 XOF / an' },
-    ],
-  },
-  {
-    id: 'entreprise',
-    name: 'Pack Entreprise',
-    description: 'Pour les grandes entreprises — accès complet',
-    features: [
-      'Tout du Pack Business',
-      'Utilisateurs illimités',
-      'Dépôts illimités',
-      'Branding personnalisé',
-      'Formation dédiée',
-      'Support dédié 24/7',
-    ],
-    prices: [
-      { interval: 'yearly', months: 12, price: 0, label: '0 XOF / an' },
-    ],
-  },
-]
-
-export function getPlan(planId: string): Plan | undefined {
-  return PLANS.find((p) => p.id === planId)
-}
-
-export function getPlanPrice(planId: string, interval: PlanInterval): PlanPrice | undefined {
-  const plan = getPlan(planId)
-  if (!plan) return undefined
-  return plan.prices.find((p) => p.interval === interval)
 }
 
 export function formatXOF(amount: number): string {
