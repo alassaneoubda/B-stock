@@ -22,7 +22,7 @@ import { formatMoney, formatDateTime } from '@/lib/format'
 async function getDashboardStats(companyId: string) {
   const [products, clients, todaySales, pendingDeliveries, recentSales, openCash, anySale] = await Promise.all([
     sql`SELECT COUNT(*) as count FROM products WHERE company_id = ${companyId} AND is_active = true`,
-    sql`SELECT COUNT(*) as count FROM clients WHERE company_id = ${companyId} AND is_active = true`,
+    sql`SELECT COUNT(*) as count FROM clients WHERE company_id = ${companyId} AND is_active = true AND is_walk_in = false`,
     sql`
       SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count
       FROM sales_orders

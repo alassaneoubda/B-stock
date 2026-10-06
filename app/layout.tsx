@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/components/providers/session-provider'
 import { RegisterSW } from '@/components/pwa/register-sw'
@@ -6,6 +7,10 @@ import { InstallPrompt } from '@/components/pwa/install-prompt'
 import { Toaster } from '@/components/ui/sonner'
 import { auth } from '@/lib/auth'
 import './globals.css'
+
+// Police auto-hébergée par Next.js (aucune requête vers Google côté visiteur)
+const geist = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' })
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono', display: 'swap' })
 
 const APP_NAME = 'B-Stock'
 const APP_URL =
@@ -66,7 +71,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="fr">
+    <html lang="fr" className={`${geist.variable} ${geistMono.variable}`}>
       <body className="font-sans antialiased">
         {/* Pas de session sérialisée ici : les pages publiques restent cachables sans
             fuite de données ; les espaces connectés fournissent la leur (layout dashboard). */}

@@ -96,6 +96,7 @@ export async function GET(request: NextRequest) {
       FROM clients c
       WHERE c.company_id = ${companyId}
         AND c.is_active = true
+        AND c.is_walk_in = false
         AND (${clientType}::text IS NULL OR c.client_type = ${clientType}::text)
         AND (
           ${searchPattern}::text IS NULL

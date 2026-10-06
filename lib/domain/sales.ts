@@ -56,9 +56,18 @@ function formatFcfa(amount: number): string {
   return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(amount)} FCFA`
 }
 
-const ORDER_SOURCES = new Set(['in_person', 'phone', 'whatsapp', 'other'])
+const ORDER_SOURCES = new Set(['in_person', 'phone', 'whatsapp', 'pos', 'other'])
 
 export async function createSale(input: CreateSaleInput): Promise<CreateSaleResult> {
+  return withTransaction((tx) => createSaleInTx(tx, input))
+}
+
+/**
+ * Même logique que createSale, dans une transaction fournie par l'appelant
+ * (ex. encaissement d'un ticket de point de vente : ticket clos et vente créée
+ * atomiquement).
+ */
+export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<CreateSaleResult> {
   const { companyId, userId } = input
   const warnings: string[] = []
 
@@ -100,7 +109,7 @@ export async function createSale(input: CreateSaleInput): Promise<CreateSaleResu
         ? money(Math.min(paidAmount, Math.max(0, input.cashAmount ?? paidAmount)))
         : 0
 
-  const order = await withTransaction(async (tx) => {
+  const order = await (async () => {
     // ---- Appartenance de toutes les références à l'entreprise ----
     await assertOwned(tx.sql, companyId, {
       depots: [input.depotId],
@@ -342,7 +351,7 @@ export async function createSale(input: CreateSaleInput): Promise<CreateSaleResu
     }
 
     return created
-  })
+  })()
 
   return { order, warnings }
 }

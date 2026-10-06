@@ -34,7 +34,7 @@ export async function proxy(req: NextRequest) {
     !pathname.startsWith('/api/webhooks') &&
     !pathname.startsWith('/api/cron') // authentifié par CRON_SECRET
 
-  const isDashboardRoute = pathname.startsWith('/dashboard')
+  const isDashboardRoute = pathname.startsWith('/dashboard') || pathname === '/pos' || pathname.startsWith('/pos/')
 
   const isAdminLogin = pathname === '/admin/login'
   const isAdminArea = pathname.startsWith('/admin') && !isAdminLogin

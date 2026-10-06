@@ -17,6 +17,7 @@ export const DOCUMENT_TYPES = {
   inventory: { prefix: 'INV', digits: 5 },
   invoice_client: { prefix: 'FC', digits: 6 },
   invoice_supplier: { prefix: 'FF', digits: 6 },
+  pos_ticket: { prefix: 'T', digits: 6 },
 } as const
 
 export type DocumentType = keyof typeof DOCUMENT_TYPES

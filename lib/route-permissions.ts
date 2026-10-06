@@ -7,6 +7,8 @@
  * L'ordre compte : la route la plus spécifique d'abord.
  */
 const ROUTE_PERMISSIONS: [prefix: string, permission: string][] = [
+  ['/pos', 'pos.use'],
+  ['/dashboard/pos/tables', 'pos.manage'],
   ['/dashboard/cash/validation', 'cash.manage'],
   ['/dashboard/cash', 'cash.read'],
   ['/dashboard/sales', 'sales.read'],

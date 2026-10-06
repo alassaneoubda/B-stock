@@ -61,6 +61,7 @@ import {
   FileSearch,
   TrendingUp,
   Shield,
+  MonitorSmartphone,
 } from 'lucide-react'
 
 const mainNavItems = [
@@ -69,6 +70,11 @@ const mainNavItems = [
     href: '/dashboard',
     icon: LayoutDashboard,
     exact: true,
+  },
+  {
+    title: 'Point de vente',
+    href: '/pos',
+    icon: MonitorSmartphone,
   },
   {
     title: 'Caisse',

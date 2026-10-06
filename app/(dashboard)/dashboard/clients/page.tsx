@@ -68,6 +68,7 @@ async function getClients(companyId: string, q: string | null): Promise<Client[]
         ) as packaging_balance
       FROM clients c
       WHERE c.company_id = ${companyId}
+        AND c.is_walk_in = false
         AND (
           ${pattern}::text IS NULL
           OR c.name ILIKE ${pattern}::text
