@@ -1,5 +1,5 @@
 import { Pool, type QueryResultRow } from 'pg'
-import { normalizeDatabaseUrl } from './db-url'
+import { isLocalDatabaseUrl, normalizeDatabaseUrl } from './db-url'
 
 /**
  * Accès PostgreSQL via TCP (`pg`) vers le pooler Neon.
@@ -15,7 +15,7 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: normalizeDatabaseUrl(process.env.DATABASE_URL),
-  ssl: { rejectUnauthorized: false },
+  ssl: isLocalDatabaseUrl(process.env.DATABASE_URL) ? false : { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 15_000,
