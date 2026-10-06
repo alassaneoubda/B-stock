@@ -14,6 +14,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage } from '@/lib/api-client'
 
 const depotSchema = z.object({
     name: z.string().min(1, 'Le nom est requis'),
@@ -49,23 +51,13 @@ export default function NewDepotPage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/depots', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            await apiFetch('/api/depots', { method: 'POST', body: data })
+            toast.success('Dépôt créé')
             router.push('/dashboard/depots')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            // Erreur affichée dans le formulaire (message du serveur)
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
@@ -89,7 +81,7 @@ export default function NewDepotPage() {
 
                 <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                        <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                             {error}
                         </div>
                     )}

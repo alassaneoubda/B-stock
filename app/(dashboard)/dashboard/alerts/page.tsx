@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Bell, AlertTriangle, CheckCircle, Package, CreditCard, ArchiveRestore, X, Info, ShieldAlert, History } from 'lucide-react'
 import Link from 'next/link'
-import { GenerateAlertsButton, MarkAllReadButton } from '@/components/dashboard/alerts-actions'
+import { GenerateAlertsButton, MarkAllReadButton, MarkAlertReadButton } from '@/components/dashboard/alerts-actions'
+import { formatDateTime, formatNumber, formatRelative } from '@/lib/format'
 
 interface Alert {
     id: string
@@ -20,20 +21,38 @@ interface Alert {
     created_at: string
 }
 
+// Pas de try/catch : une panne SQL remonte à error.tsx au lieu d'afficher
+// « Système opérationnel » à tort.
 async function getAlerts(companyId: string): Promise<Alert[]> {
-    try {
-        const alerts = await sql`
+    const alerts = await sql`
       SELECT *
       FROM alerts
       WHERE company_id = ${companyId}
-      ORDER BY 
+      ORDER BY
         CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
         created_at DESC
       LIMIT 100
     `
-        return alerts as Alert[]
-    } catch {
-        return []
+    return alerts as Alert[]
+}
+
+/**
+ * Lien vers l'entité liée, selon reference_type écrit par lib/domain/alerts.ts :
+ * 'stock' (ligne de stock : low_stock, expiry), 'client' (credit_limit,
+ * packaging_debt), 'sales_order' (payment_overdue). Type inconnu : pas de lien.
+ */
+function alertEntityHref(alert: Alert): string | null {
+    switch (alert.reference_type) {
+        case 'stock':
+            return '/dashboard/stock'
+        case 'client':
+            return alert.reference_id ? `/dashboard/clients/${alert.reference_id}` : null
+        case 'sales_order':
+            return alert.reference_id ? `/dashboard/sales/${alert.reference_id}` : null
+        case 'credit_note':
+            return '/dashboard/credits'
+        default:
+            return null
     }
 }
 
@@ -111,7 +130,7 @@ export default async function AlertsPage() {
                                 </div>
                                 <div>
                                     <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
+                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{formatNumber(stat.value)}</div>
                                     <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
                                 </div>
                             </div>
@@ -157,6 +176,7 @@ export default async function AlertsPage() {
                                         ring: 'ring-slate-200'
                                     }
                                     const AlertIcon = typeInfo.icon
+                                    const entityHref = alertEntityHref(alert)
 
                                     return (
                                         <div
@@ -190,12 +210,9 @@ export default async function AlertsPage() {
                                                                 <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
                                                             )}
                                                             <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
-                                                                {new Date(alert.created_at).toLocaleDateString('fr-FR', {
-                                                                    day: '2-digit',
-                                                                    month: 'short',
-                                                                    hour: '2-digit',
-                                                                    minute: '2-digit',
-                                                                })}
+                                                                <time dateTime={new Date(alert.created_at).toISOString()} title={formatDateTime(alert.created_at)}>
+                                                                    {formatRelative(alert.created_at)}
+                                                                </time>
                                                             </span>
                                                         </div>
                                                         {alert.is_resolved && (
@@ -213,24 +230,20 @@ export default async function AlertsPage() {
                                                             <Info className="h-3 w-3" />
                                                             {typeInfo.label}
                                                         </Badge>
-                                                        {alert.reference_id && (
+                                                        {entityHref && (
                                                             <Link
-                                                                href={`/dashboard/${alert.reference_type === 'product' ? 'products' : alert.reference_type === 'client' ? 'clients' : 'sales'}/${alert.reference_id}`}
+                                                                href={entityHref}
                                                                 className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider hover:underline hover:text-blue-700 transition-colors"
                                                             >
                                                                 Voir l&apos;entité associée
                                                             </Link>
                                                         )}
                                                     </div>
-                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {!alert.is_read && (
-                                                            <Button variant="ghost" size="sm" className="h-8 rounded-xl text-[10px] font-semibold uppercase tracking-wider text-slate-400 hover:text-blue-600 transition-colors">
-                                                                Marquer comme lu
-                                                            </Button>
-                                                        )}
-                                                        {!alert.is_resolved && (
-                                                            <Button size="sm" className="h-8 rounded-xl bg-slate-900 text-white font-semibold text-[10px] uppercase tracking-wider px-4 shadow-lg active:scale-95 transition-all">
-                                                                Traiter
+                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                                        {!alert.is_read && <MarkAlertReadButton alertId={alert.id} />}
+                                                        {!alert.is_resolved && entityHref && (
+                                                            <Button asChild size="sm" className="h-8 rounded-xl bg-slate-900 text-white font-semibold text-[10px] uppercase tracking-wider px-4 shadow-lg active:scale-95 transition-all">
+                                                                <Link href={entityHref}>Traiter</Link>
                                                             </Button>
                                                         )}
                                                     </div>

@@ -2,28 +2,33 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, CheckCheck } from 'lucide-react'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
 
 export function GenerateAlertsButton() {
     const router = useRouter()
     const [loading, setLoading] = useState(false)
-    const [message, setMessage] = useState<string | null>(null)
 
     async function handleGenerate() {
+        if (loading) return
         setLoading(true)
-        setMessage(null)
         try {
-            const res = await fetch('/api/alerts/generate', { method: 'POST' })
-            const data = await res.json()
-            if (res.ok) {
-                setMessage(data.message)
-                router.refresh()
-            } else {
-                setMessage(data.error || 'Erreur')
-            }
-        } catch {
-            setMessage('Erreur réseau')
+            const data = await apiFetch<{
+                message?: string
+                alertsCreated?: number
+                alertsResolved?: number
+                warnings?: string[]
+            }>('/api/alerts/generate', { method: 'POST' })
+            const resolved = Number(data?.alertsResolved || 0)
+            toast.success(data?.message || 'Analyse terminée', {
+                description: resolved > 0 ? `${resolved} alerte(s) résolue(s) automatiquement` : undefined,
+            })
+            toastWarnings(data?.warnings)
+            router.refresh()
+        } catch (e) {
+            toastError(e, 'Analyse impossible')
         } finally {
             setLoading(false)
         }
@@ -31,9 +36,6 @@ export function GenerateAlertsButton() {
 
     return (
         <div className="flex items-center gap-3">
-            {message && (
-                <span className="text-sm font-bold text-slate-500">{message}</span>
-            )}
             <Button
                 onClick={handleGenerate}
                 disabled={loading}
@@ -56,16 +58,17 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
     const [loading, setLoading] = useState(false)
 
     async function handleMarkAll() {
+        if (loading) return
         setLoading(true)
         try {
-            await fetch('/api/alerts', {
+            await apiFetch('/api/alerts', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ markAllRead: true }),
+                body: { markAllRead: true },
             })
+            toast.success('Toutes les alertes sont marquées comme lues')
             router.refresh()
-        } catch {
-            // ignore
+        } catch (e) {
+            toastError(e)
         } finally {
             setLoading(false)
         }
@@ -86,6 +89,42 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
                 <CheckCheck className="h-4 w-4 mr-2" />
             )}
             Tout marquer comme lu
+        </Button>
+    )
+}
+
+/** Marque une seule alerte comme lue (PATCH /api/alerts { alertIds }). */
+export function MarkAlertReadButton({ alertId }: { alertId: string }) {
+    const router = useRouter()
+    const [loading, setLoading] = useState(false)
+
+    async function handleMark() {
+        if (loading) return
+        setLoading(true)
+        try {
+            await apiFetch('/api/alerts', {
+                method: 'PATCH',
+                body: { alertIds: [alertId] },
+            })
+            toast.success('Alerte marquée comme lue')
+            router.refresh()
+        } catch (e) {
+            toastError(e)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    return (
+        <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleMark}
+            disabled={loading}
+            className="h-8 rounded-xl text-[10px] font-semibold uppercase tracking-wider text-slate-400 hover:text-blue-600 transition-colors"
+        >
+            {loading && <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />}
+            Marquer comme lu
         </Button>
     )
 }

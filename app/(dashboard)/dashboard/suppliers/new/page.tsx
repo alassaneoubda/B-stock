@@ -14,6 +14,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
 
 const supplierSchema = z.object({
     name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
@@ -55,23 +57,17 @@ export default function NewSupplierPage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/suppliers', {
+            const result = await apiFetch<{ warnings?: unknown }>('/api/suppliers', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: data,
             })
 
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            toast.success('Fournisseur créé')
+            toastWarnings(result?.warnings)
             router.push('/dashboard/suppliers')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -13,9 +14,12 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import {
-    ArrowLeft, Loader2, Package, Plus, Trash2, Navigation, PackageOpen,
+    ArrowLeft, Loader2, Package, Plus, Navigation, PackageOpen, Info, Lock, Truck,
 } from 'lucide-react'
 import Link from 'next/link'
+import { ApiError, apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDate, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface ProductVariant {
     id: string
@@ -59,7 +63,9 @@ export default function LoadTourPage() {
     const [variants, setVariants] = useState<ProductVariant[]>([])
     const [packagingTypes, setPackagingTypes] = useState<PackagingType[]>([])
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null)
     const [saving, setSaving] = useState(false)
+    const [starting, setStarting] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     // Form state
@@ -68,115 +74,154 @@ export default function LoadTourPage() {
     const [selectedPackaging, setSelectedPackaging] = useState('')
     const [quantity, setQuantity] = useState('')
 
-    const fetchData = useCallback(async () => {
-        try {
-            const [tourRes, invRes, varRes, pkgRes] = await Promise.all([
-                fetch(`/api/deliveries/${tourId}`),
-                fetch(`/api/deliveries/${tourId}/inventory`),
-                fetch('/api/stock'),
-                fetch('/api/packaging'),
-            ])
+    /** Tournée + inventaire du véhicule (indispensables à l'écran). */
+    const fetchTourData = useCallback(async () => {
+        const [tourData, invData] = await Promise.all([
+            apiFetch<{ data: TourBasic }>(`/api/deliveries/${tourId}`),
+            apiFetch<{ data: InventoryItem[] }>(`/api/deliveries/${tourId}/inventory`),
+        ])
+        setTour(tourData.data)
+        setInventory(invData.data || [])
+    }, [tourId])
 
-            const tourData = await tourRes.json()
-            const invData = await invRes.json()
-            const varData = await varRes.json()
-            const pkgData = await pkgRes.json()
-
-            if (tourData.data) {
-                setTour(tourData.data)
-            }
-            if (invData.data) {
-                setInventory(invData.data)
-            }
-            // Extract unique variants from stock data
-            if (varData.data) {
-                const seen = new Set<string>()
-                const uniqueVariants: ProductVariant[] = []
-                for (const item of varData.data) {
-                    if (!seen.has(item.variant_id)) {
-                        seen.add(item.variant_id)
-                        uniqueVariants.push({
-                            id: item.variant_id,
-                            product_name: item.product_name,
-                            packaging_name: item.packaging_name || 'Standard',
-                            price: item.price,
-                        })
-                    }
+    /** Catalogue (variantes en stock + types d'emballage) : un échec n'empêche pas d'afficher la tournée. */
+    const fetchCatalog = useCallback(async () => {
+        const [varRes, pkgRes] = await Promise.allSettled([
+            apiFetch('/api/stock'),
+            apiFetch('/api/packaging'),
+        ])
+        if (varRes.status === 'fulfilled') {
+            // Variantes uniques à partir des lignes de stock (une ligne par dépôt / lot)
+            const seen = new Set<string>()
+            const uniqueVariants: ProductVariant[] = []
+            for (const item of varRes.value?.data || []) {
+                if (!seen.has(item.variant_id)) {
+                    seen.add(item.variant_id)
+                    uniqueVariants.push({
+                        id: item.variant_id,
+                        product_name: item.product_name,
+                        packaging_name: item.packaging_name || 'Standard',
+                        price: item.price,
+                    })
                 }
-                setVariants(uniqueVariants)
             }
-            if (pkgData.packagingTypes) {
-                setPackagingTypes(pkgData.packagingTypes)
-            }
-        } catch {
-            setError('Erreur de chargement')
+            setVariants(uniqueVariants)
+        } else {
+            toastError(varRes.reason, 'Liste des produits indisponible')
+        }
+        if (pkgRes.status === 'fulfilled') {
+            setPackagingTypes(pkgRes.value?.data || pkgRes.value?.packagingTypes || [])
+        } else {
+            toastError(pkgRes.reason, "Liste des emballages indisponible")
+        }
+    }, [])
+
+    const fetchAll = useCallback(async () => {
+        setLoading(true)
+        setLoadError(null)
+        try {
+            await Promise.all([fetchTourData(), fetchCatalog()])
+        } catch (e) {
+            setLoadError({
+                notFound: e instanceof ApiError && e.status === 404,
+                message: errorMessage(e),
+            })
         } finally {
             setLoading(false)
         }
-    }, [tourId])
+    }, [fetchTourData, fetchCatalog])
 
-    useEffect(() => { fetchData() }, [fetchData])
+    useEffect(() => { fetchAll() }, [fetchAll])
+
+    const isClosed = tour?.status === 'completed' || tour?.status === 'cancelled'
+    const canStartDelivery = tour?.status === 'planned' || tour?.status === 'loading'
 
     async function handleAddItem() {
-        if (!quantity || Number(quantity) <= 0) return
-        setSaving(true)
+        if (saving || isClosed) return
         setError(null)
 
-        try {
-            const body: Record<string, unknown> = {
-                inventoryType,
-                loadedQuantity: Number(quantity),
-            }
-            if (inventoryType === 'product') {
-                if (!selectedVariant) { setSaving(false); return }
-                body.productVariantId = selectedVariant
-            } else {
-                if (!selectedPackaging) { setSaving(false); return }
-                body.packagingTypeId = selectedPackaging
-            }
+        const qty = Number(quantity)
+        if (!Number.isInteger(qty) || qty <= 0) {
+            setError('Saisissez une quantité entière supérieure à 0.')
+            return
+        }
+        const body: Record<string, unknown> = {
+            inventoryType,
+            loadedQuantity: qty,
+        }
+        if (inventoryType === 'product') {
+            if (!selectedVariant) { setError('Choisissez une variante produit.'); return }
+            body.productVariantId = selectedVariant
+        } else {
+            if (!selectedPackaging) { setError("Choisissez un type d'emballage."); return }
+            body.packagingTypeId = selectedPackaging
+        }
 
-            const res = await fetch(`/api/deliveries/${tourId}/inventory`, {
+        setSaving(true)
+        try {
+            const res = await apiFetch(`/api/deliveries/${tourId}/inventory`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
+                body,
             })
-            const data = await res.json()
-            if (!res.ok) {
-                setError(data.error || 'Erreur')
-                return
-            }
+            toast.success('Article chargé dans le véhicule')
+            toastWarnings(res?.warnings)
             setQuantity('')
             setSelectedVariant('')
             setSelectedPackaging('')
-            fetchData()
-        } catch {
-            setError('Erreur réseau')
+            try {
+                await fetchTourData()
+            } catch (e) {
+                toastError(e, 'Actualisation impossible')
+            }
+        } catch (e) {
+            setError(errorMessage(e))
+            // Tournée clôturée entre-temps : on resynchronise le statut
+            if (e instanceof ApiError && e.status === 409) fetchTourData().catch(() => {})
         } finally {
             setSaving(false)
         }
     }
 
     async function handleStartDelivery() {
-        setSaving(true)
+        if (starting) return
+        setStarting(true)
         try {
-            const res = await fetch(`/api/deliveries/${tourId}`, {
+            const res = await apiFetch(`/api/deliveries/${tourId}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'in_progress' }),
+                body: { status: 'in_progress' },
             })
-            if (res.ok) {
-                router.push(`/dashboard/deliveries/${tourId}`)
-            }
-        } catch { /* ignore */ }
-        finally { setSaving(false) }
+            toast.success('Tournée partie en livraison')
+            toastWarnings(res?.warnings)
+            router.push(`/dashboard/deliveries/${tourId}`)
+        } catch (e) {
+            toastError(e, 'Départ en livraison impossible')
+            setStarting(false)
+        }
     }
 
     if (loading) {
+        return <PageSkeleton />
+    }
+
+    if (loadError || !tour) {
         return (
             <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Chargement véhicule" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <DashboardHeader title="Chargement du véhicule" description="" />
+                <main className="flex-1 p-6">
+                    {loadError?.notFound ? (
+                        <EmptyState
+                            icon={Truck}
+                            title="Tournée introuvable"
+                            description="Cette tournée n'existe pas ou a été supprimée."
+                            action={{ label: 'Retour aux tournées', href: '/dashboard/deliveries' }}
+                        />
+                    ) : (
+                        <ErrorState
+                            title="Impossible de charger la tournée"
+                            description={loadError?.message}
+                            onRetry={fetchAll}
+                        />
+                    )}
                 </main>
             </div>
         )
@@ -184,12 +229,13 @@ export default function LoadTourPage() {
 
     const productItems = inventory.filter(i => i.inventory_type === 'product')
     const packagingItems = inventory.filter(i => i.inventory_type === 'packaging')
+    const formDisabled = saving || isClosed
 
     return (
         <div className="flex flex-col min-h-screen bg-zinc-50/50">
             <DashboardHeader
                 title="Chargement du véhicule"
-                description={tour ? `Tournée du ${new Date(tour.tour_date).toLocaleDateString('fr-FR')} — ${tour.driver_name || 'Chauffeur non assigné'}` : ''}
+                description={`Tournée du ${formatDate(tour.tour_date)} — ${tour.driver_name || 'Chauffeur non assigné'}`}
             />
 
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
@@ -199,19 +245,39 @@ export default function LoadTourPage() {
                             <ArrowLeft className="h-4 w-4 mr-2" /> Retour à la tournée
                         </Link>
                     </Button>
-                    {inventory.length > 0 && (
+                    {inventory.length > 0 && canStartDelivery && (
                         <Button
                             onClick={handleStartDelivery}
-                            disabled={saving}
+                            disabled={starting || saving}
                             className="rounded-xl bg-blue-600 hover:bg-blue-700 font-bold h-10 px-6 shadow-lg shadow-blue-500/20"
                         >
-                            <Navigation className="h-4 w-4 mr-2" /> Démarrer la livraison
+                            {starting ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                                <Navigation className="h-4 w-4 mr-2" />
+                            )}
+                            Démarrer la livraison
                         </Button>
                     )}
                 </div>
 
+                <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 text-sm text-blue-800">
+                    <Info className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                    <p>
+                        Le chargement n&apos;est pas encore déduit du stock du dépôt.
+                        Les quantités saisies ici servent uniquement au suivi de la tournée.
+                    </p>
+                </div>
+
+                {isClosed && (
+                    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+                        <Lock className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
+                        Cette tournée est {tour.status === 'cancelled' ? 'annulée' : 'terminée'} : le chargement n&apos;est plus modifiable.
+                    </div>
+                )}
+
                 {error && (
-                    <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                    <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                         {error}
                     </div>
                 )}
@@ -226,7 +292,7 @@ export default function LoadTourPage() {
                         <CardContent className="p-8 space-y-5">
                             <div className="space-y-2">
                                 <Label>Type</Label>
-                                <Select value={inventoryType} onValueChange={(v) => setInventoryType(v as 'product' | 'packaging')}>
+                                <Select value={inventoryType} onValueChange={(v) => setInventoryType(v as 'product' | 'packaging')} disabled={formDisabled}>
                                     <SelectTrigger className="rounded-xl">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -240,9 +306,9 @@ export default function LoadTourPage() {
                             {inventoryType === 'product' ? (
                                 <div className="space-y-2">
                                     <Label>Variante produit</Label>
-                                    <Select value={selectedVariant} onValueChange={setSelectedVariant}>
+                                    <Select value={selectedVariant} onValueChange={setSelectedVariant} disabled={formDisabled || variants.length === 0}>
                                         <SelectTrigger className="rounded-xl">
-                                            <SelectValue placeholder="Choisir..." />
+                                            <SelectValue placeholder={variants.length === 0 ? 'Aucun produit en stock' : 'Choisir...'} />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {variants.map(v => (
@@ -256,9 +322,9 @@ export default function LoadTourPage() {
                             ) : (
                                 <div className="space-y-2">
                                     <Label>Type d&apos;emballage</Label>
-                                    <Select value={selectedPackaging} onValueChange={setSelectedPackaging}>
+                                    <Select value={selectedPackaging} onValueChange={setSelectedPackaging} disabled={formDisabled || packagingTypes.length === 0}>
                                         <SelectTrigger className="rounded-xl">
-                                            <SelectValue placeholder="Choisir..." />
+                                            <SelectValue placeholder={packagingTypes.length === 0 ? "Aucun type d'emballage" : 'Choisir...'} />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {packagingTypes.map(pt => (
@@ -280,12 +346,13 @@ export default function LoadTourPage() {
                                     onChange={(e) => setQuantity(e.target.value)}
                                     placeholder="Ex: 50"
                                     className="rounded-xl"
+                                    disabled={formDisabled}
                                 />
                             </div>
 
                             <Button
                                 onClick={handleAddItem}
-                                disabled={saving || !quantity}
+                                disabled={formDisabled || !quantity}
                                 className="w-full rounded-xl"
                             >
                                 {saving ? (
@@ -307,7 +374,7 @@ export default function LoadTourPage() {
                                         <Package className="h-5 w-5 text-blue-600" />
                                         <CardTitle className="text-lg font-semibold text-slate-950">Produits chargés</CardTitle>
                                         <Badge className="bg-blue-50 text-blue-600 border-none font-semibold text-xs">
-                                            {productItems.reduce((s, i) => s + i.loaded_quantity, 0)} unités
+                                            {formatNumber(productItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))} unités
                                         </Badge>
                                     </div>
                                 </CardHeader>
@@ -329,7 +396,7 @@ export default function LoadTourPage() {
                                                         )}
                                                     </TableCell>
                                                     <TableCell className="py-4 text-right pr-8 font-semibold text-blue-600 text-lg">
-                                                        {item.loaded_quantity}
+                                                        {formatNumber(item.loaded_quantity)}
                                                     </TableCell>
                                                 </TableRow>
                                             ))}
@@ -346,7 +413,7 @@ export default function LoadTourPage() {
                                         <PackageOpen className="h-5 w-5 text-amber-600" />
                                         <CardTitle className="text-lg font-semibold text-slate-950">Emballages vides chargés</CardTitle>
                                         <Badge className="bg-amber-50 text-amber-600 border-none font-semibold text-xs">
-                                            {packagingItems.reduce((s, i) => s + i.loaded_quantity, 0)} unités
+                                            {formatNumber(packagingItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))} unités
                                         </Badge>
                                     </div>
                                 </CardHeader>
@@ -365,7 +432,7 @@ export default function LoadTourPage() {
                                                         {item.packaging_name || '—'}
                                                     </TableCell>
                                                     <TableCell className="py-4 text-right pr-8 font-semibold text-amber-600 text-lg">
-                                                        {item.loaded_quantity}
+                                                        {formatNumber(item.loaded_quantity)}
                                                     </TableCell>
                                                 </TableRow>
                                             ))}
@@ -376,14 +443,14 @@ export default function LoadTourPage() {
                         )}
 
                         {inventory.length === 0 && (
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm">
-                                <CardContent className="py-16 text-center">
-                                    <Package className="h-12 w-12 mx-auto text-slate-300" />
-                                    <p className="text-sm text-muted-foreground mt-4 font-medium">
-                                        Aucun article chargé. Utilisez le formulaire pour ajouter des produits et emballages.
-                                    </p>
-                                </CardContent>
-                            </Card>
+                            <EmptyState
+                                icon={Package}
+                                title="Aucun article chargé"
+                                description={isClosed
+                                    ? "Aucun article n'a été chargé pour cette tournée."
+                                    : 'Utilisez le formulaire pour ajouter des produits et emballages.'}
+                                className="bg-white"
+                            />
                         )}
                     </div>
                 </div>

@@ -23,6 +23,9 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { isUuid } from '@/lib/tenant'
+import { formatDate, formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { PrintButton } from './print-button'
 
 interface OrderDetail {
     id: string
@@ -52,7 +55,9 @@ interface OrderDetail {
 }
 
 async function getOrderDetails(id: string, companyId: string): Promise<OrderDetail | null> {
-    try {
+        // Identifiant mal formé : 404 plutôt qu'une erreur SQL
+        if (!isUuid(id)) return null
+
         const orders = await sql`
             SELECT 
                 po.*, 
@@ -79,24 +84,21 @@ async function getOrderDetails(id: string, companyId: string): Promise<OrderDeta
             FROM purchase_order_items poi
             JOIN product_variants pv ON poi.product_variant_id = pv.id
             JOIN products p ON pv.product_id = p.id
-            JOIN packaging_types pt ON pv.packaging_type_id = pt.id
+            LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
             WHERE poi.purchase_order_id = ${id}
+            ORDER BY p.name, pt.name, poi.id
         `
 
         return {
             ...orders[0],
             items
         } as OrderDetail
-    } catch (error) {
-        console.error('Error fetching order detail:', error)
-        return null
-    }
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
     pending: { label: 'En attente', color: 'bg-slate-100 text-slate-600', icon: Clock },
     confirmed: { label: 'Confirmée', color: 'bg-blue-100 text-blue-600', icon: CheckCircle2 },
-    partial: { label: 'Partielle', color: 'bg-amber-100 text-amber-600', icon: AlertTriangle },
+    partial: { label: 'Partiellement reçue', color: 'bg-amber-100 text-amber-600', icon: AlertTriangle },
     received: { label: 'Reçue', color: 'bg-emerald-100 text-emerald-600', icon: Truck },
     cancelled: { label: 'Annulée', color: 'bg-destructive/10 text-destructive', icon: AlertTriangle },
 }
@@ -109,7 +111,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
     const order = await getOrderDetails(id, session.user.companyId)
     if (!order) notFound()
 
-    const statusInfo = statusConfig[order.status] || statusConfig.pending
+    const statusInfo = statusConfig[order.status] || { label: order.status, color: 'bg-slate-100 text-slate-600', icon: Clock }
     const StatusIcon = statusInfo.icon
 
     // Comparison stats
@@ -149,9 +151,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                 </Link>
                             </Button>
                         )}
-                        <Button variant="outline" className="rounded-xl border-slate-200 font-bold h-10">
-                            Imprimer
-                        </Button>
+                        <PrintButton />
                     </div>
                 </div>
 
@@ -168,7 +168,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                 </div>
                                 <div>
                                     <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
+                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{formatNumber(stat.value)}</div>
                                 </div>
                             </div>
                             <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
@@ -240,18 +240,18 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                                         </span>
                                                     </td>
                                                     <td className="py-5 px-3 text-center">
-                                                        <span className="font-semibold text-blue-600 text-base">{ordered}</span>
+                                                        <span className="font-semibold text-blue-600 text-base">{formatNumber(ordered)}</span>
                                                     </td>
                                                     <td className="py-5 px-3 text-center">
                                                         <span className={`font-semibold text-base ${received >= ordered ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                                            {received}
+                                                            {formatNumber(received)}
                                                         </span>
                                                     </td>
                                                     <td className="py-5 px-3 text-center">
                                                         {damaged > 0 ? (
                                                             <span className="inline-flex items-center gap-1 font-semibold text-rose-600">
                                                                 <ShieldAlert className="h-3.5 w-3.5" />
-                                                                {damaged}
+                                                                {formatNumber(damaged)}
                                                             </span>
                                                         ) : (
                                                             <span className="text-slate-300 font-bold">0</span>
@@ -259,11 +259,11 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                                     </td>
                                                     <td className="py-5 px-3 text-center">
                                                         {gap > 0 ? (
-                                                            <span className="font-semibold text-amber-600">-{gap}</span>
+                                                            <span className="font-semibold text-amber-600">-{formatNumber(gap)}</span>
                                                         ) : gap === 0 ? (
                                                             <span className="font-semibold text-emerald-600">OK</span>
                                                         ) : (
-                                                            <span className="font-semibold text-blue-600">+{Math.abs(gap)}</span>
+                                                            <span className="font-semibold text-blue-600">+{formatNumber(Math.abs(gap))}</span>
                                                         )}
                                                     </td>
                                                     <td className="py-5 px-4">
@@ -279,7 +279,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                                     </td>
                                                     <td className="py-5 px-8 text-right">
                                                         <span className="font-semibold text-slate-950">
-                                                            {new Intl.NumberFormat('fr-FR').format(ordered * Number(item.unit_price))}
+                                                            {formatMoney(ordered * Number(item.unit_price))}
                                                         </span>
                                                     </td>
                                                 </tr>
@@ -289,10 +289,10 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                     <tfoot className="bg-slate-50/30">
                                         <tr className="border-t border-slate-100">
                                             <td colSpan={2} className="py-6 px-8 font-semibold text-slate-400 uppercase text-[11px] tracking-wider">Totaux</td>
-                                            <td className="py-6 px-3 text-center font-semibold text-blue-600">{totalOrdered}</td>
-                                            <td className="py-6 px-3 text-center font-semibold text-emerald-600">{totalReceived}</td>
-                                            <td className="py-6 px-3 text-center font-semibold text-rose-600">{totalDamaged}</td>
-                                            <td className="py-6 px-3 text-center font-semibold text-amber-600">{Math.max(0, totalPending) > 0 ? `-${totalPending}` : 'OK'}</td>
+                                            <td className="py-6 px-3 text-center font-semibold text-blue-600">{formatNumber(totalOrdered)}</td>
+                                            <td className="py-6 px-3 text-center font-semibold text-emerald-600">{formatNumber(totalReceived)}</td>
+                                            <td className="py-6 px-3 text-center font-semibold text-rose-600">{formatNumber(totalDamaged)}</td>
+                                            <td className="py-6 px-3 text-center font-semibold text-amber-600">{Math.max(0, totalPending) > 0 ? `-${formatNumber(totalPending)}` : 'OK'}</td>
                                             <td className="py-6 px-4">
                                                 <div className="flex items-center gap-2 min-w-[100px]">
                                                     <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
@@ -305,7 +305,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                                 </div>
                                             </td>
                                             <td className="py-6 px-8 text-right font-semibold text-xl text-blue-600 tracking-tight">
-                                                {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(order.total_amount)}
+                                                {formatMoney(order.total_amount)}
                                             </td>
                                         </tr>
                                     </tfoot>
@@ -328,7 +328,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                             <span className="text-sm font-bold uppercase tracking-wider text-[10px]">Commandé le</span>
                                         </div>
                                         <span className="text-sm font-semibold text-slate-950">
-                                            {new Date(order.ordered_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                            {formatDateShort(order.ordered_at)}
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-start">
@@ -337,9 +337,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                             <span className="text-sm font-bold uppercase tracking-wider text-[10px]">Livraison prévue</span>
                                         </div>
                                         <span className="text-sm font-semibold text-slate-950">
-                                            {order.expected_delivery_at
-                                                ? new Date(order.expected_delivery_at).toLocaleDateString('fr-FR')
-                                                : 'Non spécifié'}
+                                            {order.expected_delivery_at ? formatDate(order.expected_delivery_at) : 'Non spécifié'}
                                         </span>
                                     </div>
                                     <Separator className="bg-slate-100" />
@@ -349,7 +347,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                             <span className="text-sm font-bold uppercase tracking-wider text-[10px]">Fournisseur</span>
                                         </div>
                                         <div className="flex flex-col gap-1">
-                                            <span className="font-semibold text-slate-950 underline decoration-blue-500/30 decoration-2 underline-offset-4">{order.supplier_name}</span>
+                                            <span className="font-semibold text-slate-950 underline decoration-blue-500/30 decoration-2 underline-offset-4">{order.supplier_name || 'Fournisseur inconnu'}</span>
                                             {order.supplier_phone && <span className="text-xs font-bold text-slate-400 mt-1">{order.supplier_phone}</span>}
                                         </div>
                                     </div>
@@ -366,7 +364,7 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                             <User className="h-4 w-4" />
                                             <span className="text-sm font-bold uppercase tracking-wider text-[10px]">Créé par</span>
                                         </div>
-                                        <span className="text-xs font-semibold text-slate-950">{order.creator_name}</span>
+                                        <span className="text-xs font-semibold text-slate-950">{order.creator_name || '—'}</span>
                                     </div>
                                 </div>
                             </CardContent>

@@ -15,6 +15,9 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
+import { ErrorState, TableSkeleton } from '@/components/states'
 
 const productSchema = z.object({
     name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
@@ -56,6 +59,8 @@ export default function EditProductPage() {
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [reloadKey, setReloadKey] = useState(0)
 
     const {
         register,
@@ -79,13 +84,10 @@ export default function EditProductPage() {
 
     useEffect(() => {
         async function fetchProduct() {
+            setIsFetching(true)
+            setLoadError(null)
             try {
-                const res = await fetch(`/api/products/${productId}`)
-                const result = await res.json()
-                if (!res.ok || !result.data) {
-                    setError('Produit introuvable')
-                    return
-                }
+                const result = await apiFetch<{ data: any }>(`/api/products/${productId}`)
                 const p = result.data
                 reset({
                     name: p.name || '',
@@ -98,37 +100,31 @@ export default function EditProductPage() {
                     sellingPrice: Number(p.selling_price) || 0,
                     isActive: p.is_active !== false,
                 })
-            } catch {
-                setError('Erreur lors du chargement du produit')
+            } catch (e) {
+                setLoadError(errorMessage(e))
             } finally {
                 setIsFetching(false)
             }
         }
         fetchProduct()
-    }, [productId, reset])
+    }, [productId, reset, reloadKey])
 
     async function onSubmit(data: ProductForm) {
         setIsLoading(true)
         setError(null)
 
         try {
-            const response = await fetch(`/api/products/${productId}`, {
+            const result = await apiFetch<{ warnings?: unknown }>(`/api/products/${productId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: data,
             })
 
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            toast.success('Produit mis à jour')
+            toastWarnings(result?.warnings)
             router.push(`/dashboard/products/${productId}`)
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
@@ -138,8 +134,27 @@ export default function EditProductPage() {
         return (
             <div className="flex flex-col min-h-screen">
                 <DashboardHeader title="Modifier le produit" description="Chargement..." />
-                <main className="flex-1 p-4 lg:p-6 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <div className="max-w-2xl">
+                        <TableSkeleton rows={6} columns={2} />
+                    </div>
+                </main>
+            </div>
+        )
+    }
+
+    if (loadError) {
+        return (
+            <div className="flex flex-col min-h-screen">
+                <DashboardHeader title="Modifier le produit" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <div className="max-w-2xl">
+                        <ErrorState
+                            title="Impossible de charger le produit"
+                            description={loadError}
+                            onRetry={() => setReloadKey((k) => k + 1)}
+                        />
+                    </div>
                 </main>
             </div>
         )

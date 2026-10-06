@@ -16,6 +16,20 @@ import {
 } from '@/components/ui/table'
 import { ArrowLeft, ArrowLeftRight, Plus, Trash2, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
+import { formatNumber } from '@/lib/format'
 
 interface PackagingType {
     id: string
@@ -38,9 +52,11 @@ export default function PackagingEquivalencesPage() {
     const [packagingTypes, setPackagingTypes] = useState<PackagingType[]>([])
     const [equivalences, setEquivalences] = useState<Equivalence[]>([])
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState(false)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [success, setSuccess] = useState<string | null>(null)
+    const [pendingDelete, setPendingDelete] = useState<Equivalence | null>(null)
+    const [deleting, setDeleting] = useState(false)
 
     const [selectedA, setSelectedA] = useState('')
     const [selectedB, setSelectedB] = useState('')
@@ -49,27 +65,26 @@ export default function PackagingEquivalencesPage() {
         fetchData()
     }, [])
 
-    async function fetchData() {
-        setLoading(true)
+    async function fetchData({ silent = false }: { silent?: boolean } = {}) {
+        if (!silent) setLoading(true)
+        setLoadError(false)
         try {
-            const [pkgRes, eqRes] = await Promise.all([
-                fetch('/api/packaging'),
-                fetch('/api/packaging/equivalences'),
+            const [pkgData, eqData] = await Promise.all([
+                apiFetch<{ data?: PackagingType[]; packagingTypes?: PackagingType[] }>('/api/packaging'),
+                apiFetch<{ data?: Equivalence[] }>('/api/packaging/equivalences'),
             ])
-            const pkgData = await pkgRes.json()
-            const eqData = await eqRes.json()
-
             setPackagingTypes(pkgData.packagingTypes || pkgData.data || [])
             setEquivalences(eqData.data || [])
-        } catch {
-            setError('Erreur lors du chargement des données')
+        } catch (e) {
+            if (silent) toastError(e, 'Actualisation impossible')
+            else setLoadError(true)
         } finally {
             setLoading(false)
         }
     }
 
     async function handleAdd() {
-        if (!selectedA || !selectedB) return
+        if (!selectedA || !selectedB || saving) return
         if (selectedA === selectedB) {
             setError('Les deux emballages doivent être différents')
             return
@@ -77,51 +92,44 @@ export default function PackagingEquivalencesPage() {
 
         setSaving(true)
         setError(null)
-        setSuccess(null)
 
         try {
-            const res = await fetch('/api/packaging/equivalences', {
+            const res = await apiFetch<{ warnings?: unknown }>('/api/packaging/equivalences', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: {
                     packagingTypeA: selectedA,
                     packagingTypeB: selectedB,
-                }),
+                },
             })
-            const data = await res.json()
 
-            if (!res.ok) {
-                setError(data.error || 'Erreur lors de la création')
-                return
-            }
-
-            setSuccess('Équivalence créée avec succès')
+            toast.success('Équivalence créée')
+            toastWarnings(res?.warnings)
             setSelectedA('')
             setSelectedB('')
-            fetchData()
-        } catch {
-            setError('Erreur réseau')
+            fetchData({ silent: true })
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setSaving(false)
         }
     }
 
-    async function handleDelete(id: string) {
-        if (!confirm('Supprimer cette équivalence ?')) return
-
+    async function confirmDelete() {
+        if (!pendingDelete) return
+        setDeleting(true)
         try {
-            const res = await fetch(`/api/packaging/equivalences?id=${id}`, {
-                method: 'DELETE',
-            })
-            if (!res.ok) {
-                const data = await res.json()
-                setError(data.error || 'Erreur lors de la suppression')
-                return
-            }
-            setSuccess('Équivalence supprimée')
-            fetchData()
-        } catch {
-            setError('Erreur réseau')
+            const res = await apiFetch<{ message?: string; warnings?: unknown }>(
+                `/api/packaging/equivalences?id=${encodeURIComponent(pendingDelete.id)}`,
+                { method: 'DELETE' }
+            )
+            toast.success(res?.message || 'Équivalence supprimée')
+            toastWarnings(res?.warnings)
+            setPendingDelete(null)
+            fetchData({ silent: true })
+        } catch (e) {
+            toastError(e, 'Suppression impossible')
+        } finally {
+            setDeleting(false)
         }
     }
 
@@ -145,11 +153,6 @@ export default function PackagingEquivalencesPage() {
                 {error && (
                     <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                         {error}
-                    </div>
-                )}
-                {success && (
-                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm text-emerald-700">
-                        {success}
                     </div>
                 )}
 
@@ -231,16 +234,24 @@ export default function PackagingEquivalencesPage() {
                         </CardHeader>
                         <CardContent>
                             {loading ? (
-                                <div className="text-center py-8">
-                                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-                                </div>
+                                <TableSkeleton rows={3} columns={3} />
+                            ) : loadError ? (
+                                <ErrorState onRetry={() => fetchData()} />
                             ) : equivalences.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <ArrowLeftRight className="h-10 w-10 mx-auto text-muted-foreground/40" />
-                                    <p className="text-sm text-muted-foreground mt-3">
-                                        Aucune équivalence configurée
-                                    </p>
-                                </div>
+                                <EmptyState
+                                    icon={ArrowLeftRight}
+                                    title="Aucune équivalence configurée"
+                                    description={
+                                        packagingTypes.length < 2
+                                            ? 'Créez au moins deux types d’emballage pour pouvoir les lier.'
+                                            : 'Liez deux emballages interchangeables avec le formulaire ci-dessus.'
+                                    }
+                                    action={
+                                        packagingTypes.length < 2
+                                            ? { label: 'Nouvel emballage', href: '/dashboard/packaging/new' }
+                                            : undefined
+                                    }
+                                />
                             ) : (
                                 <Table>
                                     <TableHeader>
@@ -257,7 +268,7 @@ export default function PackagingEquivalencesPage() {
                                                 <TableCell>
                                                     <div>
                                                         <p className="font-semibold">{eq.name_a}</p>
-                                                        <p className="text-xs text-muted-foreground">{eq.units_a} u/casier</p>
+                                                        <p className="text-xs text-muted-foreground">{formatNumber(eq.units_a)} u/casier</p>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-center">
@@ -266,15 +277,16 @@ export default function PackagingEquivalencesPage() {
                                                 <TableCell>
                                                     <div>
                                                         <p className="font-semibold">{eq.name_b}</p>
-                                                        <p className="text-xs text-muted-foreground">{eq.units_b} u/casier</p>
+                                                        <p className="text-xs text-muted-foreground">{formatNumber(eq.units_b)} u/casier</p>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        onClick={() => handleDelete(eq.id)}
+                                                        onClick={() => setPendingDelete(eq)}
                                                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                        aria-label={`Supprimer l'équivalence ${eq.name_a} / ${eq.name_b}`}
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
@@ -288,6 +300,38 @@ export default function PackagingEquivalencesPage() {
                     </Card>
                 </div>
             </main>
+
+            <AlertDialog
+                open={pendingDelete !== null}
+                onOpenChange={(open) => {
+                    if (!open && !deleting) setPendingDelete(null)
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Supprimer cette équivalence ?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {pendingDelete
+                                ? `« ${pendingDelete.name_a} » et « ${pendingDelete.name_b} » ne seront plus considérés comme interchangeables lors des retours d’emballages.`
+                                : ''}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={deleting}
+                            onClick={(e) => {
+                                e.preventDefault()
+                                confirmDelete()
+                            }}
+                            className="bg-destructive text-white hover:bg-destructive/90"
+                        >
+                            {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            Supprimer
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
 }

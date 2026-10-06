@@ -13,6 +13,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
 
 const packagingSchema = z.object({
     name: z.string().min(1, 'Le nom est requis'),
@@ -50,23 +52,17 @@ export default function NewPackagingPage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/packaging', {
+            const result = await apiFetch<{ warnings?: unknown }>('/api/packaging', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: data,
             })
 
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            toast.success('Emballage créé')
+            toastWarnings(result?.warnings)
             router.push('/dashboard/packaging')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }

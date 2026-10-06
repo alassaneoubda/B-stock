@@ -14,6 +14,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { ErrorState, TableSkeleton } from '@/components/states'
+import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
 
 const supplierSchema = z.object({
     name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
@@ -41,6 +44,8 @@ export default function EditSupplierPage() {
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [reloadKey, setReloadKey] = useState(0)
 
     const {
         register,
@@ -57,13 +62,10 @@ export default function EditSupplierPage() {
 
     useEffect(() => {
         async function fetchSupplier() {
+            setIsFetching(true)
+            setLoadError(null)
             try {
-                const res = await fetch(`/api/suppliers/${supplierId}`)
-                const result = await res.json()
-                if (!res.ok || !result.data) {
-                    setError('Fournisseur introuvable')
-                    return
-                }
+                const result = await apiFetch<{ data: any }>(`/api/suppliers/${supplierId}`)
                 const s = result.data
                 reset({
                     name: s.name || '',
@@ -74,33 +76,29 @@ export default function EditSupplierPage() {
                     address: s.address || '',
                     notes: s.notes || '',
                 })
-            } catch {
-                setError('Erreur lors du chargement')
+            } catch (e) {
+                setLoadError(errorMessage(e))
             } finally {
                 setIsFetching(false)
             }
         }
         fetchSupplier()
-    }, [supplierId, reset])
+    }, [supplierId, reset, reloadKey])
 
     async function onSubmit(data: SupplierForm) {
         setIsLoading(true)
         setError(null)
         try {
-            const response = await fetch(`/api/suppliers/${supplierId}`, {
+            const result = await apiFetch<{ warnings?: unknown }>(`/api/suppliers/${supplierId}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: data,
             })
-            const result = await response.json()
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
+            toast.success('Fournisseur mis à jour')
+            toastWarnings(result?.warnings)
             router.push(`/dashboard/suppliers/${supplierId}`)
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
@@ -110,8 +108,27 @@ export default function EditSupplierPage() {
         return (
             <div className="flex flex-col min-h-screen">
                 <DashboardHeader title="Modifier le fournisseur" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <div className="max-w-2xl">
+                        <TableSkeleton rows={6} columns={2} />
+                    </div>
+                </main>
+            </div>
+        )
+    }
+
+    if (loadError) {
+        return (
+            <div className="flex flex-col min-h-screen">
+                <DashboardHeader title="Modifier le fournisseur" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <div className="max-w-2xl">
+                        <ErrorState
+                            title="Impossible de charger le fournisseur"
+                            description={loadError}
+                            onRetry={() => setReloadKey((k) => k + 1)}
+                        />
+                    </div>
                 </main>
             </div>
         )

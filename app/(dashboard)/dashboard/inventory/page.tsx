@@ -13,6 +13,11 @@ import {
 } from '@/components/ui/dialog'
 import { ClipboardList, Loader2, Plus, Eye, Download } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { apiFetch, toastError } from '@/lib/api-client'
+import { formatDateShort, formatNumber, formatSignedMoney } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface InventorySession {
   id: string; session_number: string; inventory_type: string; depot_name: string
@@ -22,8 +27,6 @@ interface InventorySession {
 }
 
 interface Depot { id: string; name: string }
-
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA' }
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   in_progress: { label: 'En cours', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -39,56 +42,48 @@ export default function InventoryPage() {
   const [newType, setNewType] = useState('full')
   const [submitting, setSubmitting] = useState(false)
   const [openNew, setOpenNew] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const router = useRouter()
 
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const [invRes, depotRes] = await Promise.all([
-        fetch('/api/inventory'),
-        fetch('/api/depots'),
+      const [invJson, depotJson] = await Promise.all([
+        apiFetch<{ data: InventorySession[] }>('/api/inventory'),
+        apiFetch<{ data: Depot[] }>('/api/depots'),
       ])
-      if (!invRes.ok || !depotRes.ok) {
-        throw new Error('Failed to fetch data')
-      }
-      const invJson = await invRes.json()
-      const depotJson = await depotRes.json()
       setSessions(invJson.data || [])
-      setDepots(Array.isArray(depotJson.data) ? depotJson.data : Array.isArray(depotJson) ? depotJson : [])
-    } catch (e) { 
-      console.error('Error fetching inventory data:', e)
-      setDepots([])
+      setDepots(Array.isArray(depotJson.data) ? depotJson.data : [])
+    } catch {
+      setLoadError(true)
+    } finally {
+      setIsLoading(false)
     }
-    finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   async function handleCreate() {
-    if (!newDepotId) return
+    if (!newDepotId || submitting) return
     setSubmitting(true)
     try {
-      const res = await fetch('/api/inventory', {
+      const json = await apiFetch<{ data: { id: string } }>('/api/inventory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ depot_id: newDepotId, inventory_type: newType }),
+        body: { depot_id: newDepotId, inventory_type: newType },
       })
-      if (res.ok) {
-        const json = await res.json()
-        setOpenNew(false)
-        setNewDepotId('')
-        fetchData()
-        // Navigate to the new inventory session
-        window.location.href = `/dashboard/inventory/${json.data?.id || ''}`
-      }
-    } finally { setSubmitting(false) }
+      toast.success('Inventaire démarré')
+      setOpenNew(false)
+      setNewDepotId('')
+      router.push(`/dashboard/inventory/${json.data?.id || ''}`)
+    } catch (e) {
+      toastError(e, "Impossible de démarrer l'inventaire")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (isLoading) {
-    return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Inventaire" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
-      </div>
-    )
+    return <PageSkeleton />
   }
 
   return (
@@ -97,7 +92,7 @@ export default function InventoryPage() {
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
         <div className="flex items-center justify-between">
-          <div className="text-sm text-zinc-500">{sessions.length} inventaire(s)</div>
+          <div className="text-sm text-zinc-500">{formatNumber(sessions.length)} inventaire(s)</div>
           <Dialog open={openNew} onOpenChange={setOpenNew}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Nouvel inventaire</Button>
@@ -108,7 +103,7 @@ export default function InventoryPage() {
                 <div>
                   <Label>Dépôt</Label>
                   <Select value={newDepotId} onValueChange={setNewDepotId}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir un dépôt" /></SelectTrigger>
+                    <SelectTrigger className="mt-1" aria-label="Dépôt"><SelectValue placeholder={depots.length ? 'Choisir un dépôt' : 'Aucun dépôt disponible'} /></SelectTrigger>
                     <SelectContent>
                       {depots.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                     </SelectContent>
@@ -117,7 +112,7 @@ export default function InventoryPage() {
                 <div>
                   <Label>Type</Label>
                   <Select value={newType} onValueChange={setNewType}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="mt-1" aria-label="Type d'inventaire"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="full">Complet</SelectItem>
                       <SelectItem value="partial">Partiel</SelectItem>
@@ -127,7 +122,7 @@ export default function InventoryPage() {
                 </div>
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
+                <DialogClose asChild><Button variant="outline" disabled={submitting}>Annuler</Button></DialogClose>
                 <Button onClick={handleCreate} disabled={submitting || !newDepotId}>
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ClipboardList className="h-4 w-4 mr-2" />} Démarrer
                 </Button>
@@ -138,8 +133,16 @@ export default function InventoryPage() {
 
         <Card>
           <CardContent className="p-0">
-            {sessions.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucun inventaire</div>
+            {loadError ? (
+              <ErrorState className="m-4" description="La liste des inventaires n'a pas pu être chargée." onRetry={fetchData} />
+            ) : sessions.length === 0 ? (
+              <EmptyState
+                className="m-4"
+                icon={ClipboardList}
+                title="Aucun inventaire"
+                description="Démarrez un inventaire pour comparer le stock réel au stock enregistré."
+                action={{ label: 'Nouvel inventaire', onClick: () => setOpenNew(true) }}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -163,19 +166,19 @@ export default function InventoryPage() {
                         <TableCell className="font-medium text-sm">{s.session_number}</TableCell>
                         <TableCell className="text-sm">{s.depot_name}</TableCell>
                         <TableCell className="text-sm capitalize">{s.inventory_type === 'full' ? 'Complet' : s.inventory_type === 'partial' ? 'Partiel' : 'Contrôle'}</TableCell>
-                        <TableCell className="text-center text-sm">{s.total_items}</TableCell>
-                        <TableCell className="text-center text-sm">{s.items_with_variance > 0 ? <span className="text-red-600 font-medium">{s.items_with_variance}</span> : '0'}</TableCell>
-                        <TableCell className={`text-right text-sm ${Number(s.total_variance_value) < 0 ? 'text-red-600' : ''}`}>{s.status === 'completed' ? fmt(Number(s.total_variance_value)) : '-'}</TableCell>
+                        <TableCell className="text-center text-sm">{formatNumber(s.total_items)}</TableCell>
+                        <TableCell className="text-center text-sm">{s.items_with_variance > 0 ? <span className="text-red-600 font-medium">{formatNumber(s.items_with_variance)}</span> : '0'}</TableCell>
+                        <TableCell className={`text-right text-sm ${Number(s.total_variance_value) < 0 ? 'text-red-600' : ''}`}>{s.status === 'completed' ? formatSignedMoney(s.total_variance_value) : '-'}</TableCell>
                         <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-sm text-zinc-500">{new Date(s.started_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</TableCell>
+                        <TableCell className="text-sm text-zinc-500">{formatDateShort(s.started_at)}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Link href={`/dashboard/inventory/${s.id}`}>
                               <Button size="sm" variant="outline" className="h-7 text-xs"><Eye className="h-3 w-3 mr-1" /> {s.status === 'in_progress' ? 'Compter' : 'Voir'}</Button>
                             </Link>
                             {s.status === 'completed' && (
-                              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => window.open(`/api/export/pdf?type=inventory&id=${s.id}`, '_blank')}>
-                                <Download className="h-3 w-3" />
+                              <Button size="sm" variant="ghost" className="h-7 text-xs" aria-label={`Télécharger le PDF de ${s.session_number}`} onClick={() => window.open(`/api/export/pdf?type=inventory&id=${s.id}`, '_blank')}>
+                                <Download className="h-3 w-3" aria-hidden="true" />
                               </Button>
                             )}
                           </div>

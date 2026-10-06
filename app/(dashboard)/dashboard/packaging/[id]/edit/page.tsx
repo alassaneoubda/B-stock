@@ -11,8 +11,22 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { ErrorState, TableSkeleton } from '@/components/states'
+import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
 
 const packagingSchema = z.object({
     name: z.string().min(1, 'Le nom est requis'),
@@ -31,6 +45,10 @@ export default function EditPackagingPage() {
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [reloadKey, setReloadKey] = useState(0)
+    const [deleteOpen, setDeleteOpen] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
 
     const {
         register,
@@ -52,13 +70,10 @@ export default function EditPackagingPage() {
 
     useEffect(() => {
         async function fetchPackaging() {
+            setIsFetching(true)
+            setLoadError(null)
             try {
-                const res = await fetch(`/api/packaging/${packagingId}`)
-                const result = await res.json()
-                if (!res.ok || !result.data) {
-                    setError('Emballage introuvable')
-                    return
-                }
+                const result = await apiFetch<{ data: any }>(`/api/packaging/${packagingId}`)
                 const p = result.data
                 reset({
                     name: p.name || '',
@@ -66,39 +81,53 @@ export default function EditPackagingPage() {
                     isReturnable: p.is_returnable !== false,
                     depositPrice: Number(p.deposit_price) || 0,
                 })
-            } catch {
-                setError('Erreur lors du chargement')
+            } catch (e) {
+                setLoadError(errorMessage(e))
             } finally {
                 setIsFetching(false)
             }
         }
         fetchPackaging()
-    }, [packagingId, reset])
+    }, [packagingId, reset, reloadKey])
 
     async function onSubmit(data: PackagingForm) {
         setIsLoading(true)
         setError(null)
 
         try {
-            const response = await fetch(`/api/packaging/${packagingId}`, {
+            const result = await apiFetch<{ warnings?: unknown }>(`/api/packaging/${packagingId}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
+                body: data,
             })
 
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            toast.success('Emballage mis à jour')
+            toastWarnings(result?.warnings)
             router.push('/dashboard/packaging')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
+        }
+    }
+
+    async function handleDelete() {
+        setIsDeleting(true)
+        try {
+            const result = await apiFetch<{ message?: string; warnings?: unknown }>(`/api/packaging/${packagingId}`, {
+                method: 'DELETE',
+            })
+            setDeleteOpen(false)
+            toast.success(result?.message || 'Emballage supprimé')
+            toastWarnings(result?.warnings)
+            router.push('/dashboard/packaging')
+            router.refresh()
+        } catch (e) {
+            // 400/409 : emballage utilisé par des variantes ou encore en stock
+            setDeleteOpen(false)
+            toastError(e, 'Suppression impossible')
+        } finally {
+            setIsDeleting(false)
         }
     }
 
@@ -106,8 +135,27 @@ export default function EditPackagingPage() {
         return (
             <div className="flex flex-col min-h-screen">
                 <DashboardHeader title="Modifier l'emballage" description="Chargement..." />
-                <main className="flex-1 p-4 lg:p-6 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <div className="max-w-xl">
+                        <TableSkeleton rows={4} columns={1} />
+                    </div>
+                </main>
+            </div>
+        )
+    }
+
+    if (loadError) {
+        return (
+            <div className="flex flex-col min-h-screen">
+                <DashboardHeader title="Modifier l'emballage" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <div className="max-w-xl">
+                        <ErrorState
+                            title="Impossible de charger l'emballage"
+                            description={loadError}
+                            onRetry={() => setReloadKey((k) => k + 1)}
+                        />
+                    </div>
                 </main>
             </div>
         )
@@ -213,6 +261,43 @@ export default function EditPackagingPage() {
                     </Card>
 
                     <div className="flex justify-end gap-4">
+                        <AlertDialog open={deleteOpen} onOpenChange={(next) => !isDeleting && setDeleteOpen(next)}>
+                            <AlertDialogTrigger asChild>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    className="mr-auto text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    disabled={isLoading || isDeleting}
+                                >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Supprimer
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Supprimer cet emballage ?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Le type d&apos;emballage et ses équivalences seront supprimés définitivement.
+                                        La suppression est refusée s&apos;il est utilisé par des variantes produit ou
+                                        s&apos;il reste du stock de vides.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel disabled={isDeleting}>Annuler</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        disabled={isDeleting}
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            handleDelete()
+                                        }}
+                                        className="bg-destructive text-white hover:bg-destructive/90"
+                                    >
+                                        {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                        Supprimer
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                         <Button type="button" variant="outline" asChild disabled={isLoading}>
                             <Link href="/dashboard/packaging">Annuler</Link>
                         </Button>

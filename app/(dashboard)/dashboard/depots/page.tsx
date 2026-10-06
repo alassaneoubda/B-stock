@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Plus, MoreHorizontal, Building2, Edit, MapPin, Phone, Star, Package, ArrowRight, Layers } from 'lucide-react'
 import Link from 'next/link'
+import { EmptyState } from '@/components/states'
+import { formatNumber } from '@/lib/format'
 
 interface Depot {
     id: string
@@ -22,7 +24,6 @@ interface Depot {
 }
 
 async function getDepots(companyId: string): Promise<Depot[]> {
-    try {
         const depots = await sql`
       SELECT
         d.*,
@@ -34,9 +35,6 @@ async function getDepots(companyId: string): Promise<Depot[]> {
       ORDER BY d.is_main DESC, d.name
     `
         return depots as Depot[]
-    } catch {
-        return []
-    }
 }
 
 export default async function DepotsPage() {
@@ -61,21 +59,12 @@ export default async function DepotsPage() {
 
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
                 {depots.length === 0 ? (
-                    <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm p-24 text-center flex flex-col items-center">
-                        <div className="h-24 w-24 rounded-full bg-slate-50 flex items-center justify-center mb-6">
-                            <Building2 className="h-10 w-10 text-slate-300" />
-                        </div>
-                        <h3 className="text-xl font-semibold text-slate-950">Aucun dépôt actif</h3>
-                        <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
-                            Commencez par initialiser votre centre de distribution principal pour gérer vos stocks.
-                        </p>
-                        <Button className="mt-8 rounded-md h-12 px-8 bg-blue-600 hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20" asChild>
-                            <Link href="/dashboard/depots/new">
-                                <Plus className="h-5 w-5 mr-2" />
-                                Créer mon premier dépôt
-                            </Link>
-                        </Button>
-                    </div>
+                    <EmptyState
+                        className="bg-white py-20"
+                        title="Aucun dépôt"
+                        description="Commencez par créer votre centre de distribution principal pour gérer vos stocks."
+                        action={{ label: 'Créer mon premier dépôt', href: '/dashboard/depots/new' }}
+                    />
                 ) : (
                     <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
                         {depots.map((depot) => (
@@ -103,7 +92,7 @@ export default async function DepotsPage() {
                                         </div>
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
+                                                <Button variant="ghost" size="icon" aria-label={`Actions pour le dépôt ${depot.name}`} className="h-10 w-10 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all">
                                                     <MoreHorizontal className="h-5 w-5 text-slate-400 group-hover:text-slate-950" />
                                                 </Button>
                                             </DropdownMenuTrigger>
@@ -145,7 +134,7 @@ export default async function DepotsPage() {
                                                 <Layers className="h-5 w-5" />
                                             </div>
                                             <div>
-                                                <p className="text-base font-semibold text-slate-950 tracking-tight leading-none">{depot.stock_count}</p>
+                                                <p className="text-base font-semibold text-slate-950 tracking-tight leading-none">{formatNumber(depot.stock_count)}</p>
                                                 <p className="text-[10px] font-semibold uppercase text-slate-400 tracking-wider mt-1">Références</p>
                                             </div>
                                         </div>

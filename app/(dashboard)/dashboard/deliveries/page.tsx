@@ -29,8 +29,10 @@ import {
     Calendar,
     Navigation,
     User,
-    ArrowRight
+    ArrowRight,
+    XCircle,
 } from 'lucide-react'
+import { formatNumber } from '@/lib/format'
 import Link from 'next/link'
 
 interface DeliveryTour {
@@ -45,33 +47,25 @@ interface DeliveryTour {
     created_at: string
 }
 
+// Pas de try/catch : une panne SQL doit remonter à error.tsx plutôt que
+// d'afficher des compteurs à zéro et une liste vide trompeuse.
 async function getDeliveryStats(companyId: string) {
-    try {
-        const planned = await sql`
-      SELECT COUNT(*) as count FROM delivery_tours
-      WHERE company_id = ${companyId} AND status = 'planned'
+    const [row] = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'planned') AS planned,
+        COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
+        COUNT(*) FILTER (WHERE status = 'completed' AND DATE(completed_at) = CURRENT_DATE) AS completed_today
+      FROM delivery_tours
+      WHERE company_id = ${companyId}
     `
-        const inProgress = await sql`
-      SELECT COUNT(*) as count FROM delivery_tours
-      WHERE company_id = ${companyId} AND status = 'in_progress'
-    `
-        const completedToday = await sql`
-      SELECT COUNT(*) as count FROM delivery_tours
-      WHERE company_id = ${companyId} AND status = 'completed'
-        AND DATE(completed_at) = CURRENT_DATE
-    `
-        return {
-            planned: Number(planned[0]?.count || 0),
-            inProgress: Number(inProgress[0]?.count || 0),
-            completedToday: Number(completedToday[0]?.count || 0),
-        }
-    } catch {
-        return { planned: 0, inProgress: 0, completedToday: 0 }
+    return {
+        planned: Number(row?.planned || 0),
+        inProgress: Number(row?.in_progress || 0),
+        completedToday: Number(row?.completed_today || 0),
     }
 }
 
 async function getDeliveryTours(companyId: string): Promise<DeliveryTour[]> {
-    try {
         const tours = await sql`
       SELECT
         dt.id,
@@ -84,7 +78,7 @@ async function getDeliveryTours(companyId: string): Promise<DeliveryTour[]> {
         COUNT(ts.id) as stops_count,
         COUNT(ts.id) FILTER (WHERE ts.status = 'delivered') as delivered_count
       FROM delivery_tours dt
-      LEFT JOIN vehicles v ON dt.vehicle_id = v.id
+      LEFT JOIN vehicles v ON dt.vehicle_id = v.id AND v.company_id = dt.company_id
       LEFT JOIN tour_stops ts ON ts.delivery_tour_id = dt.id
       WHERE dt.company_id = ${companyId}
       GROUP BY dt.id, v.name, v.plate_number
@@ -92,9 +86,6 @@ async function getDeliveryTours(companyId: string): Promise<DeliveryTour[]> {
       LIMIT 50
     `
         return tours as DeliveryTour[]
-    } catch {
-        return []
-    }
 }
 
 const statusConfig: Record<string, { label: string; bg: string; text: string; icon: any }> = {
@@ -102,6 +93,7 @@ const statusConfig: Record<string, { label: string; bg: string; text: string; ic
     loading: { label: 'Chargement', bg: 'bg-amber-50', text: 'text-amber-600', icon: PlayCircle },
     in_progress: { label: 'En route', bg: 'bg-blue-50', text: 'text-blue-600', icon: Navigation },
     completed: { label: 'Terminée', bg: 'bg-emerald-50', text: 'text-emerald-600', icon: CheckCircle2 },
+    cancelled: { label: 'Annulée', bg: 'bg-red-50', text: 'text-red-600', icon: XCircle },
 }
 
 export default async function DeliveriesPage() {
@@ -168,7 +160,7 @@ export default async function DeliveriesPage() {
                                 </div>
                                 <div>
                                     <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
+                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{formatNumber(stat.value)}</div>
                                     <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
                                 </div>
                             </div>
@@ -284,7 +276,7 @@ export default async function DeliveriesPage() {
                                                             <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                                                                 <span className="flex items-center gap-1.5">
                                                                     <MapPin className="h-3 w-3" />
-                                                                    {tour.delivered_count} / {tour.stops_count}
+                                                                    {formatNumber(tour.delivered_count)} / {formatNumber(tour.stops_count)}
                                                                 </span>
                                                                 <span className={progress === 100 ? 'text-emerald-600' : 'text-slate-950'}>
                                                                     {progress}%
@@ -308,7 +300,7 @@ export default async function DeliveriesPage() {
                                                     <TableCell className="py-6 pr-8 text-right">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 transition-all">
+                                                                <Button variant="ghost" size="icon" aria-label="Actions de la tournée" className="h-10 w-10 rounded-xl hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 transition-all">
                                                                     <MoreHorizontal className="h-5 w-5 text-slate-400 group-hover:text-slate-950" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>

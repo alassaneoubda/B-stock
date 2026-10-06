@@ -13,6 +13,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage } from '@/lib/api-client'
 
 const vehicleSchema = z.object({
     name: z.string().optional(),
@@ -56,23 +58,13 @@ export default function NewVehiclePage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/vehicles', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            await apiFetch('/api/vehicles', { method: 'POST', body: data })
+            toast.success('Véhicule ajouté')
             router.push('/dashboard/vehicles')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            // Erreur affichée dans le formulaire (message du serveur, ex. immatriculation déjà utilisée)
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
@@ -96,7 +88,7 @@ export default function NewVehiclePage() {
 
                 <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                        <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                             {error}
                         </div>
                     )}
@@ -104,7 +96,7 @@ export default function NewVehiclePage() {
                     <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
                         <CardHeader className="px-8 py-8 border-b border-slate-100">
                             <CardTitle className="text-xl font-semibold text-slate-950">Nouveau véhicule</CardTitle>
-                            <CardDescription>Informations et capacitiés du véhicule</CardDescription>
+                            <CardDescription>Informations et capacités du véhicule</CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 space-y-6">
                             <div className="grid gap-4 sm:grid-cols-2">

@@ -17,8 +17,9 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, MoreHorizontal, BoxesIcon, Edit, Trash2, ArrowLeftRight, RotateCcw, Box, PackageOpen } from 'lucide-react'
+import { Plus, MoreHorizontal, BoxesIcon, Edit, ArrowLeftRight, RotateCcw, Box, PackageOpen } from 'lucide-react'
 import Link from 'next/link'
+import { formatMoney, formatNumber } from '@/lib/format'
 
 interface PackagingType {
     id: string
@@ -30,41 +31,38 @@ interface PackagingType {
     equivalences: string[]
 }
 
+// Pas de try/catch : une panne SQL doit afficher la page d'erreur, pas une liste vide.
 async function getPackagingTypes(companyId: string): Promise<PackagingType[]> {
-    try {
-        const types = await sql`
-      SELECT
-        pt.*,
-        COALESCE(SUM(ps.quantity), 0) as stock_quantity
-      FROM packaging_types pt
-      LEFT JOIN packaging_stock ps ON ps.packaging_type_id = pt.id
-      WHERE pt.company_id = ${companyId}
-      GROUP BY pt.id
-      ORDER BY pt.name
-    `
+    const types = await sql`
+  SELECT
+    pt.*,
+    COALESCE(SUM(ps.quantity), 0) as stock_quantity
+  FROM packaging_types pt
+  LEFT JOIN packaging_stock ps ON ps.packaging_type_id = pt.id
+  WHERE pt.company_id = ${companyId}
+  GROUP BY pt.id
+  ORDER BY pt.name
+`
 
-        const equivalences = await sql`
-      SELECT pe.packaging_type_a, pe.packaging_type_b, pta.name as name_a, ptb.name as name_b
-      FROM packaging_equivalences pe
-      JOIN packaging_types pta ON pe.packaging_type_a = pta.id
-      JOIN packaging_types ptb ON pe.packaging_type_b = ptb.id
-      WHERE pe.company_id = ${companyId}
-    `
+    const equivalences = await sql`
+  SELECT pe.packaging_type_a, pe.packaging_type_b, pta.name as name_a, ptb.name as name_b
+  FROM packaging_equivalences pe
+  JOIN packaging_types pta ON pe.packaging_type_a = pta.id
+  JOIN packaging_types ptb ON pe.packaging_type_b = ptb.id
+  WHERE pe.company_id = ${companyId}
+`
 
-        return (types as PackagingType[]).map((pt) => ({
-            ...pt,
-            equivalences: (equivalences as Array<{
-                packaging_type_a: string;
-                packaging_type_b: string;
-                name_a: string;
-                name_b: string;
-            }>)
-                .filter((eq) => eq.packaging_type_a === pt.id || eq.packaging_type_b === pt.id)
-                .map((eq) => (eq.packaging_type_a === pt.id ? eq.name_b : eq.name_a)),
-        }))
-    } catch {
-        return []
-    }
+    return (types as PackagingType[]).map((pt) => ({
+        ...pt,
+        equivalences: (equivalences as Array<{
+            packaging_type_a: string;
+            packaging_type_b: string;
+            name_a: string;
+            name_b: string;
+        }>)
+            .filter((eq) => eq.packaging_type_a === pt.id || eq.packaging_type_b === pt.id)
+            .map((eq) => (eq.packaging_type_a === pt.id ? eq.name_b : eq.name_a)),
+    }))
 }
 
 export default async function PackagingPage() {
@@ -78,21 +76,21 @@ export default async function PackagingPage() {
     const statsData = [
         {
             title: "Types d'Emballages",
-            value: packagingTypes.length,
+            value: formatNumber(packagingTypes.length),
             description: "Modèles configurés",
             icon: Box,
             color: "bg-blue-500/10 text-blue-600",
         },
         {
             title: "Articles Consignés",
-            value: returnableCount,
+            value: formatNumber(returnableCount),
             description: "Avec suivi de caution",
             icon: RotateCcw,
             color: "bg-amber-500/10 text-amber-600",
         },
         {
             title: "Stock Vides Total",
-            value: totalStock,
+            value: formatNumber(totalStock),
             description: "Casiers disponibles",
             icon: PackageOpen,
             color: "bg-emerald-500/10 text-emerald-600",
@@ -196,12 +194,12 @@ export default async function PackagingPage() {
                                                 <TableCell className="py-3 text-right">
                                                     {pt.deposit_price && Number(pt.deposit_price) > 0 ? (
                                                         <span className="text-sm font-semibold text-blue-600">
-                                                            {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(Number(pt.deposit_price))}
+                                                            {formatMoney(pt.deposit_price)}
                                                         </span>
                                                     ) : <span className="text-slate-300">—</span>}
                                                 </TableCell>
                                                 <TableCell className="py-3 text-right text-sm font-semibold text-slate-950">
-                                                    {pt.stock_quantity}
+                                                    {formatNumber(pt.stock_quantity)}
                                                 </TableCell>
                                                 <TableCell className="py-3">
                                                     {pt.equivalences.length > 0 ? (
@@ -217,7 +215,7 @@ export default async function PackagingPage() {
                                                 <TableCell className="py-3 pr-4 text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour ${pt.name}`}>
                                                                 <MoreHorizontal className="h-4 w-4 text-slate-400" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
@@ -267,10 +265,10 @@ export default async function PackagingPage() {
                                                 )) : <span className="text-xs text-zinc-300">Pas d&apos;équivalence</span>}
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-sm font-bold text-zinc-950">{pt.stock_quantity} en stock</p>
+                                                <p className="text-sm font-bold text-zinc-950">{formatNumber(pt.stock_quantity)} en stock</p>
                                                 {pt.deposit_price && Number(pt.deposit_price) > 0 && (
                                                     <p className="text-xs text-blue-600 font-medium">
-                                                        {new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(Number(pt.deposit_price))}
+                                                        {formatMoney(pt.deposit_price)}
                                                     </p>
                                                 )}
                                             </div>

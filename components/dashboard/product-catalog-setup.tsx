@@ -23,6 +23,8 @@ import {
   type CatalogItem,
 } from '@/lib/catalog/beverage-catalog'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
 
 type RowState = {
   sku: string
@@ -129,19 +131,27 @@ export function ProductCatalogSetup() {
 
     setIsLoading(true)
     try {
-      const response = await fetch('/api/products/catalog', {
+      const result = await apiFetch<{
+        created?: number
+        skipped?: string[]
+        message?: string
+        warnings?: unknown
+      }>('/api/products/catalog', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: payload }),
+        body: { items: payload },
       })
-      const result = await response.json()
-      if (!response.ok) {
-        setError(result.error || 'Impossible de charger les produits.')
-        return
+      toast.success(result?.message || 'Produits chargés')
+      const skipped = result?.skipped?.length ?? 0
+      if (skipped > 0) {
+        toast.warning(
+          `${skipped} référence${skipped > 1 ? 's' : ''} déjà présente${skipped > 1 ? 's' : ''} ignorée${skipped > 1 ? 's' : ''} : ${result!.skipped!.join(', ')}`,
+          { duration: 10_000 }
+        )
       }
+      toastWarnings(result?.warnings)
       router.refresh()
-    } catch {
-      setError('Une erreur est survenue. Veuillez réessayer.')
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setIsLoading(false)
     }

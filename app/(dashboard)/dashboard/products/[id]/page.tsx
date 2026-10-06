@@ -24,6 +24,9 @@ import {
     BoxesIcon,
 } from 'lucide-react'
 import Link from 'next/link'
+import { isUuid } from '@/lib/tenant'
+import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { DeleteProductButton } from './delete-product-button'
 
 interface ProductDetail {
     id: string
@@ -62,47 +65,36 @@ interface StockItem {
     depot_id: string
 }
 
+// Pas de try/catch : une panne SQL doit afficher la page d'erreur, pas des listes vides.
 async function getProduct(productId: string, companyId: string): Promise<ProductDetail | null> {
-    try {
-        const products = await sql`
-            SELECT * FROM products
-            WHERE id = ${productId} AND company_id = ${companyId}
-        `
-        return (products[0] as ProductDetail) || null
-    } catch {
-        return null
-    }
+    const products = await sql`
+        SELECT * FROM products
+        WHERE id = ${productId} AND company_id = ${companyId}
+    `
+    return (products[0] as ProductDetail) || null
 }
 
 async function getVariants(productId: string): Promise<Variant[]> {
-    try {
-        const variants = await sql`
-            SELECT pv.*, pt.name as packaging_name, pt.units_per_case, pt.deposit_price
-            FROM product_variants pv
-            LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
-            WHERE pv.product_id = ${productId}
-            ORDER BY pt.name
-        `
-        return variants as Variant[]
-    } catch {
-        return []
-    }
+    const variants = await sql`
+        SELECT pv.*, pt.name as packaging_name, pt.units_per_case, pt.deposit_price
+        FROM product_variants pv
+        LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
+        WHERE pv.product_id = ${productId}
+        ORDER BY pt.name
+    `
+    return variants as Variant[]
 }
 
 async function getStock(productId: string): Promise<StockItem[]> {
-    try {
-        const stock = await sql`
-            SELECT s.*, d.name as depot_name, d.id as depot_id
-            FROM stock s
-            JOIN depots d ON s.depot_id = d.id
-            JOIN product_variants pv ON s.product_variant_id = pv.id
-            WHERE pv.product_id = ${productId}
-            ORDER BY d.name
-        `
-        return stock as StockItem[]
-    } catch {
-        return []
-    }
+    const stock = await sql`
+        SELECT s.*, d.name as depot_name, d.id as depot_id
+        FROM stock s
+        JOIN depots d ON s.depot_id = d.id
+        JOIN product_variants pv ON s.product_variant_id = pv.id
+        WHERE pv.product_id = ${productId}
+        ORDER BY d.name
+    `
+    return stock as StockItem[]
 }
 
 interface Movement {
@@ -115,30 +107,19 @@ interface Movement {
 }
 
 async function getRecentMovements(productId: string): Promise<Movement[]> {
-    try {
-        const movements = await sql`
-            SELECT sm.*, d.name as depot_name, u.full_name as created_by_name
-            FROM stock_movements sm
-            JOIN depots d ON sm.depot_id = d.id
-            LEFT JOIN users u ON sm.created_by = u.id
-            JOIN product_variants pv ON sm.product_variant_id = pv.id
-            WHERE pv.product_id = ${productId}
-            ORDER BY sm.created_at DESC
-            LIMIT 20
-        `
-        return movements as Movement[]
-    } catch {
-        return []
-    }
+    const movements = await sql`
+        SELECT sm.*, d.name as depot_name, u.full_name as created_by_name
+        FROM stock_movements sm
+        JOIN depots d ON sm.depot_id = d.id
+        LEFT JOIN users u ON sm.created_by = u.id
+        JOIN product_variants pv ON sm.product_variant_id = pv.id
+        WHERE pv.product_id = ${productId}
+        ORDER BY sm.created_at DESC
+        LIMIT 20
+    `
+    return movements as Movement[]
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
-}
 
 const movementTypeLabels: Record<string, { label: string; color: string }> = {
     purchase: { label: 'Achat', color: 'bg-emerald-50 text-emerald-600' },
@@ -157,6 +138,7 @@ export default async function ProductDetailPage({
     const { id } = await params
     const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
+    if (!isUuid(id)) notFound()
 
     const [product, variants, stock, movements] = await Promise.all([
         getProduct(id, companyId),
@@ -171,13 +153,13 @@ export default async function ProductDetailPage({
     const lowStockItems = stock.filter(s => Number(s.quantity) <= Number(s.min_stock_alert))
     const margin = Number(product.selling_price) - Number(product.purchase_price)
     const marginPct = Number(product.purchase_price) > 0
-        ? ((margin / Number(product.purchase_price)) * 100).toFixed(1)
+        ? formatNumber(Number(((margin / Number(product.purchase_price)) * 100).toFixed(1)))
         : '—'
 
     const statsData = [
         {
             title: 'Stock Total',
-            value: `${totalStock} ${product.base_unit}`,
+            value: `${formatNumber(totalStock)} ${product.base_unit}`,
             description: `${stock.length} emplacement${stock.length > 1 ? 's' : ''}`,
             icon: Warehouse,
             color: totalStock < 10 ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600',
@@ -191,14 +173,14 @@ export default async function ProductDetailPage({
         },
         {
             title: 'Prix de Vente',
-            value: formatCurrency(Number(product.selling_price)),
-            description: `Achat: ${formatCurrency(Number(product.purchase_price))}`,
+            value: formatMoney(product.selling_price),
+            description: `Achat: ${formatMoney(product.purchase_price)}`,
             icon: Tag,
             color: 'bg-indigo-500/10 text-indigo-600',
         },
         {
             title: 'Marge',
-            value: formatCurrency(margin),
+            value: formatMoney(margin),
             description: `${marginPct}% de marge`,
             icon: TrendingUp,
             color: margin > 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600',
@@ -212,6 +194,7 @@ export default async function ProductDetailPage({
                 description={`${product.category || 'Non classé'} ${product.brand ? `— ${product.brand}` : ''} ${product.sku ? `(${product.sku})` : ''}`}
                 actions={
                     <div className="flex gap-2">
+                        <DeleteProductButton productId={id} productName={product.name} />
                         <Button variant="outline" asChild className="rounded-md h-11 px-6 font-bold">
                             <Link href="/dashboard/products">
                                 <ArrowLeft className="h-4 w-4 mr-2" />
@@ -266,7 +249,7 @@ export default async function ProductDetailPage({
                     <div className="rounded-md bg-rose-50 border border-rose-200/50 p-6">
                         <p className="text-sm font-semibold text-rose-600">
                             Stock critique dans {lowStockItems.length} emplacement{lowStockItems.length > 1 ? 's' : ''} :
-                            {lowStockItems.map(s => ` ${s.depot_name} (${s.quantity})`).join(',')}
+                            {lowStockItems.map(s => ` ${s.depot_name} (${formatNumber(s.quantity)})`).join(',')}
                         </p>
                     </div>
                 )}
@@ -303,8 +286,8 @@ export default async function ProductDetailPage({
                                                         <p className="text-[11px] text-slate-400 font-bold">{v.units_per_case} unité{v.units_per_case > 1 ? 's' : ''}/casier</p>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="py-4 text-right font-semibold text-slate-950">{formatCurrency(Number(v.price))}</TableCell>
-                                                <TableCell className="py-4 text-right text-slate-500 font-bold">{formatCurrency(Number(v.deposit_price))}</TableCell>
+                                                <TableCell className="py-4 text-right font-semibold text-slate-950">{formatMoney(v.price)}</TableCell>
+                                                <TableCell className="py-4 text-right text-slate-500 font-bold">{formatMoney(v.deposit_price)}</TableCell>
                                                 <TableCell className="py-4 text-right pr-6">
                                                     <span className="font-mono text-xs text-slate-400">{v.barcode || '—'}</span>
                                                 </TableCell>
@@ -345,9 +328,9 @@ export default async function ProductDetailPage({
                                                 <TableRow key={s.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                                                     <TableCell className="py-4 pl-6 font-semibold text-slate-950 text-sm">{s.depot_name}</TableCell>
                                                     <TableCell className={`py-4 text-right font-semibold text-base ${isLow ? 'text-rose-600' : 'text-slate-950'}`}>
-                                                        {s.quantity}
+                                                        {formatNumber(s.quantity)}
                                                     </TableCell>
-                                                    <TableCell className="py-4 text-right text-slate-400 font-bold">{s.min_stock_alert}</TableCell>
+                                                    <TableCell className="py-4 text-right text-slate-400 font-bold">{formatNumber(s.min_stock_alert)}</TableCell>
                                                     <TableCell className="py-4 text-right pr-6">
                                                         <span className="font-mono text-xs text-slate-400">{s.lot_number || '—'}</span>
                                                     </TableCell>
@@ -395,7 +378,7 @@ export default async function ProductDetailPage({
                                         return (
                                             <TableRow key={m.id} className="border-b border-slate-50 hover:bg-slate-50/50">
                                                 <TableCell className="py-4 pl-6 text-sm text-slate-500 font-bold">
-                                                    {new Date(m.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                    {formatDateShort(m.created_at)}
                                                 </TableCell>
                                                 <TableCell className="py-4">
                                                     <Badge className={`rounded-full px-3 py-0.5 font-semibold uppercase text-[10px] tracking-wider border-none shadow-none ${typeInfo.color}`}>
@@ -403,7 +386,7 @@ export default async function ProductDetailPage({
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className={`py-4 text-right font-semibold text-base ${Number(m.quantity) > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                    {Number(m.quantity) > 0 ? '+' : ''}{m.quantity}
+                                                    {Number(m.quantity) > 0 ? '+' : ''}{formatNumber(m.quantity)}
                                                 </TableCell>
                                                 <TableCell className="py-4 font-bold text-slate-700 text-sm">{m.depot_name}</TableCell>
                                                 <TableCell className="py-4 pr-6 text-sm text-slate-400">{m.created_by_name || '—'}</TableCell>

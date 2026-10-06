@@ -15,6 +15,8 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, ArrowLeft, Plus, Trash2, BoxesIcon } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
 
 const productSchema = z.object({
   name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
@@ -68,6 +70,8 @@ export default function NewProductPage() {
   const [error, setError] = useState<string | null>(null)
   const [packagingTypes, setPackagingTypes] = useState<PackagingType[]>([])
   const [variants, setVariants] = useState<VariantRow[]>([])
+  const [packagingLoading, setPackagingLoading] = useState(true)
+  const [packagingError, setPackagingError] = useState(false)
 
   const {
     register,
@@ -88,11 +92,22 @@ export default function NewProductPage() {
   const sellingPrice = watch('sellingPrice')
   const purchasePrice = watch('purchasePrice')
 
+  async function loadPackaging() {
+    setPackagingLoading(true)
+    setPackagingError(false)
+    try {
+      const d = await apiFetch<{ data?: PackagingType[]; packagingTypes?: PackagingType[] }>('/api/packaging')
+      setPackagingTypes(d.packagingTypes || d.data || [])
+    } catch (e) {
+      setPackagingError(true)
+      toastError(e, 'Emballages indisponibles')
+    } finally {
+      setPackagingLoading(false)
+    }
+  }
+
   useEffect(() => {
-    fetch('/api/packaging')
-      .then(r => r.json())
-      .then(d => setPackagingTypes(d.packagingTypes || d.data || []))
-      .catch(() => {})
+    loadPackaging()
   }, [])
 
   function addVariant() {
@@ -129,23 +144,17 @@ export default function NewProductPage() {
         }))
       }
 
-      const response = await fetch('/api/products', {
+      const result = await apiFetch<{ warnings?: unknown }>('/api/products', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: payload,
       })
 
-      const result = await response.json()
-
-      if (!response.ok) {
-        setError(result.error || 'Une erreur est survenue')
-        return
-      }
-
+      toast.success('Produit créé')
+      toastWarnings(result?.warnings)
       router.push('/dashboard/products')
       router.refresh()
-    } catch {
-      setError('Une erreur est survenue. Veuillez réessayer.')
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setIsLoading(false)
     }
@@ -337,7 +346,7 @@ export default function NewProductPage() {
                   variant="outline"
                   size="sm"
                   onClick={addVariant}
-                  disabled={isLoading || packagingTypes.length === 0}
+                  disabled={isLoading || packagingLoading || packagingTypes.length === 0}
                 >
                   <Plus className="h-4 w-4 mr-1" />
                   Ajouter
@@ -345,11 +354,23 @@ export default function NewProductPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {packagingTypes.length === 0 ? (
+              {packagingLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Chargement des emballages...
+                </div>
+              ) : packagingError ? (
+                <div className="text-center py-6">
+                  <p className="text-sm text-destructive">Impossible de charger les emballages.</p>
+                  <Button type="button" variant="outline" size="sm" className="mt-2" onClick={loadPackaging}>
+                    Réessayer
+                  </Button>
+                </div>
+              ) : packagingTypes.length === 0 ? (
                 <div className="text-center py-6">
                   <p className="text-sm text-muted-foreground">
                     Aucun type d&apos;emballage configuré.
-                    <Link href="/dashboard/settings" className="text-primary ml-1 hover:underline">
+                    <Link href="/dashboard/packaging/new" className="text-primary ml-1 hover:underline">
                       Configurer les emballages
                     </Link>
                   </p>
@@ -419,6 +440,7 @@ export default function NewProductPage() {
                           size="icon"
                           onClick={() => removeVariant(idx)}
                           disabled={isLoading}
+                          aria-label="Retirer cette variante"
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
                           <Trash2 className="h-4 w-4" />

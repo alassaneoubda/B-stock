@@ -23,7 +23,6 @@ import {
     PackageSearch,
     Eye,
     Edit,
-    Trash2,
     Phone,
     MapPin,
     Truck,
@@ -31,6 +30,7 @@ import {
     Mail
 } from 'lucide-react'
 import Link from 'next/link'
+import { formatNumber } from '@/lib/format'
 
 interface Supplier {
     id: string
@@ -44,9 +44,9 @@ interface Supplier {
     created_at: string
 }
 
+// Pas de try/catch : une panne SQL doit afficher la page d'erreur, pas une liste vide.
 async function getSuppliers(companyId: string): Promise<Supplier[]> {
-    try {
-        const suppliers = await sql`
+    const suppliers = await sql`
       SELECT
         s.*,
         COUNT(po.id) as orders_count
@@ -56,11 +56,7 @@ async function getSuppliers(companyId: string): Promise<Supplier[]> {
       GROUP BY s.id
       ORDER BY s.name
     `
-        return suppliers as Supplier[]
-    } catch (error) {
-        console.error('Error fetching suppliers:', error)
-        return []
-    }
+    return suppliers as Supplier[]
 }
 
 const typeLabels: Record<string, string> = {
@@ -77,21 +73,21 @@ export default async function SuppliersPage() {
     const statsData = [
         {
             title: "Total Fournisseurs",
-            value: suppliers.length,
+            value: formatNumber(suppliers.length),
             description: "Partenaires enregistrés",
             icon: Building2,
             color: "bg-blue-500/10 text-blue-600",
         },
         {
             title: "Fabricants",
-            value: suppliers.filter(s => s.type === 'manufacturer').length,
+            value: formatNumber(suppliers.filter(s => s.type === 'manufacturer').length),
             description: "Direct usine (Solibra...)",
             icon: Truck,
             color: "bg-emerald-500/10 text-emerald-600",
         },
         {
             title: "Distributeurs",
-            value: suppliers.filter(s => s.type === 'distributor').length,
+            value: formatNumber(suppliers.filter(s => s.type === 'distributor').length),
             description: "Grossistes & Revendeurs",
             icon: PackageSearch,
             color: "bg-indigo-500/10 text-indigo-600",
@@ -199,12 +195,12 @@ export default async function SuppliersPage() {
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="py-3 text-right text-sm font-semibold text-slate-950">
-                                                    {supplier.orders_count}
+                                                    {formatNumber(supplier.orders_count)}
                                                 </TableCell>
                                                 <TableCell className="py-3 pr-4 text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour ${supplier.name}`}>
                                                                 <MoreHorizontal className="h-4 w-4 text-slate-400" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
@@ -259,7 +255,7 @@ export default async function SuppliersPage() {
                                         </div>
                                         <div className="flex items-center justify-between text-xs mt-2">
                                             <span className="text-zinc-400 truncate max-w-[60%]">{supplier.address || 'Sans adresse'}</span>
-                                            <span className="text-zinc-600 font-medium">{supplier.orders_count} cmd</span>
+                                            <span className="text-zinc-600 font-medium">{formatNumber(supplier.orders_count)} cmd</span>
                                         </div>
                                     </Link>
                                 ))}

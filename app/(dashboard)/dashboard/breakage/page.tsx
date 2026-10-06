@@ -5,15 +5,23 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
 } from '@/components/ui/dialog'
-import { AlertTriangle, Loader2, Plus, CheckCircle2, XCircle, Package, TrendingDown } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { AlertTriangle, Loader2, Plus, CheckCircle2, XCircle, TrendingDown } from 'lucide-react'
+import { toast } from 'sonner'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface BreakageRecord {
   id: string; record_type: string; product_name: string | null; packaging_name: string | null
@@ -25,7 +33,7 @@ interface Stats {
   record_type: string; count: number; total_value: number
 }
 
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA' }
+const NO_PRODUCT = '__none__'
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   reported: { label: 'Signalé', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -44,9 +52,13 @@ export default function BreakagePage() {
   const [records, setRecords] = useState<BreakageRecord[]>([])
   const [stats, setStats] = useState<Stats[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [tab, setTab] = useState('all')
   const [openNew, setOpenNew] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const [processing, setProcessing] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<{ record: BreakageRecord; action: 'approve' | 'reject' } | null>(null)
   const [newType, setNewType] = useState('breakage')
   const [newDepotId, setNewDepotId] = useState('')
   const [newProductId, setNewProductId] = useState('')
@@ -56,32 +68,20 @@ export default function BreakagePage() {
   const [newReason, setNewReason] = useState('')
   const [depots, setDepots] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
-  const [packagings, setPackagings] = useState<any[]>([])
 
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const [recRes, depotRes, prodRes, pkgRes] = await Promise.all([
-        fetch('/api/breakage'),
-        fetch('/api/depots'),
-        fetch('/api/products'),
-        fetch('/api/packaging-types'),
+      const [recJson, depotJson, prodJson] = await Promise.all([
+        apiFetch<{ data: { records: BreakageRecord[]; stats: Stats[] } }>('/api/breakage'),
+        apiFetch<{ data: any[] }>('/api/depots'),
+        apiFetch<{ data: any[] }>('/api/products'),
       ])
-      if (!recRes.ok || !depotRes.ok || !prodRes.ok || !pkgRes.ok) {
-        throw new Error('Failed to fetch data')
-      }
-      const recJson = await recRes.json()
-      const depotJson = await depotRes.json()
-      const prodJson = await prodRes.json()
-      const pkgJson = await pkgRes.json()
-      
-      console.log('Depot response:', depotJson)
-      console.log('Product response:', prodJson)
-      console.log('Packaging response:', pkgJson)
-      
+
       setRecords(recJson.data?.records || [])
       setStats(recJson.data?.stats || [])
-      setDepots(Array.isArray(depotJson.data) ? depotJson.data : Array.isArray(depotJson) ? depotJson : [])
-      const productList = Array.isArray(prodJson.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : []
+      setDepots(Array.isArray(depotJson.data) ? depotJson.data : [])
+      const productList = Array.isArray(prodJson.data) ? prodJson.data : []
       // L'API attend des identifiants de variante (produit + conditionnement), pas de produit.
       setProducts(productList.flatMap((p: any) =>
         (Array.isArray(p.variants) ? p.variants : []).map((v: any) => ({
@@ -89,62 +89,106 @@ export default function BreakagePage() {
           name: v.packaging_name ? `${p.name} — ${v.packaging_name}` : p.name,
         }))
       ))
-      setPackagings(Array.isArray(pkgJson.data) ? pkgJson.data : Array.isArray(pkgJson) ? pkgJson : [])
-    } catch (e) { 
-      console.error('Error fetching data:', e)
-      setDepots([])
-      setProducts([])
-      setPackagings([])
+    } catch {
+      setLoadError(true)
+    } finally {
+      setIsLoading(false)
     }
-    finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  const hasItem = !!newProductId || !!newPackagingId
+
+  function resetForm() {
+    setNewType('breakage'); setNewDepotId(''); setNewProductId(''); setNewPackagingId('')
+    setNewQuantity(''); setNewUnitValue(''); setNewReason(''); setFormError(null)
+  }
+
   async function handleCreate() {
-    if (!newType || !newQuantity) return
-    const res = await fetch('/api/breakage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        record_type: newType,
-        depot_id: newDepotId || undefined,
-        product_variant_id: newProductId || undefined,
-        packaging_type_id: newPackagingId || undefined,
-        quantity: Number(newQuantity),
-        unit_value: Number(newUnitValue) || 0,
-        reason: newReason || undefined,
-      }),
-    })
-    if (res.ok) {
+    if (!newType || !newQuantity || creating) return
+    const quantity = Number(newQuantity)
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setFormError('La quantité doit être un nombre entier positif.')
+      return
+    }
+    const unitValue = newUnitValue === '' ? 0 : Number(newUnitValue)
+    if (!Number.isFinite(unitValue) || unitValue < 0) {
+      setFormError('La valeur unitaire doit être un montant positif.')
+      return
+    }
+    // Le stock sera déduit d'un dépôt précis à l'approbation : obligatoire dès qu'un article est choisi
+    if (hasItem && !newDepotId) {
+      setFormError('Veuillez choisir le dépôt concerné.')
+      return
+    }
+    setFormError(null)
+    setCreating(true)
+    try {
+      const res = await apiFetch<{ warnings?: unknown }>('/api/breakage', {
+        method: 'POST',
+        body: {
+          record_type: newType,
+          depot_id: newDepotId || undefined,
+          product_variant_id: newProductId || undefined,
+          packaging_type_id: newPackagingId || undefined,
+          quantity,
+          unit_value: unitValue,
+          reason: newReason || undefined,
+        },
+      })
+      toast.success('Incident signalé')
+      toastWarnings(res?.warnings)
       setOpenNew(false)
-      setNewType('breakage'); setNewDepotId(''); setNewProductId(''); setNewPackagingId(''); setNewQuantity(''); setNewUnitValue(''); setNewReason('')
+      resetForm()
       fetchData()
+    } catch (e) {
+      toastError(e, 'Signalement impossible')
+    } finally {
+      setCreating(false)
     }
   }
 
-  async function handleApprove(id: string, action: string) {
-    setProcessing(id)
+  async function handleApprove() {
+    if (!pendingAction) return
+    const { record, action } = pendingAction
+    setProcessing(record.id)
     try {
-      await fetch(`/api/breakage/${id}/approve`, {
+      const res = await apiFetch<{ message?: string; warnings?: unknown }>(`/api/breakage/${record.id}/approve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: { action },
       })
+      toast.success(res?.message || (action === 'approve' ? 'Approuvé et stock ajusté' : 'Rejeté'))
+      toastWarnings(res?.warnings)
+    } catch (e) {
+      // 409 : stock insuffisant ou incident déjà traité → message du serveur
+      toastError(e, action === 'approve' ? 'Approbation impossible' : 'Rejet impossible')
+    } finally {
+      setProcessing(null)
+      setPendingAction(null)
       fetchData()
-    } finally { setProcessing(null) }
+    }
   }
 
   const filtered = tab === 'all' ? records : records.filter(r => r.record_type === tab)
 
   if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
         <DashboardHeader title="Casse et Pertes" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
+        <main className="flex-1 p-4 lg:p-6 max-w-[1400px] mx-auto w-full">
+          <ErrorState description="Les incidents n'ont pas pu être chargés." onRetry={fetchData} />
+        </main>
       </div>
     )
   }
+
+  const pendingRecord = pendingAction?.record
+  const pendingItemName = pendingRecord ? (pendingRecord.product_name || pendingRecord.packaging_name) : null
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50/50">
@@ -155,19 +199,19 @@ export default function BreakagePage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">Total incidents</div>
-            <div className="text-xl font-bold text-zinc-950">{records.length}</div>
+            <div className="text-xl font-bold text-zinc-950">{formatNumber(records.length)}</div>
           </Card>
           <Card className="p-4 border-red-200 bg-red-50/30">
-            <div className="flex items-center gap-1 text-xs text-red-600 mb-1"><TrendingDown className="h-3 w-3" /> Valeur totale</div>
-            <div className="text-xl font-bold text-red-600">{fmt(records.reduce((s, r) => s + Number(r.total_value), 0))}</div>
+            <div className="flex items-center gap-1 text-xs text-red-600 mb-1"><TrendingDown className="h-3 w-3" aria-hidden="true" /> Valeur totale</div>
+            <div className="text-xl font-bold text-red-600">{formatMoney(records.reduce((s, r) => s + Number(r.total_value), 0))}</div>
           </Card>
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">Ce mois</div>
-            <div className="text-xl font-bold text-amber-600">{fmt(stats.reduce((s, st) => s + Number(st.total_value), 0))}</div>
+            <div className="text-xl font-bold text-amber-600">{formatMoney(stats.reduce((s, st) => s + Number(st.total_value), 0))}</div>
           </Card>
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">En attente</div>
-            <div className="text-xl font-bold text-amber-600">{records.filter(r => r.status === 'reported').length}</div>
+            <div className="text-xl font-bold text-amber-600">{formatNumber(records.filter(r => r.status === 'reported').length)}</div>
           </Card>
         </div>
 
@@ -182,7 +226,7 @@ export default function BreakagePage() {
               ))}
             </TabsList>
           </Tabs>
-          <Dialog open={openNew} onOpenChange={setOpenNew}>
+          <Dialog open={openNew} onOpenChange={(o) => { if (!creating) { setOpenNew(o); if (!o) setFormError(null) } }}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Signaler</Button>
             </DialogTrigger>
@@ -192,7 +236,7 @@ export default function BreakagePage() {
                 <div>
                   <Label>Type</Label>
                   <Select value={newType} onValueChange={setNewType}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="mt-1" aria-label="Type d'incident"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {Object.entries(typeLabels).map(([key, label]) => (
                         <SelectItem key={key} value={key}>{label}</SelectItem>
@@ -201,44 +245,63 @@ export default function BreakagePage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Dépôt</Label>
-                  <Select value={newDepotId} onValueChange={setNewDepotId}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir un dépôt" /></SelectTrigger>
-                    <SelectContent>
-                      {depots.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
                   <Label>Produit</Label>
-                  <Select value={newProductId} onValueChange={setNewProductId}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
+                  <Select
+                    value={newProductId || NO_PRODUCT}
+                    onValueChange={(v) => { setNewProductId(v === NO_PRODUCT ? '' : v); setNewPackagingId(''); setFormError(null) }}
+                  >
+                    <SelectTrigger className="mt-1" aria-label="Produit"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={NO_PRODUCT}>Aucun produit (valeur seule)</SelectItem>
                       {products.map((p: any) => (
                         <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <Label>
+                    Dépôt{hasItem && <span className="text-red-600"> *</span>}
+                  </Label>
+                  <Select value={newDepotId} onValueChange={(v) => { setNewDepotId(v); setFormError(null) }}>
+                    <SelectTrigger
+                      className="mt-1"
+                      aria-label="Dépôt"
+                      aria-required={hasItem}
+                      aria-invalid={hasItem && !newDepotId && !!formError}
+                    >
+                      <SelectValue placeholder="Choisir un dépôt" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {depots.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {hasItem && (
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Obligatoire : le stock de ce dépôt sera diminué à l&apos;approbation.
+                    </p>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label>Quantité</Label>
-                    <Input type="number" value={newQuantity} onChange={(e) => setNewQuantity(e.target.value)} className="mt-1" />
+                    <Label htmlFor="breakage-qty">Quantité</Label>
+                    <Input id="breakage-qty" type="number" min={1} step={1} inputMode="numeric" value={newQuantity} onChange={(e) => { setNewQuantity(e.target.value); setFormError(null) }} className="mt-1" />
                   </div>
                   <div>
-                    <Label>Valeur unitaire (FCFA)</Label>
-                    <Input type="number" value={newUnitValue} onChange={(e) => setNewUnitValue(e.target.value)} className="mt-1" />
+                    <Label htmlFor="breakage-unit-value">Valeur unitaire (FCFA)</Label>
+                    <Input id="breakage-unit-value" type="number" min={0} inputMode="numeric" value={newUnitValue} onChange={(e) => { setNewUnitValue(e.target.value); setFormError(null) }} className="mt-1" />
                   </div>
                 </div>
                 <div>
-                  <Label>Raison</Label>
-                  <Input value={newReason} onChange={(e) => setNewReason(e.target.value)} className="mt-1" placeholder="Cause..." />
+                  <Label htmlFor="breakage-reason">Raison</Label>
+                  <Input id="breakage-reason" value={newReason} onChange={(e) => setNewReason(e.target.value)} className="mt-1" placeholder="Cause..." />
                 </div>
+                {formError && <p role="alert" className="text-sm text-red-600">{formError}</p>}
               </div>
               <DialogFooter>
-                <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-                <Button onClick={handleCreate} disabled={!newType || !newQuantity}>
-                  <AlertTriangle className="h-4 w-4 mr-2" /> Signaler
+                <DialogClose asChild><Button variant="outline" disabled={creating}>Annuler</Button></DialogClose>
+                <Button onClick={handleCreate} disabled={creating || !newType || !newQuantity || (hasItem && !newDepotId)}>
+                  {creating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <AlertTriangle className="h-4 w-4 mr-2" />} Signaler
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -248,7 +311,13 @@ export default function BreakagePage() {
         <Card>
           <CardContent className="p-0">
             {filtered.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucun incident</div>
+              <EmptyState
+                className="m-4"
+                icon={AlertTriangle}
+                title="Aucun incident"
+                description={tab === 'all' ? 'Aucune casse ni perte signalée pour le moment.' : `Aucun incident de type « ${typeLabels[tab] ?? tab} ».`}
+                action={tab === 'all' ? { label: 'Signaler un incident', onClick: () => setOpenNew(true) } : undefined}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -261,7 +330,7 @@ export default function BreakagePage() {
                     <TableHead>Raison</TableHead>
                     <TableHead>Signalé par</TableHead>
                     <TableHead>Statut</TableHead>
-                    <TableHead></TableHead>
+                    <TableHead><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -276,19 +345,37 @@ export default function BreakagePage() {
                         </TableCell>
                         <TableCell className="text-sm">{r.product_name || r.packaging_name || '-'}</TableCell>
                         <TableCell className="text-sm">{r.depot_name || '-'}</TableCell>
-                        <TableCell className="text-center text-sm">{r.quantity}</TableCell>
-                        <TableCell className="text-right text-sm font-medium text-red-600">{fmt(Number(r.total_value))}</TableCell>
+                        <TableCell className="text-center text-sm">{formatNumber(r.quantity)}</TableCell>
+                        <TableCell className="text-right text-sm font-medium text-red-600">{formatMoney(r.total_value)}</TableCell>
                         <TableCell className="text-sm text-zinc-600">{r.reason || '-'}</TableCell>
                         <TableCell className="text-sm text-zinc-500">{r.reported_by_name || '-'}</TableCell>
                         <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
                         <TableCell>
                           {r.status === 'reported' && (
                             <div className="flex gap-1">
-                              <Button size="sm" variant="outline" className="h-7 text-xs text-emerald-600" onClick={() => handleApprove(r.id, 'approve')} disabled={processing === r.id}>
-                                <CheckCircle2 className="h-3 w-3 mr-1" /> Approuver
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs text-emerald-600"
+                                onClick={() => setPendingAction({ record: r, action: 'approve' })}
+                                disabled={processing === r.id}
+                              >
+                                {processing === r.id && pendingAction?.action === 'approve'
+                                  ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                  : <CheckCircle2 className="h-3 w-3 mr-1" />} Approuver
                               </Button>
-                              <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleApprove(r.id, 'reject')} disabled={processing === r.id}>
-                                <XCircle className="h-3 w-3" />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs text-red-600"
+                                aria-label="Rejeter l'incident"
+                                title="Rejeter"
+                                onClick={() => setPendingAction({ record: r, action: 'reject' })}
+                                disabled={processing === r.id}
+                              >
+                                {processing === r.id && pendingAction?.action === 'reject'
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <XCircle className="h-3 w-3" aria-hidden="true" />}
                               </Button>
                             </div>
                           )}
@@ -301,6 +388,35 @@ export default function BreakagePage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Confirmation approbation / rejet */}
+        <AlertDialog open={!!pendingAction} onOpenChange={(o) => { if (!o && !processing) setPendingAction(null) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {pendingAction?.action === 'approve' ? "Approuver l'incident ?" : "Rejeter l'incident ?"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingAction?.action === 'approve'
+                  ? pendingItemName
+                    ? `${formatNumber(pendingRecord?.quantity)} × ${pendingItemName} seront retirés du stock du dépôt ${pendingRecord?.depot_name ?? ''} (perte de ${formatMoney(pendingRecord?.total_value)}). Cette opération est irréversible.`
+                    : `La perte de ${formatMoney(pendingRecord?.total_value)} sera validée. Aucun article n'est associé : le stock ne change pas.`
+                  : "L'incident sera marqué comme rejeté. Le stock ne sera pas modifié."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={!!processing}>Annuler</AlertDialogCancel>
+              <Button
+                onClick={handleApprove}
+                disabled={!!processing}
+                variant={pendingAction?.action === 'reject' ? 'destructive' : 'default'}
+              >
+                {processing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {pendingAction?.action === 'approve' ? 'Approuver' : 'Rejeter'}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   )

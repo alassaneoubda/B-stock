@@ -21,11 +21,29 @@ import {
   Package,
   BoxesIcon,
   AlertTriangle,
-  ArrowUpDown,
   Warehouse,
   TrendingDown,
   Clock,
 } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { apiFetch } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+
+interface ProductOption {
+  id: string
+  name: string
+  category: string | null
+}
 
 interface StockItem {
   id: string
@@ -48,49 +66,80 @@ interface StockItem {
   depot_id?: string
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-  }).format(amount)
-}
+const ALL = 'all'
 
 export default function StockPage() {
   const { data: session } = useSession()
   const [stockItems, setStockItems] = useState<StockItem[]>([])
   const [packagingStock, setPackagingStock] = useState<Array<Record<string, unknown>>>([])
+  const [products, setProducts] = useState<ProductOption[]>([])
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search.trim(), 300)
+  const [category, setCategory] = useState(ALL)
+  const [productId, setProductId] = useState(ALL)
+  const [lowStockOnly, setLowStockOnly] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [packagingError, setPackagingError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [activeTab, setActiveTab] = useState('products')
+  const companyId = session?.user?.companyId
 
+  // Options des filtres (catégories / produits) et stock emballages : chargés une fois
   useEffect(() => {
-    if (!session?.user?.companyId) return
-
-    async function fetchData() {
-      setLoading(true)
-      try {
-        // Fetch stock
-        const stockRes = await fetch(`/api/stock?search=${encodeURIComponent(search)}`)
-        const stockData = await stockRes.json()
-        if (stockData.success) {
-          setStockItems(stockData.data)
-        }
-
-        // Fetch packaging stock
-        const pkgRes = await fetch('/api/packaging/stock')
-        const pkgData = await pkgRes.json()
-        if (pkgData.success) {
-          setPackagingStock(pkgData.data)
-        }
-      } catch (error) {
-        console.error('Error fetching stock:', error)
-      }
-      setLoading(false)
+    if (!companyId) return
+    let cancelled = false
+    apiFetch<{ data: ProductOption[] }>('/api/products')
+      .then((res) => {
+        if (!cancelled) setProducts(res.data ?? [])
+      })
+      .catch(() => {
+        // Filtres facultatifs : la liste du stock reste utilisable sans eux
+      })
+    setPackagingError(false)
+    apiFetch<{ data: Array<Record<string, unknown>> }>('/api/packaging/stock')
+      .then((res) => {
+        if (!cancelled) setPackagingStock(res.data ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setPackagingError(true)
+      })
+    return () => {
+      cancelled = true
     }
+  }, [companyId, reloadKey])
 
-    fetchData()
-  }, [session?.user?.companyId, search])
+  // Stock produits : filtres appliqués côté serveur
+  useEffect(() => {
+    if (!companyId) return
+    const controller = new AbortController()
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.set('search', debouncedSearch)
+    if (category !== ALL) params.set('category', category)
+    if (productId !== ALL) params.set('productId', productId)
+    if (lowStockOnly) params.set('lowStock', 'true')
+
+    setLoading(true)
+    setLoadError(false)
+    apiFetch<{ data: StockItem[] }>(`/api/stock?${params.toString()}`, { signal: controller.signal })
+      .then((res) => {
+        setStockItems(res.data ?? [])
+        setLoading(false)
+      })
+      .catch((e) => {
+        if ((e as Error)?.name === 'AbortError') return
+        setLoadError(true)
+        setLoading(false)
+      })
+    return () => controller.abort()
+  }, [companyId, debouncedSearch, category, productId, lowStockOnly, reloadKey])
+
+  const categories = Array.from(
+    new Set(products.map((p) => p.category).filter((c): c is string => !!c))
+  ).sort((a, b) => a.localeCompare(b, 'fr'))
+  const productOptions = products.filter((p) => category === ALL || p.category === category)
+  const hasFilters = !!debouncedSearch || category !== ALL || productId !== ALL || lowStockOnly
+  const retry = () => setReloadKey((k) => k + 1)
 
   const totalProducts = stockItems.length
   const lowStockItems = stockItems.filter(
@@ -112,14 +161,14 @@ export default function StockPage() {
   const statCards = [
     {
       title: 'Références en stock',
-      value: totalProducts.toString(),
+      value: formatNumber(totalProducts),
       description: 'Variantes produit',
       icon: Package,
       color: 'bg-blue-500/10 text-blue-600',
     },
     {
       title: 'Valeur du stock',
-      value: formatCurrency(totalValue),
+      value: formatMoney(totalValue),
       description: 'Au prix de vente',
       icon: Warehouse,
       color: 'bg-emerald-500/10 text-emerald-600',
@@ -174,13 +223,54 @@ export default function StockPage() {
                 <p className="text-xs text-slate-400 mt-0.5">Stock par produit et emballage</p>
               </div>
               <div className="relative w-full sm:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" aria-hidden="true" />
                 <Input
                   placeholder="Rechercher un produit..."
+                  aria-label="Rechercher un produit"
                   className="pl-9 h-9 text-sm rounded-md bg-slate-50 border-transparent focus:bg-white"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <Select
+                value={category}
+                onValueChange={(v) => {
+                  setCategory(v)
+                  setProductId(ALL)
+                }}
+              >
+                <SelectTrigger className="h-9 w-full sm:w-48 text-sm" aria-label="Filtrer par catégorie">
+                  <SelectValue placeholder="Catégorie" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>Toutes les catégories</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={productId} onValueChange={setProductId}>
+                <SelectTrigger className="h-9 w-full sm:w-56 text-sm" aria-label="Filtrer par produit">
+                  <SelectValue placeholder="Produit" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>Tous les produits</SelectItem>
+                  {productOptions.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-2">
+                <Switch id="low-stock-only" checked={lowStockOnly} onCheckedChange={setLowStockOnly} />
+                <Label htmlFor="low-stock-only" className="text-sm text-slate-600">
+                  Stock bas uniquement
+                </Label>
               </div>
             </div>
           </div>
@@ -215,17 +305,37 @@ export default function StockPage() {
             {/* Products Tab */}
             <TabsContent value="products" className="p-2 mt-0">
               {loading ? (
-                <div className="text-center py-24 text-slate-400 font-medium">Chargement...</div>
-              ) : stockItems.length === 0 ? (
-                <div className="text-center py-24 flex flex-col items-center">
-                  <div className="h-24 w-24 rounded-full bg-slate-50 flex items-center justify-center mb-6">
-                    <Package className="h-10 w-10 text-slate-300" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-slate-950">Aucun stock</h3>
-                  <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
-                    Commencez par créer des produits et faire un approvisionnement.
-                  </p>
+                <div className="p-4">
+                  <TableSkeleton rows={6} columns={6} />
                 </div>
+              ) : loadError ? (
+                <ErrorState className="m-4" description="Le stock n'a pas pu être chargé." onRetry={retry} />
+              ) : stockItems.length === 0 ? (
+                hasFilters ? (
+                  <EmptyState
+                    className="m-4"
+                    icon={Package}
+                    title="Aucun résultat"
+                    description="Aucune ligne de stock ne correspond à ces filtres."
+                    action={{
+                      label: 'Réinitialiser les filtres',
+                      onClick: () => {
+                        setSearch('')
+                        setCategory(ALL)
+                        setProductId(ALL)
+                        setLowStockOnly(false)
+                      },
+                    }}
+                  />
+                ) : (
+                  <EmptyState
+                    className="m-4"
+                    icon={Package}
+                    title="Aucun stock"
+                    description="Commencez par créer des produits et faire un approvisionnement."
+                    action={{ label: 'Nouvel approvisionnement', href: '/dashboard/procurement/new' }}
+                  />
+                )
               ) : (
                 <>
                   {/* Desktop table */}
@@ -262,10 +372,10 @@ export default function StockPage() {
                               </TableCell>
                               <TableCell className="py-3 text-sm text-slate-600">{item.depot_name}</TableCell>
                               <TableCell className="py-3 text-right">
-                                <span className={`font-semibold ${isLow ? 'text-rose-600' : 'text-slate-950'}`}>{item.quantity}</span>
+                                <span className={`font-semibold ${isLow ? 'text-rose-600' : 'text-slate-950'}`}>{formatNumber(item.quantity)}</span>
                               </TableCell>
-                              <TableCell className="py-3 text-right text-sm text-slate-600">{formatCurrency(item.price)}</TableCell>
-                              <TableCell className="py-3 text-right text-sm font-semibold text-slate-950">{formatCurrency(item.quantity * item.price)}</TableCell>
+                              <TableCell className="py-3 text-right text-sm text-slate-600">{formatMoney(item.price)}</TableCell>
+                              <TableCell className="py-3 text-right text-sm font-semibold text-slate-950">{formatMoney(item.quantity * item.price)}</TableCell>
                               <TableCell className="py-3 text-xs font-mono text-slate-500">{item.lot_number || '—'}</TableCell>
                               <TableCell className="py-3 pr-4">
                                 {isLow ? (
@@ -308,8 +418,8 @@ export default function StockPage() {
                             )}
                           </div>
                           <div className="flex items-center justify-between mt-2">
-                            <span className={`text-sm font-bold ${isLow ? 'text-rose-600' : 'text-zinc-950'}`}>{item.quantity} unités</span>
-                            <span className="text-sm font-semibold text-zinc-950">{formatCurrency(item.quantity * item.price)}</span>
+                            <span className={`text-sm font-bold ${isLow ? 'text-rose-600' : 'text-zinc-950'}`}>{formatNumber(item.quantity)} unités</span>
+                            <span className="text-sm font-semibold text-zinc-950">{formatMoney(item.quantity * item.price)}</span>
                           </div>
                         </div>
                       )
@@ -321,16 +431,15 @@ export default function StockPage() {
 
             {/* Packaging Tab */}
             <TabsContent value="packaging" className="p-2 mt-0">
-              {packagingStock.length === 0 ? (
-                <div className="text-center py-24 flex flex-col items-center">
-                  <div className="h-24 w-24 rounded-full bg-slate-50 flex items-center justify-center mb-6">
-                    <BoxesIcon className="h-10 w-10 text-slate-300" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-slate-950">Aucun stock d&apos;emballages</h3>
-                  <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
-                    Les emballages apparaîtront ici après un approvisionnement.
-                  </p>
-                </div>
+              {packagingError ? (
+                <ErrorState className="m-4" description="Le stock d'emballages n'a pas pu être chargé." onRetry={retry} />
+              ) : packagingStock.length === 0 ? (
+                <EmptyState
+                  className="m-4"
+                  icon={BoxesIcon}
+                  title="Aucun stock d'emballages"
+                  description="Les emballages apparaîtront ici après un approvisionnement."
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <Table>
@@ -352,10 +461,10 @@ export default function StockPage() {
                             {String(pkg.depot_name || 'N/A')}
                           </TableCell>
                           <TableCell className="py-6 text-right font-semibold text-slate-950 text-base">
-                            {Number(pkg.quantity)}
+                            {formatNumber(pkg.quantity)}
                           </TableCell>
                           <TableCell className="py-6 text-right font-bold text-slate-600 pr-8">
-                            {formatCurrency(Number(pkg.deposit_price || 0))}
+                            {formatMoney(Number(pkg.deposit_price || 0))}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -367,14 +476,18 @@ export default function StockPage() {
 
             {/* Alerts Tab */}
             <TabsContent value="alerts" className="p-6 mt-0">
-              {lowStockItems.length === 0 && expiringItems.length === 0 ? (
+              {loading ? (
+                <TableSkeleton rows={4} columns={3} />
+              ) : loadError ? (
+                <ErrorState description="Le stock n'a pas pu être chargé." onRetry={retry} />
+              ) : lowStockItems.length === 0 && expiringItems.length === 0 ? (
                 <div className="text-center py-24 flex flex-col items-center">
                   <div className="h-24 w-24 rounded-full bg-emerald-50 flex items-center justify-center mb-6">
                     <AlertTriangle className="h-10 w-10 text-emerald-400" />
                   </div>
                   <h3 className="text-xl font-semibold text-slate-950">Aucune alerte</h3>
                   <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
-                    Tous les niveaux de stock sont normaux. 🎉
+                    Tous les niveaux de stock sont normaux.
                   </p>
                 </div>
               ) : (
@@ -388,7 +501,7 @@ export default function StockPage() {
                         <div className="flex-1">
                           <p className="font-semibold text-slate-950">{item.product_name} — {item.packaging_name || 'Standard'}</p>
                           <p className="text-sm text-slate-500">
-                            Stock: <span className="font-bold text-rose-600">{item.quantity}</span> / Seuil: {item.min_stock_alert} — {item.depot_name}
+                            Stock: <span className="font-bold text-rose-600">{formatNumber(item.quantity)}</span> / Seuil: {item.min_stock_alert} — {item.depot_name}
                           </p>
                         </div>
                         <Badge className="rounded-xl bg-rose-100 text-rose-600 border-none font-bold">Stock bas</Badge>

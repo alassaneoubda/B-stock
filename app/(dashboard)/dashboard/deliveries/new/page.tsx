@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
 import { useRouter } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -15,7 +17,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Truck, MapPin } from 'lucide-react'
+import { ArrowLeft, Loader2, Truck, MapPin, RotateCw } from 'lucide-react'
 import Link from 'next/link'
 
 interface Vehicle {
@@ -40,6 +42,7 @@ export default function NewDeliveryPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([])
     const [depots, setDepots] = useState<Depot[]>([])
     const [loadingData, setLoadingData] = useState(true)
+    const [loadError, setLoadError] = useState(false)
 
     // Form state
     const [tourDate, setTourDate] = useState(new Date().toISOString().split('T')[0])
@@ -51,26 +54,27 @@ export default function NewDeliveryPage() {
     // Validation
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
-    useEffect(() => {
-        async function fetchData() {
-            try {
-                const [vehiclesRes, depotsRes] = await Promise.all([
-                    fetch('/api/vehicles'),
-                    fetch('/api/depots'),
-                ])
-                const vehiclesData = await vehiclesRes.json()
-                const depotsData = await depotsRes.json()
-
-                setVehicles(vehiclesData.data || vehiclesData.vehicles || [])
-                setDepots(depotsData.data || depotsData.depots || [])
-            } catch (err) {
-                console.error('Error loading form data:', err)
-            } finally {
-                setLoadingData(false)
-            }
+    const loadFormData = useCallback(async () => {
+        setLoadingData(true)
+        setLoadError(false)
+        try {
+            const [vehiclesData, depotsData] = await Promise.all([
+                apiFetch('/api/vehicles'),
+                apiFetch('/api/depots'),
+            ])
+            setVehicles(vehiclesData?.data || vehiclesData?.vehicles || [])
+            setDepots(depotsData?.data || depotsData?.depots || [])
+        } catch (err) {
+            setLoadError(true)
+            toastError(err, 'Chargement des véhicules et dépôts impossible')
+        } finally {
+            setLoadingData(false)
         }
-        fetchData()
     }, [])
+
+    useEffect(() => {
+        loadFormData()
+    }, [loadFormData])
 
     // Auto-fill driver name when vehicle is selected
     useEffect(() => {
@@ -98,30 +102,23 @@ export default function NewDeliveryPage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/deliveries', {
+            const result = await apiFetch('/api/deliveries', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: {
                     tourDate,
                     driverName: driverName.trim(),
                     vehicleId: vehicleId || null,
                     depotId: depotId || null,
                     notes: notes.trim() || undefined,
-                }),
+                },
             })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            toast.success('Tournée planifiée')
+            toastWarnings(result?.warnings)
             router.push('/dashboard/deliveries')
             router.refresh()
-        } catch {
-            setError('Une erreur réseau est survenue.')
-        } finally {
+        } catch (err) {
+            // Erreur affichée en ligne au-dessus du formulaire
+            setError(errorMessage(err))
             setIsLoading(false)
         }
     }
@@ -146,6 +143,16 @@ export default function NewDeliveryPage() {
                     {error && (
                         <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                             {error}
+                        </div>
+                    )}
+
+                    {loadError && (
+                        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                            <span>Les véhicules et dépôts n&apos;ont pas pu être chargés.</span>
+                            <Button type="button" size="sm" variant="outline" onClick={loadFormData}>
+                                <RotateCw className="h-3.5 w-3.5 mr-1.5" />
+                                Réessayer
+                            </Button>
                         </div>
                     )}
 
@@ -191,7 +198,9 @@ export default function NewDeliveryPage() {
                                     {loadingData ? (
                                         <div className="h-9 rounded-md border border-input bg-muted animate-pulse" />
                                     ) : vehicles.length === 0 ? (
-                                        <p className="text-sm text-muted-foreground py-2">Aucun véhicule enregistré</p>
+                                        <p className="text-sm text-muted-foreground py-2">
+                                            {loadError ? 'Liste indisponible' : 'Aucun véhicule enregistré'}
+                                        </p>
                                     ) : (
                                         <Select value={vehicleId} onValueChange={setVehicleId}>
                                             <SelectTrigger className="w-full">
@@ -214,7 +223,9 @@ export default function NewDeliveryPage() {
                                     {loadingData ? (
                                         <div className="h-9 rounded-md border border-input bg-muted animate-pulse" />
                                     ) : depots.length === 0 ? (
-                                        <p className="text-sm text-muted-foreground py-2">Aucun dépôt enregistré</p>
+                                        <p className="text-sm text-muted-foreground py-2">
+                                            {loadError ? 'Liste indisponible' : 'Aucun dépôt enregistré'}
+                                        </p>
                                     ) : (
                                         <Select value={depotId} onValueChange={setDepotId}>
                                             <SelectTrigger className="w-full">

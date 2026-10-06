@@ -11,14 +11,11 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Plus, MoreHorizontal, Car, Edit, Trash2, Phone, User, Gauge, MapPin, Truck } from 'lucide-react'
+import { Plus, Car, User, Gauge, Truck } from 'lucide-react'
 import Link from 'next/link'
+import { EmptyState } from '@/components/states'
+import { formatNumber } from '@/lib/format'
+import { VehicleRowActions } from './vehicle-row-actions'
 
 interface Vehicle {
     id: string
@@ -32,7 +29,6 @@ interface Vehicle {
 }
 
 async function getVehicles(companyId: string): Promise<Vehicle[]> {
-    try {
         const vehicles = await sql`
       SELECT
         v.*,
@@ -44,9 +40,6 @@ async function getVehicles(companyId: string): Promise<Vehicle[]> {
       ORDER BY v.name, v.plate_number
     `
         return vehicles as Vehicle[]
-    } catch {
-        return []
-    }
 }
 
 export default async function VehiclesPage() {
@@ -110,7 +103,7 @@ export default async function VehiclesPage() {
                                 </div>
                                 <div>
                                     <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
+                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{formatNumber(stat.value)}</div>
                                     <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
                                 </div>
                             </div>
@@ -128,21 +121,12 @@ export default async function VehiclesPage() {
 
                     <div className="p-2">
                         {vehicles.length === 0 ? (
-                            <div className="text-center py-24 flex flex-col items-center">
-                                <div className="h-24 w-24 rounded-full bg-slate-50 flex items-center justify-center mb-6">
-                                    <Truck className="h-10 w-10 text-slate-300" />
-                                </div>
-                                <h3 className="text-xl font-semibold text-slate-950">Aucun véhicule enregistré</h3>
-                                <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
-                                    Ajoutez vos camions ou tricycles pour commencer à planifier vos tournées.
-                                </p>
-                                <Button className="mt-8 rounded-md h-12 px-8 bg-blue-600 hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20" asChild>
-                                    <Link href="/dashboard/vehicles/new">
-                                        <Plus className="h-5 w-5 mr-2" />
-                                        Ajouter un véhicule
-                                    </Link>
-                                </Button>
-                            </div>
+                            <EmptyState
+                                className="m-2 py-16"
+                                title="Aucun véhicule enregistré"
+                                description="Ajoutez vos camions ou tricycles pour commencer à planifier vos tournées."
+                                action={{ label: 'Ajouter un véhicule', href: '/dashboard/vehicles/new' }}
+                            />
                         ) : (
                             <div className="overflow-x-auto">
                                 <Table>
@@ -195,14 +179,14 @@ export default async function VehiclesPage() {
                                                 <TableCell className="py-6 text-right">
                                                     <div className="flex flex-col items-end">
                                                         <span className="text-base font-semibold text-slate-950 tracking-tight">
-                                                            {v.capacity_cases || '—'}
+                                                            {v.capacity_cases ? formatNumber(v.capacity_cases) : '—'}
                                                         </span>
                                                         <span className="text-[10px] font-semibold uppercase text-slate-400 tracking-tighter">Casiers</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="py-6 text-right">
                                                     <span className="text-base font-semibold text-slate-600 tracking-tight">
-                                                        {v.tours_count}
+                                                        {formatNumber(v.tours_count)}
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="py-6">
@@ -212,40 +196,11 @@ export default async function VehiclesPage() {
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="py-6 pr-8 text-right">
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 transition-all">
-                                                                <MoreHorizontal className="h-5 w-5 text-slate-400 group-hover:text-slate-950" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-60 p-2 rounded-md border-slate-100 shadow-lg">
-                                                            <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-slate-50 focus:bg-slate-50 transition-colors">
-                                                                <Link href={`/dashboard/vehicles/${v.id}/edit`} className="flex items-center gap-3">
-                                                                    <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-                                                                        <Edit className="h-4 w-4" />
-                                                                    </div>
-                                                                    <span className="font-bold text-sm">Modifier Détails</span>
-                                                                </Link>
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-blue-50 focus:bg-blue-50 transition-colors">
-                                                                <Link href={`/dashboard/deliveries/new?vehicle=${v.id}`} className="flex items-center gap-3">
-                                                                    <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
-                                                                        <Plus className="h-4 w-4" />
-                                                                    </div>
-                                                                    <span className="font-bold text-sm">Nouvelle Tournée</span>
-                                                                </Link>
-                                                            </DropdownMenuItem>
-                                                            <div className="h-px bg-slate-100 my-1 mx-2" />
-                                                            <DropdownMenuItem className="rounded-xl cursor-pointer py-3 hover:bg-rose-50 focus:bg-rose-50 text-rose-600 transition-colors">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="h-8 w-8 rounded-lg bg-rose-100 flex items-center justify-center text-rose-600">
-                                                                        <Trash2 className="h-4 w-4" />
-                                                                    </div>
-                                                                    <span className="font-bold text-sm">Retirer du Parc</span>
-                                                                </div>
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
+                                                    <VehicleRowActions
+                                                        vehicleId={v.id}
+                                                        label={v.name || v.plate_number.toUpperCase()}
+                                                        toursCount={Number(v.tours_count) || 0}
+                                                    />
                                                 </TableCell>
                                             </TableRow>
                                         ))}

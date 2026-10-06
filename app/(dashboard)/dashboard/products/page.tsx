@@ -3,7 +3,6 @@ import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -18,7 +17,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, Search, MoreHorizontal, Package, Edit, Trash2, Eye, Check, TrendingUp } from 'lucide-react'
+import { Plus, MoreHorizontal, Package, Edit, Eye, Check, TrendingUp } from 'lucide-react'
+import { formatMoney, formatNumber } from '@/lib/format'
 import Link from 'next/link'
 import { ProductCatalogSetup } from '@/components/dashboard/product-catalog-setup'
 
@@ -36,8 +36,8 @@ interface Product {
   total_stock: number
 }
 
+// Pas de try/catch : une panne SQL doit afficher la page d'erreur, pas un catalogue vide.
 async function getProducts(companyId: string): Promise<Product[]> {
-  try {
     const products = await sql`
       SELECT 
         p.*,
@@ -57,18 +57,6 @@ async function getProducts(companyId: string): Promise<Product[]> {
       ORDER BY p.created_at DESC
     `
     return products as Product[]
-  } catch (error) {
-    console.error('Error fetching products:', error)
-    return []
-  }
-}
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-  }).format(amount)
 }
 
 export default async function ProductsPage() {
@@ -78,21 +66,21 @@ export default async function ProductsPage() {
   const statsData = [
     {
       title: "Total produits",
-      value: products.length,
+      value: formatNumber(products.length),
       description: "Articles référencés",
       icon: Package,
       color: "bg-blue-500/10 text-blue-600",
     },
     {
       title: "Produits actifs",
-      value: products.filter(p => p.is_active).length,
+      value: formatNumber(products.filter(p => p.is_active).length),
       description: "En vente actuellement",
       icon: Check,
       color: "bg-emerald-500/10 text-emerald-600",
     },
     {
       title: "Articles en stock",
-      value: products.reduce((acc, p) => acc + Number(p.total_stock), 0),
+      value: formatNumber(products.reduce((acc, p) => acc + Number(p.total_stock), 0)),
       description: "Quantité cumulée",
       icon: TrendingUp,
       color: "bg-indigo-500/10 text-indigo-600",
@@ -173,12 +161,12 @@ export default async function ProductsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="text-sm font-semibold text-zinc-950">
-                            {formatCurrency(Number(product.selling_price))}
+                            {formatMoney(product.selling_price)}
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
                           <span className={`text-sm font-medium ${Number(product.total_stock) < 10 ? 'text-red-600' : 'text-zinc-950'}`}>
-                            {product.total_stock} {product.base_unit || 'unit'}
+                            {formatNumber(product.total_stock)} {product.base_unit || 'unit'}
                           </span>
                           {Number(product.total_stock) < 10 && (
                             <p className="text-[10px] text-red-500">Stock bas</p>
@@ -192,7 +180,7 @@ export default async function ProductsPage() {
                         <TableCell className="pr-4 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour ${product.name}`}>
                                 <MoreHorizontal className="h-4 w-4 text-zinc-400" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -239,10 +227,10 @@ export default async function ProductsPage() {
                       <span className="text-xs text-zinc-400">{product.category || 'Sans catégorie'}</span>
                       <div className="flex items-center gap-3">
                         <span className={`text-xs font-medium ${Number(product.total_stock) < 10 ? 'text-red-600' : 'text-zinc-600'}`}>
-                          {product.total_stock} {product.base_unit || 'unit'}
+                          {formatNumber(product.total_stock)} {product.base_unit || 'unit'}
                         </span>
                         <span className="text-sm font-bold text-zinc-950">
-                          {formatCurrency(Number(product.selling_price))}
+                          {formatMoney(product.selling_price)}
                         </span>
                       </div>
                     </div>

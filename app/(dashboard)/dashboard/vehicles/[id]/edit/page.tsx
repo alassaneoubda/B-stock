@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -11,8 +11,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { ErrorState, PageSkeleton } from '@/components/states'
 
 const vehicleSchema = z.object({
     name: z.string().optional(),
@@ -21,6 +25,7 @@ const vehicleSchema = z.object({
     capacityCases: z.coerce.number().min(0).optional(),
     driverName: z.string().optional(),
     driverPhone: z.string().optional(),
+    isActive: z.boolean().optional(),
 })
 
 type VehicleForm = z.infer<typeof vehicleSchema>
@@ -38,6 +43,7 @@ export default function EditVehiclePage() {
 
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(true)
+    const [loadError, setLoadError] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
 
     const {
@@ -49,67 +55,68 @@ export default function EditVehiclePage() {
         formState: { errors },
     } = useForm<VehicleForm>({
         resolver: zodResolver(vehicleSchema),
-        defaultValues: { vehicleType: 'truck' },
+        defaultValues: { vehicleType: 'truck', isActive: true },
     })
 
     const selectedVehicleType = watch('vehicleType')
+    const isActive = watch('isActive')
+
+    const fetchVehicle = useCallback(async () => {
+        setIsFetching(true)
+        setLoadError(null)
+        try {
+            const result = await apiFetch<{ data: any }>(`/api/vehicles/${vehicleId}`)
+            const v = result.data
+            reset({
+                name: v.name || '',
+                plateNumber: v.plate_number || '',
+                vehicleType: v.vehicle_type || 'truck',
+                capacityCases: v.capacity_cases ?? undefined,
+                driverName: v.driver_name || '',
+                driverPhone: v.driver_phone || '',
+                isActive: v.is_active !== false,
+            })
+        } catch (e) {
+            setLoadError(errorMessage(e))
+        } finally {
+            setIsFetching(false)
+        }
+    }, [vehicleId, reset])
 
     useEffect(() => {
-        async function fetchVehicle() {
-            try {
-                const res = await fetch(`/api/vehicles/${vehicleId}`)
-                const result = await res.json()
-                if (!res.ok || !result.data) {
-                    setError('Véhicule introuvable')
-                    return
-                }
-                const v = result.data
-                reset({
-                    name: v.name || '',
-                    plateNumber: v.plate_number || '',
-                    vehicleType: v.vehicle_type || 'truck',
-                    capacityCases: v.capacity_cases ?? undefined,
-                    driverName: v.driver_name || '',
-                    driverPhone: v.driver_phone || '',
-                })
-            } catch {
-                setError('Erreur lors du chargement')
-            } finally {
-                setIsFetching(false)
-            }
-        }
         fetchVehicle()
-    }, [vehicleId, reset])
+    }, [fetchVehicle])
 
     async function onSubmit(data: VehicleForm) {
         setIsLoading(true)
         setError(null)
         try {
-            const response = await fetch(`/api/vehicles/${vehicleId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            })
-            const result = await response.json()
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
+            await apiFetch(`/api/vehicles/${vehicleId}`, { method: 'PATCH', body: data })
+            toast.success('Véhicule mis à jour')
             router.push('/dashboard/vehicles')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
     }
 
     if (isFetching) {
+        return <PageSkeleton />
+    }
+
+    if (loadError) {
         return (
             <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Modifier le véhicule" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <DashboardHeader title="Modifier le véhicule" description="Mettre à jour les informations" />
+                <main className="flex-1 p-4 lg:p-6 space-y-4">
+                    <Button variant="ghost" size="sm" asChild>
+                        <Link href="/dashboard/vehicles">
+                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour
+                        </Link>
+                    </Button>
+                    <ErrorState title="Impossible de charger le véhicule" description={loadError} onRetry={fetchVehicle} />
                 </main>
             </div>
         )
@@ -129,7 +136,7 @@ export default function EditVehiclePage() {
 
                 <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                        <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                             {error}
                         </div>
                     )}
@@ -160,7 +167,7 @@ export default function EditVehiclePage() {
                                         value={selectedVehicleType}
                                         disabled={isLoading}
                                     >
-                                        <SelectTrigger>
+                                        <SelectTrigger id="vehicleType">
                                             <SelectValue placeholder="Sélectionner un type" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -173,6 +180,7 @@ export default function EditVehiclePage() {
                                 <div className="space-y-2">
                                     <Label htmlFor="capacityCases">Capacité (casiers)</Label>
                                     <Input id="capacityCases" type="number" min="0" {...register('capacityCases')} disabled={isLoading} />
+                                    {errors.capacityCases && <p className="text-sm text-destructive">Capacité invalide</p>}
                                 </div>
                             </div>
 
@@ -185,6 +193,20 @@ export default function EditVehiclePage() {
                                     <Label htmlFor="driverPhone">Téléphone du chauffeur</Label>
                                     <Input id="driverPhone" {...register('driverPhone')} disabled={isLoading} />
                                 </div>
+                            </div>
+
+                            {/* Permet de remettre en service un véhicule désactivé (retiré du parc après des tournées) */}
+                            <div className="flex items-center justify-between rounded-lg border p-4">
+                                <div>
+                                    <Label htmlFor="isActive">En service</Label>
+                                    <p className="text-xs text-muted-foreground">Un véhicule indisponible ne peut plus être affecté à une tournée</p>
+                                </div>
+                                <Switch
+                                    id="isActive"
+                                    checked={isActive !== false}
+                                    onCheckedChange={(checked) => setValue('isActive', checked)}
+                                    disabled={isLoading}
+                                />
                             </div>
                         </CardContent>
                     </Card>

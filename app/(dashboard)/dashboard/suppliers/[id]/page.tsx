@@ -1,13 +1,28 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Loader2, Pencil, Plus, Phone, Mail, MapPin, Building2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Pencil, Plus, Phone, Mail, MapPin, Building2, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import { ApiError, apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDate, formatMoney } from '@/lib/format'
 
 interface PurchaseOrder {
     id: string
@@ -35,36 +50,72 @@ const typeLabels: Record<string, string> = {
     wholesaler: 'Grossiste',
 }
 
-const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n || 0)
+const orderStatusLabels: Record<string, string> = {
+    pending: 'En attente',
+    confirmed: 'Confirmée',
+    partial: 'Partiellement reçue',
+    received: 'Reçue',
+    cancelled: 'Annulée',
+}
 
 export default function SupplierDetailPage() {
     const params = useParams()
     const supplierId = params.id as string
+    const router = useRouter()
     const [supplier, setSupplier] = useState<Supplier | null>(null)
     const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
+    const [error, setError] = useState<{ message: string; notFound: boolean } | null>(null)
+    const [reloadKey, setReloadKey] = useState(0)
+    const [deleteOpen, setDeleteOpen] = useState(false)
+    const [deleting, setDeleting] = useState(false)
 
     useEffect(() => {
-        fetch(`/api/suppliers/${supplierId}`)
-            .then((r) => r.json())
+        let cancelled = false
+        setLoading(true)
+        setError(null)
+        apiFetch<{ data: Supplier }>(`/api/suppliers/${supplierId}`)
             .then((result) => {
-                if (!result.data) {
-                    setError('Fournisseur introuvable')
-                    return
-                }
-                setSupplier(result.data)
+                if (!cancelled) setSupplier(result.data)
             })
-            .catch(() => setError('Erreur lors du chargement'))
-            .finally(() => setLoading(false))
-    }, [supplierId])
+            .catch((e) => {
+                if (!cancelled) {
+                    setError({ message: errorMessage(e), notFound: e instanceof ApiError && e.status === 404 })
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false)
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [supplierId, reloadKey])
+
+    async function handleDelete() {
+        setDeleting(true)
+        try {
+            const res = await apiFetch<{ message?: string; warnings?: unknown }>(`/api/suppliers/${supplierId}`, {
+                method: 'DELETE',
+            })
+            setDeleteOpen(false)
+            toast.success(res?.message || 'Fournisseur supprimé')
+            toastWarnings(res?.warnings)
+            router.push('/dashboard/suppliers')
+            router.refresh()
+        } catch (e) {
+            // 400/409 : fournisseur lié à des commandes, factures…
+            setDeleteOpen(false)
+            toastError(e, 'Suppression impossible')
+        } finally {
+            setDeleting(false)
+        }
+    }
 
     if (loading) {
         return (
             <div className="flex flex-col min-h-screen">
                 <DashboardHeader title="Fournisseur" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <TableSkeleton rows={5} columns={4} />
                 </main>
             </div>
         )
@@ -73,11 +124,22 @@ export default function SupplierDetailPage() {
     if (error || !supplier) {
         return (
             <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Fournisseur" description="Introuvable" />
+                <DashboardHeader title="Fournisseur" description={error?.notFound ? 'Introuvable' : undefined} />
                 <main className="flex-1 p-4 lg:p-6">
-                    <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                        {error || 'Fournisseur introuvable'}
-                    </div>
+                    {error?.notFound ? (
+                        <EmptyState
+                            icon={Building2}
+                            title="Fournisseur introuvable"
+                            description="Ce fournisseur n'existe pas ou a été supprimé."
+                            action={{ label: 'Retour aux fournisseurs', href: '/dashboard/suppliers' }}
+                        />
+                    ) : (
+                        <ErrorState
+                            title="Impossible de charger le fournisseur"
+                            description={error?.message}
+                            onRetry={() => setReloadKey((k) => k + 1)}
+                        />
+                    )}
                     <div className="mt-4">
                         <Button variant="outline" asChild>
                             <Link href="/dashboard/suppliers">
@@ -101,6 +163,40 @@ export default function SupplierDetailPage() {
                         </Link>
                     </Button>
                     <div className="flex gap-2">
+                        <AlertDialog open={deleteOpen} onOpenChange={(next) => !deleting && setDeleteOpen(next)}>
+                            <AlertDialogTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                    <Trash2 className="h-4 w-4 mr-2" /> Supprimer
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Supprimer « {supplier.name} » ?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Le fournisseur sera supprimé définitivement. La suppression est refusée
+                                        s&apos;il a des commandes d&apos;achat ou s&apos;il est référencé ailleurs
+                                        (factures, produits…).
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        disabled={deleting}
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            handleDelete()
+                                        }}
+                                        className="bg-destructive text-white hover:bg-destructive/90"
+                                    >
+                                        {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                        Supprimer
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                         <Button variant="outline" asChild>
                             <Link href={`/dashboard/suppliers/${supplier.id}/edit`}>
                                 <Pencil className="h-4 w-4 mr-2" /> Modifier
@@ -174,17 +270,20 @@ export default function SupplierDetailPage() {
                                                     </Link>
                                                 </td>
                                                 <td className="p-2 text-muted-foreground">
-                                                    {new Date(o.created_at).toLocaleDateString('fr-FR')}
+                                                    {formatDate(o.created_at)}
                                                 </td>
-                                                <td className="p-2"><Badge variant="outline">{o.status}</Badge></td>
-                                                <td className="p-2 text-right font-medium">{formatCurrency(Number(o.total_amount))}</td>
+                                                <td className="p-2"><Badge variant="outline">{orderStatusLabels[o.status] || o.status}</Badge></td>
+                                                <td className="p-2 text-right font-medium">{formatMoney(o.total_amount)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
                             </div>
                         ) : (
-                            <p className="text-sm text-muted-foreground">Aucune commande pour ce fournisseur.</p>
+                            <EmptyState
+                                title="Aucune commande pour ce fournisseur"
+                                action={{ label: 'Nouvelle commande', href: `/dashboard/procurement/new?supplier=${supplier.id}` }}
+                            />
                         )}
                     </CardContent>
                 </Card>

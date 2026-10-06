@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,11 +15,18 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
+    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
     ArrowLeft, Truck, MapPin, User, Calendar, Clock, CheckCircle2,
-    PlayCircle, Package, Loader2, Navigation, AlertTriangle, PackageOpen,
-    XCircle, RotateCcw,
+    PlayCircle, Package, Loader2, Navigation, PackageOpen,
+    XCircle, RotateCcw, Lock,
 } from 'lucide-react'
 import Link from 'next/link'
+import { ApiError, apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface Stop {
     id: string
@@ -63,6 +71,17 @@ interface TourDetail {
     inventory: InventoryItem[]
 }
 
+type TourStatus = 'planned' | 'loading' | 'in_progress' | 'completed' | 'cancelled'
+
+/** Miroir de la table de transitions de PATCH /api/deliveries/[id]. */
+const TRANSITIONS: Record<TourStatus, TourStatus[]> = {
+    planned: ['loading', 'in_progress', 'cancelled'],
+    loading: ['in_progress', 'planned', 'cancelled'],
+    in_progress: ['completed', 'cancelled'],
+    completed: [],
+    cancelled: [],
+}
+
 const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
     planned: { label: 'Planifiée', color: 'bg-slate-100 text-slate-600', icon: Clock },
     loading: { label: 'Chargement', color: 'bg-amber-100 text-amber-600', icon: PlayCircle },
@@ -78,31 +97,44 @@ const stopStatusConfig: Record<string, { label: string; color: string }> = {
     failed: { label: 'Échoué', color: 'bg-rose-100 text-rose-600' },
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(amount)
+const STOP_SUCCESS: Record<string, string> = {
+    delivered: 'Arrêt marqué livré',
+    partial: 'Arrêt marqué livré partiellement',
+    failed: 'Arrêt marqué en échec',
 }
+
+/** Transitions finales : confirmation obligatoire. */
+type ConfirmTarget = 'completed' | 'cancelled' | null
 
 export default function DeliveryDetailPage() {
     const params = useParams()
-    const router = useRouter()
     const tourId = params.id as string
 
     const [tour, setTour] = useState<TourDetail | null>(null)
     const [loading, setLoading] = useState(true)
-    const [updating, setUpdating] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [updating, setUpdating] = useState<TourStatus | null>(null)
+    const [updatingStop, setUpdatingStop] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null)
+    const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget>(null)
 
-    const fetchTour = useCallback(async () => {
+    const fetchTour = useCallback(async (opts: { silent?: boolean } = {}) => {
+        if (!opts.silent) {
+            setLoading(true)
+            setLoadError(null)
+        }
         try {
-            const res = await fetch(`/api/deliveries/${tourId}`)
-            const data = await res.json()
-            if (res.ok && data.data) {
-                setTour(data.data)
+            const data = await apiFetch<{ data: TourDetail }>(`/api/deliveries/${tourId}`)
+            setTour(data.data)
+            setLoadError(null)
+        } catch (e) {
+            if (opts.silent) {
+                toastError(e, 'Actualisation impossible')
             } else {
-                setError(data.error || 'Erreur de chargement')
+                setLoadError({
+                    notFound: e instanceof ApiError && e.status === 404,
+                    message: e instanceof Error ? e.message : 'Erreur de chargement',
+                })
             }
-        } catch {
-            setError('Erreur réseau')
         } finally {
             setLoading(false)
         }
@@ -110,65 +142,92 @@ export default function DeliveryDetailPage() {
 
     useEffect(() => { fetchTour() }, [fetchTour])
 
-    async function updateTourStatus(newStatus: string) {
-        setUpdating(true)
+    async function updateTourStatus(newStatus: TourStatus, successMessage: string) {
+        if (updating) return
+        setUpdating(newStatus)
         try {
-            const res = await fetch(`/api/deliveries/${tourId}`, {
+            const res = await apiFetch(`/api/deliveries/${tourId}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
+                body: { status: newStatus },
             })
-            if (res.ok) fetchTour()
-        } catch { /* ignore */ }
-        finally { setUpdating(false) }
+            toast.success(successMessage)
+            toastWarnings(res?.warnings)
+            setConfirmTarget(null)
+            await fetchTour({ silent: true })
+        } catch (e) {
+            toastError(e, 'Changement de statut impossible')
+            // La tournée a pu changer entre-temps (409) : on resynchronise l'écran
+            if (e instanceof ApiError && e.status === 409) fetchTour({ silent: true })
+        } finally {
+            setUpdating(null)
+        }
     }
 
     async function updateStopStatus(stopId: string, status: string) {
+        if (updatingStop) return
+        setUpdatingStop(stopId)
         try {
-            await fetch(`/api/deliveries/${tourId}/stops`, {
+            const res = await apiFetch(`/api/deliveries/${tourId}/stops`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ stopId, status }),
+                body: { stopId, status },
             })
-            fetchTour()
-        } catch { /* ignore */ }
+            toast.success(STOP_SUCCESS[status] ?? 'Arrêt mis à jour')
+            toastWarnings(res?.warnings)
+            await fetchTour({ silent: true })
+        } catch (e) {
+            toastError(e, "Mise à jour de l'arrêt impossible")
+            if (e instanceof ApiError && e.status === 409) fetchTour({ silent: true })
+        } finally {
+            setUpdatingStop(null)
+        }
     }
 
     if (loading) {
+        return <PageSkeleton />
+    }
+
+    if (loadError || !tour) {
         return (
             <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Détail Tournée" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <DashboardHeader title={loadError?.notFound ? 'Tournée introuvable' : 'Détail Tournée'} description="" />
+                <main className="flex-1 p-6 space-y-4">
+                    {loadError?.notFound ? (
+                        <EmptyState
+                            icon={Truck}
+                            title="Tournée introuvable"
+                            description="Cette tournée n'existe pas ou a été supprimée."
+                            action={{ label: 'Retour aux tournées', href: '/dashboard/deliveries' }}
+                        />
+                    ) : (
+                        <ErrorState
+                            title="Impossible de charger la tournée"
+                            description={loadError?.message}
+                            onRetry={() => fetchTour()}
+                        />
+                    )}
                 </main>
             </div>
         )
     }
 
-    if (error || !tour) {
-        return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Tournée introuvable" description="" />
-                <main className="flex-1 p-6">
-                    <div className="text-center py-12">
-                        <p className="text-destructive font-bold">{error || 'Tournée introuvable'}</p>
-                        <Button variant="outline" className="mt-4" asChild>
-                            <Link href="/dashboard/deliveries">Retour</Link>
-                        </Button>
-                    </div>
-                </main>
-            </div>
-        )
-    }
+    const currentStatus = tour.status as TourStatus
+    const allowed = TRANSITIONS[currentStatus] ?? []
+    const isClosed = allowed.length === 0
+    const can = (to: TourStatus) => allowed.includes(to)
 
     const statusInfo = statusConfig[tour.status] || statusConfig.planned
     const StatusIcon = statusInfo.icon
     const deliveredStops = tour.stops.filter(s => s.status === 'delivered').length
+    const pendingStops = tour.stops.filter(s => s.status === 'pending').length
     const totalStops = tour.stops.length
     const progress = totalStops > 0 ? Math.round((deliveredStops / totalStops) * 100) : 0
 
     const productInventory = tour.inventory.filter(i => i.inventory_type === 'product')
     const packagingInventory = tour.inventory.filter(i => i.inventory_type === 'packaging')
+
+    const busy = updating !== null
+    const spinnerOr = (status: TourStatus, icon: React.ReactNode) =>
+        updating === status ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : icon
 
     return (
         <div className="flex flex-col min-h-screen bg-zinc-50/50">
@@ -178,7 +237,7 @@ export default function DeliveryDetailPage() {
             />
 
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                {/* Actions bar */}
+                {/* Actions bar : uniquement les transitions acceptées par l'API */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                     <Button variant="ghost" size="sm" asChild className="rounded-xl border border-slate-200">
                         <Link href="/dashboard/deliveries">
@@ -186,42 +245,103 @@ export default function DeliveryDetailPage() {
                         </Link>
                     </Button>
                     <div className="flex gap-3 flex-wrap">
-                        {tour.status === 'planned' && (
+                        {currentStatus === 'planned' && can('loading') && (
                             <Button
-                                onClick={() => updateTourStatus('loading')}
-                                disabled={updating}
+                                onClick={() => updateTourStatus('loading', 'Chargement démarré')}
+                                disabled={busy}
                                 className="rounded-xl bg-amber-600 hover:bg-amber-700 font-bold h-10 px-6"
                             >
-                                <PlayCircle className="h-4 w-4 mr-2" /> Démarrer chargement
+                                {spinnerOr('loading', <PlayCircle className="h-4 w-4 mr-2" />)} Démarrer chargement
                             </Button>
                         )}
-                        {tour.status === 'loading' && (
+                        {can('in_progress') && (
                             <Button
-                                onClick={() => updateTourStatus('in_progress')}
-                                disabled={updating}
+                                onClick={() => updateTourStatus('in_progress', 'Tournée partie en livraison')}
+                                disabled={busy}
                                 className="rounded-xl bg-blue-600 hover:bg-blue-700 font-bold h-10 px-6"
                             >
-                                <Navigation className="h-4 w-4 mr-2" /> Départ livraison
+                                {spinnerOr('in_progress', <Navigation className="h-4 w-4 mr-2" />)} Départ livraison
                             </Button>
                         )}
-                        {tour.status === 'in_progress' && (
+                        {can('completed') && (
                             <Button
-                                onClick={() => updateTourStatus('completed')}
-                                disabled={updating}
+                                onClick={() => setConfirmTarget('completed')}
+                                disabled={busy}
                                 className="rounded-xl bg-emerald-600 hover:bg-emerald-700 font-bold h-10 px-6"
                             >
-                                <CheckCircle2 className="h-4 w-4 mr-2" /> Terminer la tournée
+                                {spinnerOr('completed', <CheckCircle2 className="h-4 w-4 mr-2" />)} Terminer la tournée
                             </Button>
                         )}
-                        {tour.status === 'loading' && (
+                        {(currentStatus === 'planned' || currentStatus === 'loading') && (
                             <Button variant="outline" asChild className="rounded-xl font-bold h-10 px-6">
                                 <Link href={`/dashboard/deliveries/${tour.id}/load`}>
                                     <Package className="h-4 w-4 mr-2" /> Gérer le chargement
                                 </Link>
                             </Button>
                         )}
+                        {currentStatus === 'loading' && can('planned') && (
+                            <Button
+                                variant="outline"
+                                onClick={() => updateTourStatus('planned', 'Tournée remise en planification')}
+                                disabled={busy}
+                                className="rounded-xl font-bold h-10 px-6"
+                            >
+                                {spinnerOr('planned', <RotateCcw className="h-4 w-4 mr-2" />)} Revenir à « Planifiée »
+                            </Button>
+                        )}
+                        {can('cancelled') && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setConfirmTarget('cancelled')}
+                                disabled={busy}
+                                className="rounded-xl font-bold h-10 px-6 text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                            >
+                                {spinnerOr('cancelled', <XCircle className="h-4 w-4 mr-2" />)} Annuler la tournée
+                            </Button>
+                        )}
                     </div>
                 </div>
+
+                {isClosed && (
+                    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+                        <Lock className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
+                        Cette tournée est {currentStatus === 'cancelled' ? 'annulée' : 'terminée'} : les arrêts et l&apos;inventaire ne sont plus modifiables.
+                    </div>
+                )}
+
+                <AlertDialog
+                    open={confirmTarget !== null}
+                    onOpenChange={(open) => { if (!open && !busy) setConfirmTarget(null) }}
+                >
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>
+                                {confirmTarget === 'cancelled' ? 'Annuler cette tournée ?' : 'Terminer cette tournée ?'}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                                {confirmTarget === 'cancelled'
+                                    ? "La tournée passera au statut « Annulée ». C'est définitif : elle ne pourra plus être relancée, et ses arrêts et son inventaire ne seront plus modifiables."
+                                    : `La tournée passera au statut « Terminée ». C'est définitif : ses arrêts et son inventaire ne seront plus modifiables.${pendingStops > 0 ? ` Attention : ${pendingStops} arrêt${pendingStops > 1 ? 's sont' : ' est'} encore en attente.` : ''}`}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel disabled={busy}>Retour</AlertDialogCancel>
+                            <AlertDialogAction
+                                disabled={busy}
+                                className={confirmTarget === 'cancelled' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}
+                                onClick={(e) => {
+                                    // On garde la boîte ouverte jusqu'à la réponse du serveur
+                                    e.preventDefault()
+                                    if (confirmTarget === 'cancelled') updateTourStatus('cancelled', 'Tournée annulée')
+                                    else if (confirmTarget === 'completed') updateTourStatus('completed', 'Tournée terminée')
+                                }}
+                            >
+                                {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                {confirmTarget === 'cancelled' ? 'Annuler la tournée' : 'Terminer la tournée'}
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
 
                 {/* Stats row */}
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -243,7 +363,7 @@ export default function DeliveryDetailPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Arrêts</p>
-                                <p className="text-lg font-semibold text-slate-950">{deliveredStops}/{totalStops}</p>
+                                <p className="text-lg font-semibold text-slate-950">{formatNumber(deliveredStops)}/{formatNumber(totalStops)}</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -255,7 +375,7 @@ export default function DeliveryDetailPage() {
                             <div>
                                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Produits chargés</p>
                                 <p className="text-lg font-semibold text-slate-950">
-                                    {productInventory.reduce((s, i) => s + i.loaded_quantity, 0)}
+                                    {formatNumber(productInventory.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))}
                                 </p>
                             </div>
                         </CardContent>
@@ -268,7 +388,7 @@ export default function DeliveryDetailPage() {
                             <div>
                                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Emb. chargés</p>
                                 <p className="text-lg font-semibold text-slate-950">
-                                    {packagingInventory.reduce((s, i) => s + i.loaded_quantity, 0)}
+                                    {formatNumber(packagingInventory.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))}
                                 </p>
                             </div>
                         </CardContent>
@@ -302,10 +422,12 @@ export default function DeliveryDetailPage() {
                             </CardHeader>
                             <CardContent className="p-0">
                                 {tour.stops.length === 0 ? (
-                                    <div className="text-center py-16">
-                                        <MapPin className="h-10 w-10 mx-auto text-slate-300" />
-                                        <p className="text-sm text-muted-foreground mt-3">Aucun arrêt configuré</p>
-                                    </div>
+                                    <EmptyState
+                                        icon={MapPin}
+                                        title="Aucun arrêt configuré"
+                                        description="Cette tournée ne comporte encore aucun arrêt de livraison."
+                                        className="m-6"
+                                    />
                                 ) : (
                                     <div className="divide-y divide-slate-50">
                                         {tour.stops.map((stop, idx) => {
@@ -330,19 +452,26 @@ export default function DeliveryDetailPage() {
                                                         </div>
                                                         {stop.total_amount != null && (
                                                             <p className="text-xs font-bold text-slate-500 mt-1">
-                                                                {formatCurrency(Number(stop.total_amount))}
+                                                                {formatMoney(Number(stop.total_amount))}
                                                                 {Number(stop.paid_amount) < Number(stop.total_amount) && (
                                                                     <span className="text-rose-500 ml-2">
-                                                                        (reste {formatCurrency(Number(stop.total_amount) - Number(stop.paid_amount || 0))})
+                                                                        (reste {formatMoney(Number(stop.total_amount) - Number(stop.paid_amount || 0))})
                                                                     </span>
                                                                 )}
                                                             </p>
                                                         )}
                                                     </div>
                                                     <div className="flex items-center gap-3 shrink-0">
-                                                        {(tour.status === 'in_progress' || tour.status === 'loading') && stop.status === 'pending' && (
-                                                            <Select onValueChange={(val) => updateStopStatus(stop.id, val)}>
-                                                                <SelectTrigger className="h-8 w-32 rounded-lg text-xs">
+                                                        {updatingStop === stop.id && (
+                                                            <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-label="Mise à jour en cours" />
+                                                        )}
+                                                        {!isClosed && (currentStatus === 'in_progress' || currentStatus === 'loading') && stop.status === 'pending' && (
+                                                            <Select
+                                                                value=""
+                                                                onValueChange={(val) => updateStopStatus(stop.id, val)}
+                                                                disabled={updatingStop !== null || busy}
+                                                            >
+                                                                <SelectTrigger className="h-8 w-32 rounded-lg text-xs" aria-label={`Statut de l'arrêt ${stop.client_name}`}>
                                                                     <SelectValue placeholder="Action..." />
                                                                 </SelectTrigger>
                                                                 <SelectContent>
@@ -396,10 +525,10 @@ export default function DeliveryDetailPage() {
                                                             {item.inventory_type === 'product' ? 'Produit' : 'Emballage'}
                                                         </Badge>
                                                     </TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-blue-600">{item.loaded_quantity}</TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-emerald-600">{item.unloaded_quantity}</TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-amber-600">{item.returned_quantity}</TableCell>
-                                                    <TableCell className="py-4 text-center pr-8 font-semibold text-rose-600">{item.damaged_quantity}</TableCell>
+                                                    <TableCell className="py-4 text-center font-semibold text-blue-600">{formatNumber(item.loaded_quantity)}</TableCell>
+                                                    <TableCell className="py-4 text-center font-semibold text-emerald-600">{formatNumber(item.unloaded_quantity)}</TableCell>
+                                                    <TableCell className="py-4 text-center font-semibold text-amber-600">{formatNumber(item.returned_quantity)}</TableCell>
+                                                    <TableCell className="py-4 text-center pr-8 font-semibold text-rose-600">{formatNumber(item.damaged_quantity)}</TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>
@@ -422,7 +551,7 @@ export default function DeliveryDetailPage() {
                                         <span className="text-[10px] font-semibold uppercase tracking-wider">Date</span>
                                     </div>
                                     <span className="text-sm font-semibold text-slate-950">
-                                        {new Date(tour.tour_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                        {formatDate(tour.tour_date)}
                                     </span>
                                 </div>
                                 <Separator />
@@ -460,7 +589,7 @@ export default function DeliveryDetailPage() {
                                             <span className="text-[10px] font-semibold uppercase tracking-wider">Départ</span>
                                         </div>
                                         <span className="text-xs font-bold text-slate-600">
-                                            {new Date(tour.started_at).toLocaleString('fr-FR')}
+                                            {formatDateTime(tour.started_at)}
                                         </span>
                                     </div>
                                 )}
@@ -471,7 +600,7 @@ export default function DeliveryDetailPage() {
                                             <span className="text-[10px] font-semibold uppercase tracking-wider">Fin</span>
                                         </div>
                                         <span className="text-xs font-bold text-slate-600">
-                                            {new Date(tour.completed_at).toLocaleString('fr-FR')}
+                                            {formatDateTime(tour.completed_at)}
                                         </span>
                                     </div>
                                 )}
