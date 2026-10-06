@@ -4,6 +4,7 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import {
     Table,
     TableBody,
@@ -27,9 +28,15 @@ import {
     TrendingUp,
     Banknote,
     CreditCard,
-    Clock,
+    Search,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
+import { formatDateShort, formatDateTime, formatMoney } from '@/lib/format'
+import { isUuid } from '@/lib/tenant'
+
+const PAGE_SIZE = 50
 
 interface SaleOrder {
     id: string
@@ -44,10 +51,12 @@ interface SaleOrder {
     created_at: string
 }
 
+// Pas de try/catch : une panne de base doit afficher l'écran d'erreur
+// (dashboard/error.tsx) et non des KPI à zéro trompeurs.
 async function getSalesStats(companyId: string) {
-    try {
-        const todayStats = await sql`
-      SELECT 
+    const [todayStats, monthStats, pendingCredit] = await Promise.all([
+        sql`
+      SELECT
         COALESCE(SUM(total_amount), 0) as total,
         COALESCE(SUM(paid_amount), 0) as paid,
         COUNT(*) as count
@@ -55,44 +64,45 @@ async function getSalesStats(companyId: string) {
       WHERE company_id = ${companyId}
         AND DATE(created_at) = CURRENT_DATE
         AND status != 'cancelled'
-    `
-
-        const monthStats = await sql`
-      SELECT 
+    `,
+        sql`
+      SELECT
         COALESCE(SUM(total_amount), 0) as total,
         COUNT(*) as count
       FROM sales_orders
       WHERE company_id = ${companyId}
         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
         AND status != 'cancelled'
-    `
-
-        const pendingCredit = await sql`
-      SELECT COALESCE(SUM(total_amount - paid_amount), 0) as amount
-      FROM sales_orders
+    `,
+        // Encours = reste dû des créances ouvertes (inclut les ventes « mixte »)
+        sql`
+      SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount, 0)), 0) as amount
+      FROM credit_notes
       WHERE company_id = ${companyId}
-        AND payment_method = 'credit'
-        AND status != 'cancelled'
-        AND total_amount > paid_amount
-    `
+        AND status IN ('pending', 'partial', 'overdue')
+    `,
+    ])
 
-        return {
-            todayTotal: Number(todayStats[0]?.total || 0),
-            todayPaid: Number(todayStats[0]?.paid || 0),
-            todayCount: Number(todayStats[0]?.count || 0),
-            monthTotal: Number(monthStats[0]?.total || 0),
-            monthCount: Number(monthStats[0]?.count || 0),
-            pendingCredit: Number(pendingCredit[0]?.amount || 0),
-        }
-    } catch {
-        return { todayTotal: 0, todayPaid: 0, todayCount: 0, monthTotal: 0, monthCount: 0, pendingCredit: 0 }
+    return {
+        todayTotal: Number(todayStats[0]?.total || 0),
+        todayPaid: Number(todayStats[0]?.paid || 0),
+        todayCount: Number(todayStats[0]?.count || 0),
+        monthTotal: Number(monthStats[0]?.total || 0),
+        monthCount: Number(monthStats[0]?.count || 0),
+        pendingCredit: Number(pendingCredit[0]?.amount || 0),
     }
 }
 
-async function getSalesOrders(companyId: string): Promise<SaleOrder[]> {
-    try {
-        const orders = await sql`
-      SELECT 
+async function getSalesOrders(
+    companyId: string,
+    q: string | null,
+    page: number,
+    clientId: string | null
+): Promise<{ orders: SaleOrder[]; hasMore: boolean }> {
+    const search = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null
+    const offset = (page - 1) * PAGE_SIZE
+    const rows = await sql`
+      SELECT
         so.id,
         so.order_number,
         so.total_amount,
@@ -106,21 +116,15 @@ async function getSalesOrders(companyId: string): Promise<SaleOrder[]> {
       FROM sales_orders so
       LEFT JOIN clients c ON so.client_id = c.id
       WHERE so.company_id = ${companyId}
+        AND (${search}::text IS NULL OR so.order_number ILIKE ${search}::text OR c.name ILIKE ${search}::text)
+        AND (${clientId}::uuid IS NULL OR so.client_id = ${clientId}::uuid)
       ORDER BY so.created_at DESC
-      LIMIT 100
+      LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}
     `
-        return orders as SaleOrder[]
-    } catch {
-        return []
+    return {
+        orders: rows.slice(0, PAGE_SIZE) as SaleOrder[],
+        hasMore: rows.length > PAGE_SIZE,
     }
-}
-
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
 }
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -139,46 +143,62 @@ const paymentConfig: Record<string, { label: string }> = {
     mixed: { label: 'Mixte' },
 }
 
-export default async function SalesPage() {
+function pageHref(q: string | null, page: number, clientId: string | null) {
+    const params = new URLSearchParams()
+    if (q) params.set('q', q)
+    if (clientId) params.set('client', clientId)
+    if (page > 1) params.set('page', String(page))
+    const qs = params.toString()
+    return qs ? `/dashboard/sales?${qs}` : '/dashboard/sales'
+}
+
+export default async function SalesPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ q?: string | string[]; page?: string | string[]; client?: string | string[] }>
+}) {
     const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
-    const [stats, orders] = await Promise.all([
+    const sp = await searchParams
+    const rawQ = Array.isArray(sp.q) ? sp.q[0] : sp.q
+    const q = rawQ?.trim().slice(0, 100) || null
+    const rawPage = Number(Array.isArray(sp.page) ? sp.page[0] : sp.page)
+    const page = Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1
+    const rawClient = Array.isArray(sp.client) ? sp.client[0] : sp.client
+    const clientId = isUuid(rawClient) ? rawClient : null
+    const [stats, { orders, hasMore }] = await Promise.all([
         getSalesStats(companyId),
-        getSalesOrders(companyId),
+        getSalesOrders(companyId, q, page, clientId),
     ])
 
     const statCards = [
         {
             title: "Ventes aujourd'hui",
-            value: formatCurrency(stats.todayTotal),
+            value: formatMoney(stats.todayTotal),
             description: `${stats.todayCount} commande${stats.todayCount > 1 ? 's' : ''}`,
             icon: ShoppingCart,
             color: 'bg-blue-500/10 text-blue-600',
-            trend: '+12.5%'
         },
         {
             title: 'Encaissé aujourd\'hui',
-            value: formatCurrency(stats.todayPaid),
+            value: formatMoney(stats.todayPaid),
             description: 'Flux de trésorerie',
             icon: Banknote,
             color: 'bg-emerald-500/10 text-emerald-600',
-            trend: '+8.2%'
         },
         {
             title: 'Performance mensuelle',
-            value: formatCurrency(stats.monthTotal),
+            value: formatMoney(stats.monthTotal),
             description: `${stats.monthCount} commandes`,
             icon: TrendingUp,
             color: 'bg-indigo-500/10 text-indigo-600',
-            trend: '+24%'
         },
         {
             title: 'Encours clients',
-            value: formatCurrency(stats.pendingCredit),
-            description: 'Ventes à crédit',
+            value: formatMoney(stats.pendingCredit),
+            description: 'Créances clients restant dues',
             icon: CreditCard,
             color: 'bg-rose-500/10 text-rose-600',
-            trend: '-5.1%'
         },
     ]
 
@@ -213,14 +233,43 @@ export default async function SalesPage() {
 
                 {/* Orders Table */}
                 <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between">
+                    <div className="px-4 py-3 border-b border-zinc-100 flex flex-wrap items-center justify-between gap-2">
                         <h3 className="text-sm font-semibold text-zinc-950">Historique des ventes</h3>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" asChild>
-                            <Link href="/dashboard/reports">Voir les rapports</Link>
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            {clientId && (
+                                <Button variant="outline" size="sm" className="h-9 text-xs" asChild>
+                                    <Link href={pageHref(q, 1, null)}>Client filtré — tout afficher</Link>
+                                </Button>
+                            )}
+                            <form action="/dashboard/sales" method="get" role="search" className="relative">
+                                {clientId && <input type="hidden" name="client" value={clientId} />}
+                                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
+                                <Input
+                                    type="search"
+                                    name="q"
+                                    defaultValue={q ?? ''}
+                                    placeholder="N° de vente ou client…"
+                                    aria-label="Rechercher une vente par numéro ou client"
+                                    className="h-9 w-56 pl-8 text-sm"
+                                />
+                            </form>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" asChild>
+                                <Link href="/dashboard/reports">Voir les rapports</Link>
+                            </Button>
+                        </div>
                     </div>
 
-                    {orders.length === 0 ? (
+                    {orders.length === 0 && (q || page > 1 || clientId) ? (
+                        <div className="text-center py-16 px-4">
+                            <p className="text-sm font-semibold text-zinc-950">Aucune vente trouvée</p>
+                            <p className="mt-1 text-sm text-zinc-500">
+                                {q ? `Aucun résultat pour « ${q} ».` : clientId ? 'Aucune vente pour ce client.' : 'Cette page est vide.'}
+                            </p>
+                            <Button size="sm" variant="outline" className="mt-4" asChild>
+                                <Link href="/dashboard/sales">Voir toutes les ventes</Link>
+                            </Button>
+                        </div>
+                    ) : orders.length === 0 ? (
                         <div className="text-center py-16 flex flex-col items-center px-4">
                             <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
                                 <ShoppingCart className="h-6 w-6 text-zinc-400" />
@@ -264,7 +313,7 @@ export default async function SalesPage() {
                                                         <div>
                                                             <span className="text-sm font-medium text-zinc-950 font-mono">{order.order_number}</span>
                                                             <p className="text-xs text-zinc-400">
-                                                                {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                                                                {formatDateShort(order.created_at)}
                                                             </p>
                                                         </div>
                                                     </TableCell>
@@ -283,12 +332,12 @@ export default async function SalesPage() {
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <span className="text-sm font-semibold text-zinc-950">
-                                                            {formatCurrency(Number(order.total_amount))}
+                                                            {formatMoney(Number(order.total_amount))}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         {remaining > 0 ? (
-                                                            <span className="text-sm font-medium text-red-600">{formatCurrency(remaining)}</span>
+                                                            <span className="text-sm font-medium text-red-600">{formatMoney(remaining)}</span>
                                                         ) : (
                                                             <span className="text-xs font-medium text-emerald-600">Soldé</span>
                                                         )}
@@ -307,7 +356,7 @@ export default async function SalesPage() {
                                                     <TableCell className="pr-4 text-right">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour la vente ${order.order_number}`}>
                                                                     <MoreHorizontal className="h-4 w-4 text-zinc-400" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
@@ -353,7 +402,7 @@ export default async function SalesPage() {
                                                         {order.client_name || 'Client passager'}
                                                     </p>
                                                     <p className="text-xs text-zinc-400 font-mono">
-                                                        {order.order_number} · {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                        {order.order_number} · {formatDateTime(order.created_at)}
                                                     </p>
                                                 </div>
                                                 <Badge
@@ -373,9 +422,9 @@ export default async function SalesPage() {
                                                     </span>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="text-sm font-bold text-zinc-950">{formatCurrency(Number(order.total_amount))}</p>
+                                                    <p className="text-sm font-bold text-zinc-950">{formatMoney(Number(order.total_amount))}</p>
                                                     {remaining > 0 && (
-                                                        <p className="text-xs font-medium text-red-500">Reste: {formatCurrency(remaining)}</p>
+                                                        <p className="text-xs font-medium text-red-500">Reste: {formatMoney(remaining)}</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -384,6 +433,30 @@ export default async function SalesPage() {
                                 })}
                             </div>
                         </>
+                    )}
+
+                    {(page > 1 || hasMore) && (
+                        <nav className="flex items-center justify-between gap-2 px-4 py-3 border-t border-zinc-100" aria-label="Pagination des ventes">
+                            <span className="text-xs text-zinc-500">Page {page}</span>
+                            <div className="flex items-center gap-2">
+                                {page > 1 ? (
+                                    <Button variant="outline" size="sm" className="h-9" asChild>
+                                        <Link href={pageHref(q, page - 1, clientId)}>
+                                            <ChevronLeft className="h-4 w-4 mr-1" aria-hidden="true" />
+                                            Précédent
+                                        </Link>
+                                    </Button>
+                                ) : null}
+                                {hasMore ? (
+                                    <Button variant="outline" size="sm" className="h-9" asChild>
+                                        <Link href={pageHref(q, page + 1, clientId)}>
+                                            Suivant
+                                            <ChevronRight className="h-4 w-4 ml-1" aria-hidden="true" />
+                                        </Link>
+                                    </Button>
+                                ) : null}
+                            </div>
+                        </nav>
                     )}
                 </div>
             </main>

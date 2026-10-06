@@ -28,6 +28,10 @@ import {
     BoxesIcon,
 } from 'lucide-react'
 import Link from 'next/link'
+import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
+import { formatMoney, formatNumber, formatSignedMoney } from '@/lib/format'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { EmptyState, TableSkeleton } from '@/components/states'
 
 interface Client {
     id: string
@@ -86,8 +90,21 @@ const STEPS: { id: Step; label: string; icon: React.ComponentType<{ className?: 
     { id: 'payment', label: 'Paiement', icon: CreditCard },
 ]
 
-function formatCurrency(n: number) {
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(n)
+/** /api/clients/[id] renvoie `accounts` au lieu des soldes agrégés de la liste. */
+function normalizeClient(raw: any): Client {
+    const balanceOf = (type: string) =>
+        Array.isArray(raw.accounts)
+            ? raw.accounts
+                .filter((a: any) => a.account_type === type)
+                .reduce((sum: number, a: any) => sum + Number(a.balance || 0), 0)
+            : 0
+    return {
+        ...raw,
+        credit_limit: Number(raw.credit_limit || 0),
+        packaging_credit_limit: Number(raw.packaging_credit_limit || 0),
+        product_balance: raw.product_balance !== undefined ? Number(raw.product_balance) : balanceOf('product'),
+        packaging_balance: raw.packaging_balance !== undefined ? Number(raw.packaging_balance) : balanceOf('packaging'),
+    }
 }
 
 export default function NewSalePage() {
@@ -121,23 +138,23 @@ export default function NewSalePage() {
     // Step 4: Payment
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile_money' | 'credit' | 'mixed'>('cash')
     const [paidAmount, setPaidAmount] = useState(0)
+    // Part en espèces d'un paiement mixte (null = tout le montant encaissé)
+    const [cashAmount, setCashAmount] = useState<number | null>(null)
     const [orderSource, setOrderSource] = useState<'in_person' | 'phone' | 'whatsapp' | 'other'>('in_person')
     const [notes, setNotes] = useState('')
 
     useEffect(() => {
         if (preloadClientId) {
-            fetch(`/api/clients/${preloadClientId}`)
-                .then(r => r.json())
+            apiFetch(`/api/clients/${preloadClientId}`)
                 .then(d => {
-                    if (d.data) setSelectedClient(d.data)
+                    if (d?.data) setSelectedClient(normalizeClient(d.data))
                 })
-                .catch(() => { })
+                .catch(e => toastError(e, 'Client introuvable'))
         }
 
         // Charger les dépôts
         setLoadingDepots(true)
-        fetch('/api/depots')
-            .then(r => r.json())
+        apiFetch('/api/depots')
             .then(d => {
                 const list = d.data || d.depots || []
                 setDepots(list)
@@ -145,42 +162,41 @@ export default function NewSalePage() {
                 if (main) setSelectedDepotId(main.id)
                 else if (list.length > 0) setSelectedDepotId(list[0].id)
             })
-            .catch(() => { })
+            .catch(e => toastError(e, 'Impossible de charger les dépôts'))
             .finally(() => setLoadingDepots(false))
     }, [preloadClientId])
 
-    // Rechercher des clients
+    // Rechercher des clients (recherche différée de 300 ms)
+    const debouncedClientSearch = useDebouncedValue(clientSearch.trim(), 300)
     useEffect(() => {
-        if (!clientSearch.trim()) {
+        if (!debouncedClientSearch) {
             setClients([])
             return
         }
-        const timeout = setTimeout(async () => {
-            setLoadingClients(true)
-            try {
-                const r = await fetch(`/api/clients?search=${encodeURIComponent(clientSearch)}`)
-                const d = await r.json()
-                setClients(d.data || d.clients || [])
-            } finally {
-                setLoadingClients(false)
-            }
-        }, 300)
-        return () => clearTimeout(timeout)
-    }, [clientSearch])
+        const controller = new AbortController()
+        setLoadingClients(true)
+        apiFetch(`/api/clients?search=${encodeURIComponent(debouncedClientSearch)}&limit=50`, { signal: controller.signal })
+            .then(d => setClients((d.data || d.clients || []).map(normalizeClient)))
+            .catch(e => toastError(e, 'Recherche de clients impossible'))
+            .finally(() => {
+                if (!controller.signal.aborted) setLoadingClients(false)
+            })
+        return () => controller.abort()
+    }, [debouncedClientSearch])
 
-    // Charger les produits disponibles avec leur stock
+    // Charger les produits avec le stock DU DÉPÔT SÉLECTIONNÉ
+    // (auparavant le stock de tous les dépôts était additionné).
     useEffect(() => {
-        if (step === 'products') {
+        if (step === 'products' && selectedDepotId) {
             setLoadingProducts(true)
-            fetch('/api/stock')
-                .then(r => r.json())
+            apiFetch(`/api/stock?depotId=${encodeURIComponent(selectedDepotId)}`)
                 .then(d => {
                     const stockData = d.data || []
-                    // Consolider les stocks par variant_id
-                    
+                    // Consolider les lots d'un même variant dans ce dépôt
                     const consolidated: Record<string, ProductVariant> = {}
 
                     stockData.forEach((s: any) => {
+                        if (s.depot_id !== selectedDepotId) return
                         if (!consolidated[s.variant_id]) {
                             consolidated[s.variant_id] = {
                                 id: s.variant_id,
@@ -199,16 +215,15 @@ export default function NewSalePage() {
 
                     setVariants(Object.values(consolidated))
                 })
-                .catch(() => { })
+                .catch(e => toastError(e, 'Impossible de charger le stock'))
                 .finally(() => setLoadingProducts(false))
         }
-    }, [step])
+    }, [step, selectedDepotId])
 
     // Charger les emballages
     useEffect(() => {
         if (step === 'packaging') {
-            fetch('/api/packaging')
-                .then(r => r.json())
+            apiFetch('/api/packaging')
                 .then(d => {
                     const types: PackagingType[] = d.data || d.packagingTypes || []
                     setPackagingTypes(types)
@@ -222,7 +237,7 @@ export default function NewSalePage() {
                         })))
                     }
                 })
-                .catch(() => { })
+                .catch(e => toastError(e, 'Impossible de charger les emballages'))
         }
     }, [step])
 
@@ -232,6 +247,15 @@ export default function NewSalePage() {
     const totalPackaging = totalPackagingOut - totalPackagingIn
     const totalAmount = Math.max(0, totalProducts + totalPackaging)
     const remainingToPay = totalAmount - paidAmount
+    const effectiveCashAmount = Math.min(paidAmount, Math.max(0, cashAmount ?? paidAmount))
+
+    // Plafond de crédit (contrôlé aussi côté serveur) : dette produits créée par cette vente
+    const effectivePaidForDebt = paymentMethod === 'credit' ? 0 : paidAmount
+    const newProductDebt = Math.max(0, totalProducts - Math.min(totalProducts, effectivePaidForDebt))
+    const currentProductDebt = selectedClient ? Math.max(0, -Number(selectedClient.product_balance || 0)) : 0
+    const creditLimit = selectedClient ? Number(selectedClient.credit_limit || 0) : 0
+    const exceedsCreditLimit =
+        creditLimit > 0 && newProductDebt > 0 && currentProductDebt + newProductDebt > creditLimit
 
     // Espèces / Mobile Money = paiement intégral : le montant encaissé suit le total.
     // (Auparavant il restait à 0 et une vente « Espèces » créait une dette fictive.)
@@ -264,6 +288,16 @@ export default function NewSalePage() {
         })
     }
 
+    function changeDepot(depotId: string) {
+        if (depotId === selectedDepotId) return
+        setSelectedDepotId(depotId)
+        setVariants([])
+        if (orderItems.length > 0) {
+            setOrderItems([])
+            toast.info('Dépôt modifié : le panier a été vidé (le stock dépend du dépôt).')
+        }
+    }
+
     function removeItem(variantId: string) {
         setOrderItems(prev => prev.filter(i => i.variantId !== variantId))
     }
@@ -284,15 +318,15 @@ export default function NewSalePage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/sales', {
+            const result = await apiFetch('/api/sales', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: {
                     clientId: selectedClient.id,
                     depotId: selectedDepotId,
                     orderSource,
                     paymentMethod,
                     paidAmount: paymentMethod === 'credit' ? 0 : paidAmount,
+                    ...(paymentMethod === 'mixed' ? { cashAmount: effectiveCashAmount } : {}),
                     notes,
                     items: orderItems.map(i => ({
                         productVariantId: i.variantId,
@@ -307,23 +341,16 @@ export default function NewSalePage() {
                             quantityIn: p.quantityIn,
                             unitPrice: p.depositPrice,
                         })),
-                }),
+                },
             })
 
-            const result = await response.json()
-            if (!response.ok) {
-                setError(result.error || 'Erreur lors de la création')
-                return
-            }
-
             toast.success(`Vente ${result.data.order_number} enregistrée`)
-            for (const warning of result.warnings ?? []) {
-                toast.warning(warning, { duration: 10000 })
-            }
+            toastWarnings(result.warnings)
             router.push(`/dashboard/sales/${result.data.id}`)
             router.refresh()
-        } catch {
-            setError('Erreur réseau. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
+            toastError(e, 'Vente non enregistrée')
         } finally {
             setIsLoading(false)
         }
@@ -407,13 +434,18 @@ export default function NewSalePage() {
                                             <div className="flex items-center gap-2 mt-2">
                                                 <span className="text-xs">Produits:</span>
                                                 <span className={`text-xs font-medium ${Number(selectedClient.product_balance) < 0 ? 'text-destructive' : 'text-success'}`}>
-                                                    {formatCurrency(Number(selectedClient.product_balance))}
+                                                    {formatSignedMoney(selectedClient.product_balance)}
                                                 </span>
                                                 <span className="text-xs ml-2">Emballages:</span>
                                                 <span className={`text-xs font-medium ${Number(selectedClient.packaging_balance) < 0 ? 'text-warning-foreground' : 'text-success'}`}>
-                                                    {formatCurrency(Number(selectedClient.packaging_balance))}
+                                                    {formatSignedMoney(selectedClient.packaging_balance)}
                                                 </span>
                                             </div>
+                                            {creditLimit > 0 && (
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    Plafond de crédit : {formatMoney(creditLimit)} — dette actuelle : {formatMoney(currentProductDebt)}
+                                                </p>
+                                            )}
                                         </div>
                                         <Button variant="outline" size="sm" onClick={() => setSelectedClient(null)}>
                                             Changer
@@ -453,9 +485,12 @@ export default function NewSalePage() {
                                         {clientSearch && !loadingClients && clients.length === 0 && (
                                             <p className="text-sm text-muted-foreground text-center py-4">
                                                 Aucun client trouvé.
-                                                <Link href="/dashboard/clients/new" className="text-accent ml-1 hover:underline">
+                                                <Link href="/dashboard/clients/new" target="_blank" rel="noopener" className="text-accent ml-1 hover:underline">
                                                     Créer ce client
                                                 </Link>
+                                                <span className="block text-xs mt-1">
+                                                    (s&apos;ouvre dans un nouvel onglet : votre saisie est conservée ici, revenez ensuite rechercher le client)
+                                                </span>
                                             </p>
                                         )}
                                     </div>
@@ -478,7 +513,7 @@ export default function NewSalePage() {
 
                                 <div className="space-y-2">
                                     <Label>Dépôt de départ</Label>
-                                    <Select value={selectedDepotId} onValueChange={setSelectedDepotId} disabled={loadingDepots}>
+                                    <Select value={selectedDepotId} onValueChange={changeDepot} disabled={loadingDepots}>
                                         <SelectTrigger>
                                             <SelectValue placeholder="Sélectionner un dépôt" />
                                         </SelectTrigger>
@@ -513,9 +548,13 @@ export default function NewSalePage() {
                                     </div>
 
                                     {loadingProducts ? (
-                                        <div className="text-center py-8">
-                                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-                                        </div>
+                                        <TableSkeleton rows={4} columns={2} />
+                                    ) : filteredVariants.length === 0 ? (
+                                        <EmptyState
+                                            icon={Package}
+                                            title={productSearch ? 'Aucun produit ne correspond' : 'Aucun produit en stock dans ce dépôt'}
+                                            description={productSearch ? undefined : 'Approvisionnez ce dépôt ou choisissez-en un autre à l’étape Client.'}
+                                        />
                                     ) : (
                                         <div className="grid gap-2 max-h-64 overflow-y-auto">
                                             {filteredVariants.map(v => {
@@ -526,10 +565,10 @@ export default function NewSalePage() {
                                                         <div>
                                                             <p className="font-medium text-sm">{v.product_name} {v.volume && `(${v.volume})`}</p>
                                                             <p className="text-xs text-muted-foreground">
-                                                                {formatCurrency(v.selling_price)} — Stock: {v.available_stock}
+                                                                {formatMoney(v.selling_price)} — Stock : {formatNumber(v.available_stock)}
                                                             </p>
                                                         </div>
-                                                        <Button size="sm" variant={inOrder ? 'default' : 'outline'} onClick={() => addItem(v)}>
+                                                        <Button size="sm" variant={inOrder ? 'default' : 'outline'} onClick={() => addItem(v)} disabled={v.available_stock <= 0} aria-label={`Ajouter ${v.product_name}`}>
                                                             <Plus className="h-3 w-3" />
                                                         </Button>
                                                     </div>
@@ -550,7 +589,7 @@ export default function NewSalePage() {
                                             <div key={item.variantId} className="flex items-center gap-3">
                                                 <div className="flex-1">
                                                     <p className="text-sm font-medium">{item.productName} {item.volume && `(${item.volume})`}</p>
-                                                    <p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice)} / unité</p>
+                                                    <p className="text-xs text-muted-foreground">{formatMoney(item.unitPrice)} / unité</p>
                                                 </div>
                                                 <Input
                                                     type="number"
@@ -561,9 +600,9 @@ export default function NewSalePage() {
                                                     className="w-20 text-center"
                                                 />
                                                 <p className="text-sm font-medium w-24 text-right">
-                                                    {formatCurrency(item.quantity * item.unitPrice)}
+                                                    {formatMoney(item.quantity * item.unitPrice)}
                                                 </p>
-                                                <Button size="icon" variant="ghost" onClick={() => removeItem(item.variantId)}>
+                                                <Button size="icon" variant="ghost" onClick={() => removeItem(item.variantId)} aria-label={`Retirer ${item.productName}`}>
                                                     <Trash2 className="h-4 w-4 text-destructive" />
                                                 </Button>
                                             </div>
@@ -571,7 +610,7 @@ export default function NewSalePage() {
                                         <Separator />
                                         <div className="flex justify-between font-semibold">
                                             <span>Total produits</span>
-                                            <span>{formatCurrency(totalProducts)}</span>
+                                            <span>{formatMoney(totalProducts)}</span>
                                         </div>
                                     </CardContent>
                                 </Card>
@@ -609,7 +648,7 @@ export default function NewSalePage() {
                                                 }`}>
                                                 <div className="col-span-5">
                                                     <p className="text-sm font-medium">{pkg.name}</p>
-                                                    <p className="text-xs text-muted-foreground">{formatCurrency(pkg.depositPrice)} / casier</p>
+                                                    <p className="text-xs text-muted-foreground">{formatMoney(pkg.depositPrice)} / casier</p>
                                                 </div>
                                                 <Input
                                                     type="number"
@@ -638,17 +677,17 @@ export default function NewSalePage() {
                                                 <Separator />
                                                 <div className="flex justify-between text-sm">
                                                     <span className="text-muted-foreground">Emballages sortis</span>
-                                                    <span>+{formatCurrency(totalPackagingOut)}</span>
+                                                    <span>+{formatMoney(totalPackagingOut)}</span>
                                                 </div>
                                                 {totalPackagingIn > 0 && (
                                                     <div className="flex justify-between text-sm">
                                                         <span className="text-muted-foreground">Emballages retournés</span>
-                                                        <span className="text-success">-{formatCurrency(totalPackagingIn)}</span>
+                                                        <span className="text-success">-{formatMoney(totalPackagingIn)}</span>
                                                     </div>
                                                 )}
                                                 <div className="flex justify-between font-semibold">
                                                     <span>Net emballages</span>
-                                                    <span>{formatCurrency(totalPackaging)}</span>
+                                                    <span>{formatMoney(totalPackaging)}</span>
                                                 </div>
                                             </>
                                         )}
@@ -673,18 +712,18 @@ export default function NewSalePage() {
                                     </div>
                                     <div className="flex justify-between text-sm">
                                         <span className="text-muted-foreground">Produits ({orderItems.length} articles)</span>
-                                        <span>{formatCurrency(totalProducts)}</span>
+                                        <span>{formatMoney(totalProducts)}</span>
                                     </div>
                                     {totalPackaging !== 0 && (
                                         <div className="flex justify-between text-sm">
                                             <span className="text-muted-foreground">Emballages (net)</span>
-                                            <span>{formatCurrency(totalPackaging)}</span>
+                                            <span>{formatMoney(totalPackaging)}</span>
                                         </div>
                                     )}
                                     <Separator />
                                     <div className="flex justify-between font-bold text-lg">
                                         <span>Total à payer</span>
-                                        <span>{formatCurrency(totalAmount)}</span>
+                                        <span>{formatMoney(totalAmount)}</span>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -732,7 +771,40 @@ export default function NewSalePage() {
                                             />
                                             {remainingToPay > 0 && paymentMethod === 'mixed' && (
                                                 <p className="text-sm text-warning-foreground">
-                                                    Reste en crédit : {formatCurrency(remainingToPay)}
+                                                    Reste en crédit : {formatMoney(remainingToPay)}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {paymentMethod === 'mixed' && (
+                                        <div className="space-y-2">
+                                            <Label htmlFor="cashAmount">dont espèces (FCFA)</Label>
+                                            <Input
+                                                id="cashAmount"
+                                                type="number"
+                                                min="0"
+                                                max={paidAmount}
+                                                value={cashAmount ?? paidAmount}
+                                                onChange={e => setCashAmount(Math.max(0, Number(e.target.value)))}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Seule la part en espèces est enregistrée en caisse
+                                                {paidAmount - effectiveCashAmount > 0 && ` — Mobile Money / autre : ${formatMoney(paidAmount - effectiveCashAmount)}`}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {(paymentMethod === 'credit' || paymentMethod === 'mixed') && selectedClient && (
+                                        <div className={`p-3 rounded-lg border text-sm space-y-1 ${exceedsCreditLimit ? 'bg-destructive/10 border-destructive/30 text-destructive' : 'bg-muted/40 border-border'}`}>
+                                            <p>
+                                                Plafond de crédit : {creditLimit > 0 ? formatMoney(creditLimit) : 'aucun plafond défini'}
+                                            </p>
+                                            <p>Dette actuelle : {formatMoney(currentProductDebt)} — nouvelle dette : {formatMoney(newProductDebt)}</p>
+                                            {exceedsCreditLimit && (
+                                                <p className="font-semibold flex items-center gap-1.5">
+                                                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                                                    Plafond dépassé de {formatMoney(currentProductDebt + newProductDebt - creditLimit)} : la vente sera refusée. Encaissez davantage ou augmentez le plafond du client.
                                                 </p>
                                             )}
                                         </div>
@@ -751,11 +823,11 @@ export default function NewSalePage() {
                                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                                     <div className="flex justify-between">
                                                         <span className="text-muted-foreground">Payé produits</span>
-                                                        <span className="font-bold">{formatCurrency(allocProducts)}</span>
+                                                        <span className="font-bold">{formatMoney(allocProducts)}</span>
                                                     </div>
                                                     <div className="flex justify-between">
                                                         <span className="text-muted-foreground">Payé emballages</span>
-                                                        <span className="font-bold">{formatCurrency(allocPackaging)}</span>
+                                                        <span className="font-bold">{formatMoney(allocPackaging)}</span>
                                                     </div>
                                                 </div>
                                                 <Separator />
@@ -764,13 +836,13 @@ export default function NewSalePage() {
                                                     {debtProducts > 0 && (
                                                         <div className="flex justify-between">
                                                             <span className="text-muted-foreground">Dette produits</span>
-                                                            <span className="font-bold text-rose-600">{formatCurrency(debtProducts)}</span>
+                                                            <span className="font-bold text-rose-600">{formatMoney(debtProducts)}</span>
                                                         </div>
                                                     )}
                                                     {debtPackaging > 0 && (
                                                         <div className="flex justify-between">
                                                             <span className="text-muted-foreground">Dette emballages</span>
-                                                            <span className="font-bold text-amber-600">{formatCurrency(debtPackaging)}</span>
+                                                            <span className="font-bold text-amber-600">{formatMoney(debtPackaging)}</span>
                                                         </div>
                                                     )}
                                                 </div>

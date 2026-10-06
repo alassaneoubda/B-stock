@@ -1,4 +1,4 @@
-import NextAuth from 'next-auth'
+import NextAuth, { CredentialsSignin } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import Google from 'next-auth/providers/google'
 import { compare } from 'bcryptjs'
@@ -10,6 +10,17 @@ import { verifyImpersonationToken } from './impersonation'
 import { clientIp, isRateLimited } from './rate-limit'
 import { getSettings } from './settings'
 import type { UserRole } from './types'
+
+/**
+ * Erreurs de connexion typées : NextAuth ne transmet au client que le `code`
+ * (jamais le message). Les codes sont traduits par components/auth/auth-errors.ts.
+ */
+class LoginError extends CredentialsSignin {
+  constructor(code: 'invalid_credentials' | 'rate_limited' | 'suspended' | 'disabled' | 'invalid_token') {
+    super()
+    this.code = code
+  }
+}
 
 /** Durée maximale d'une session d'assistance (impersonation). */
 const IMPERSONATION_MAX_AGE_MS = 60 * 60 * 1000
@@ -214,7 +225,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('Email et mot de passe requis')
+          throw new LoginError('invalid_credentials')
         }
 
         const email = String(credentials.email).trim().toLowerCase()
@@ -226,7 +237,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           (await isRateLimited('login-email', email, { limit: 10, windowSeconds: 900 })) ||
           (await isRateLimited('login-ip', ip, { limit: 50, windowSeconds: 900 }))
         ) {
-          throw new Error('Trop de tentatives. Réessayez dans quelques minutes.')
+          throw new LoginError('rate_limited')
         }
 
         // 1) Platform admin (back office /admin) — decoupled from tenants
@@ -241,7 +252,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         if (admin) {
           const ok = await compare(password, admin.password_hash)
-          if (!ok) throw new Error('Email ou mot de passe incorrect')
+          if (!ok) throw new LoginError('invalid_credentials')
           await sql`UPDATE platform_admins SET last_login_at = NOW() WHERE id = ${admin.id}`
           return {
             id: admin.id,
@@ -264,17 +275,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         // Comptes Google sans mot de passe local : même message générique
         if (!user || !user.is_active || !user.password_hash) {
-          throw new Error('Email ou mot de passe incorrect')
+          throw new LoginError('invalid_credentials')
         }
 
         const isValid = await compare(password, user.password_hash)
         if (!isValid) {
-          throw new Error('Email ou mot de passe incorrect')
+          throw new LoginError('invalid_credentials')
         }
 
         // Vérifié APRÈS le mot de passe : ne révèle rien à un inconnu
         if (user.is_suspended) {
-          throw new Error('Compte entreprise suspendu. Contactez le support.')
+          throw new LoginError('suspended')
         }
 
         await sql`UPDATE users SET last_login_at = NOW() WHERE id = ${user.id}`
@@ -293,7 +304,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!token) return null
 
         const payload = verifyImpersonationToken(token)
-        if (!payload) throw new Error("Jeton d'impersonation invalide ou expiré")
+        if (!payload) throw new LoginError('invalid_token')
 
         // Usage unique : la 2e tentative avec le même jeton échoue
         const used = await sql`
@@ -302,7 +313,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           ON CONFLICT (jti) DO NOTHING
           RETURNING jti
         `
-        if (used.length === 0) throw new Error("Jeton d'impersonation déjà utilisé")
+        if (used.length === 0) throw new LoginError('invalid_token')
 
         const rows = await sql`
           SELECT u.*, c.name as company_name, c.slug as company_slug,
@@ -312,7 +323,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           WHERE u.id = ${payload.uid} AND u.is_active = true
         `
         const u = rows[0] as any
-        if (!u) throw new Error('Utilisateur cible introuvable ou désactivé')
+        if (!u) throw new LoginError('disabled')
 
         return {
           ...toNormalizedUser(u),

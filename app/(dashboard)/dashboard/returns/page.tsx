@@ -7,8 +7,16 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { RotateCcw, Loader2, CheckCircle2, XCircle, Package, Eye } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { RotateCcw, Loader2, CheckCircle2, XCircle } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface ReturnRecord {
   id: string; return_number: string; return_type: string; client_name: string | null
@@ -17,7 +25,7 @@ interface ReturnRecord {
   created_by_name: string | null; created_at: string
 }
 
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA' }
+const fmt = formatMoney
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
   pending: { label: 'En attente', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -31,37 +39,54 @@ export default function ReturnsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [processing, setProcessing] = useState<string | null>(null)
   const [tab, setTab] = useState('all')
+  const [loadError, setLoadError] = useState(false)
+  const [confirm, setConfirm] = useState<{ record: ReturnRecord; action: 'approve' | 'reject' } | null>(null)
 
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const res = await fetch('/api/returns')
-      const json = await res.json()
+      const json = await apiFetch('/api/returns')
       setReturns(json.data || [])
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      setLoadError(true)
+      toastError(e, 'Impossible de charger les retours')
+    }
     finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  async function handleProcess(id: string, action: string) {
+  async function handleProcess(id: string, action: 'approve' | 'reject') {
+    if (processing) return
     setProcessing(id)
     try {
-      await fetch(`/api/returns/${id}/process`, {
+      const res = await apiFetch(`/api/returns/${id}/process`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: { action },
       })
+      toast.success(res?.message || (action === 'approve' ? 'Retour traité' : 'Retour rejeté'))
+      toastWarnings(res?.warnings)
+      setConfirm(null)
       fetchData()
+    } catch (e) {
+      setConfirm(null)
+      toastError(e, action === 'approve' ? 'Traitement impossible' : 'Rejet impossible')
     } finally { setProcessing(null) }
   }
 
   const filtered = tab === 'all' ? returns : returns.filter(r => r.return_type === tab)
 
   if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError && returns.length === 0) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Retours" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
+        <DashboardHeader title="Gestion des Retours" />
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger les retours" onRetry={() => { setIsLoading(true); fetchData() }} />
+        </main>
       </div>
     )
   }
@@ -87,7 +112,13 @@ export default function ReturnsPage() {
         <Card>
           <CardContent className="p-0">
             {filtered.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucun retour enregistré</div>
+              <EmptyState
+                icon={RotateCcw}
+                className="m-4"
+                title="Aucun retour enregistré"
+                description="Enregistrez les produits ou emballages rendus par un client ou renvoyés à un fournisseur."
+                action={{ label: 'Nouveau retour', href: '/dashboard/returns/new' }}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -116,18 +147,18 @@ export default function ReturnsPage() {
                         </TableCell>
                         <TableCell className="text-sm">{r.client_name || r.supplier_name || '-'}</TableCell>
                         <TableCell className="text-sm text-zinc-500">{r.order_number || '-'}</TableCell>
-                        <TableCell className="text-center text-sm">{r.items_count}</TableCell>
+                        <TableCell className="text-center text-sm">{formatNumber(r.items_count)}</TableCell>
                         <TableCell className="text-right text-sm font-medium">{fmt(Number(r.total_amount))}</TableCell>
                         <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-sm text-zinc-500">{new Date(r.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</TableCell>
+                        <TableCell className="text-sm text-zinc-500">{formatDateShort(r.created_at)}</TableCell>
                         <TableCell>
                           {r.status === 'pending' && (
                             <div className="flex gap-1">
-                              <Button size="sm" variant="outline" className="h-7 text-xs text-emerald-600" onClick={() => handleProcess(r.id, 'approve')} disabled={processing === r.id}>
-                                <CheckCircle2 className="h-3 w-3 mr-1" /> Traiter
+                              <Button size="sm" variant="outline" className="h-9 text-xs text-emerald-600" onClick={() => setConfirm({ record: r, action: 'approve' })} disabled={processing !== null}>
+                                {processing === r.id ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />} Traiter
                               </Button>
-                              <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleProcess(r.id, 'reject')} disabled={processing === r.id}>
-                                <XCircle className="h-3 w-3" />
+                              <Button size="sm" variant="ghost" className="h-9 w-9 p-0 text-red-600" onClick={() => setConfirm({ record: r, action: 'reject' })} disabled={processing !== null} aria-label={`Rejeter le retour ${r.return_number}`}>
+                                <XCircle className="h-4 w-4" />
                               </Button>
                             </div>
                           )}
@@ -140,6 +171,32 @@ export default function ReturnsPage() {
             )}
           </CardContent>
         </Card>
+
+        <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o && !processing) setConfirm(null) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirm?.action === 'approve' ? 'Traiter' : 'Rejeter'} le retour {confirm?.record.return_number} ?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirm?.action === 'approve'
+                  ? `Le stock et le compte ${confirm.record.return_type === 'client' ? 'du client' : 'fournisseur'} seront mis à jour (${fmt(Number(confirm.record.total_amount))}). Cette action est définitive.`
+                  : 'Le retour sera rejeté : aucun mouvement de stock ni avoir ne sera créé. Cette action est définitive.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={processing !== null}>Revenir</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); if (confirm) handleProcess(confirm.record.id, confirm.action) }}
+                disabled={processing !== null}
+                className={confirm?.action === 'reject' ? 'bg-destructive text-white hover:bg-destructive/90' : ''}
+              >
+                {processing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {confirm?.action === 'approve' ? 'Oui, traiter' : 'Oui, rejeter'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   )

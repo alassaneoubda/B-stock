@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,11 +10,25 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, Plus, Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { ErrorState, PageSkeleton } from '@/components/states'
 
 interface ReturnItem {
   id: string; item_type: string; product_variant_id?: string; packaging_type_id?: string
   quantity: number; unit_price?: number; reason: string; product_name?: string; packaging_name?: string
 }
+
+/** Une ligne sélectionnable = une variante « Produit — Emballage » (ce que l'API attend). */
+interface VariantOption {
+  id: string
+  label: string
+  price: number
+  cost_price: number
+}
+
+const NO_ORDER = '__none__'
 
 export default function NewReturnPage() {
   const router = useRouter()
@@ -32,58 +46,90 @@ export default function NewReturnPage() {
   const [products, setProducts] = useState<any[]>([])
   const [packagings, setPackagings] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [newItemType, setNewItemType] = useState('product')
   const [newItemId, setNewItemId] = useState('')
   const [newItemQty, setNewItemQty] = useState('')
   const [newItemReason, setNewItemReason] = useState('')
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/clients'),
-      fetch('/api/suppliers'),
-      fetch('/api/sales'),
-      fetch('/api/depots'),
-      fetch('/api/products'),
-      fetch('/api/packaging-types'),
-    ]).then(async ([clientRes, supplierRes, orderRes, depotRes, prodRes, pkgRes]) => {
-      const clientJson = await clientRes.json()
-      const supplierJson = await supplierRes.json()
-      const orderJson = await orderRes.json()
-      const depotJson = await depotRes.json()
-      const prodJson = await prodRes.json()
-      const pkgJson = await pkgRes.json()
-      setClients(Array.isArray(clientJson.data) ? clientJson.data : [])
-      setSuppliers(Array.isArray(supplierJson.data) ? supplierJson.data : [])
-      setOrders(Array.isArray(orderJson.data) ? orderJson.data : [])
-      setDepots(Array.isArray(depotJson.data) ? depotJson.data : Array.isArray(depotJson) ? depotJson : [])
-      setProducts(Array.isArray(prodJson.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : [])
-      setPackagings(Array.isArray(pkgJson.data) ? pkgJson.data : Array.isArray(pkgJson) ? pkgJson : [])
-    })
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setLoadError(false)
+    try {
+      const [clientJson, supplierJson, orderJson, depotJson, prodJson, pkgJson] = await Promise.all([
+        apiFetch('/api/clients?limit=500'),
+        apiFetch('/api/suppliers'),
+        apiFetch('/api/sales?limit=500'),
+        apiFetch('/api/depots'),
+        apiFetch('/api/products?limit=500'),
+        apiFetch('/api/packaging-types'),
+      ])
+      setClients(Array.isArray(clientJson?.data) ? clientJson.data : [])
+      setSuppliers(Array.isArray(supplierJson?.data) ? supplierJson.data : [])
+      setOrders(Array.isArray(orderJson?.data) ? orderJson.data : [])
+      setDepots(Array.isArray(depotJson?.data) ? depotJson.data : Array.isArray(depotJson) ? depotJson : [])
+      setProducts(Array.isArray(prodJson?.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : [])
+      setPackagings(Array.isArray(pkgJson?.data) ? pkgJson.data : Array.isArray(pkgJson) ? pkgJson : [])
+    } catch (e) {
+      setLoadError(true)
+      toastError(e, 'Impossible de charger le formulaire')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  function addItem() {
-    if (!newItemId || !newItemQty) return
-    const item = newItemType === 'product' 
-      ? products.find((p: any) => p.id === newItemId)
-      : packagings.find((p: any) => p.id === newItemId)
-    if (!item) return
-    
-    // Get unit price from item data
-    let unitPrice = 0
-    if (newItemType === 'product' && item.variants && item.variants.length > 0) {
-      unitPrice = item.variants[0].price || 0
-    } else if (newItemType === 'packaging') {
-      unitPrice = item.deposit_price || 0
+  useEffect(() => { loadData() }, [loadData])
+
+  // Produits aplatis en variantes : « Produit — Emballage »
+  const variantOptions = useMemo<VariantOption[]>(
+    () =>
+      products.flatMap((p: any) =>
+        (Array.isArray(p.variants) ? p.variants : []).map((v: any) => ({
+          id: v.id,
+          label: v.packaging_name ? `${p.name} — ${v.packaging_name}` : p.name,
+          price: Number(v.price || 0),
+          cost_price: Number(v.cost_price ?? v.price ?? 0),
+        }))
+      ),
+    [products]
+  )
+
+  // Ventes proposées : non annulées, du client choisi le cas échéant
+  const orderOptions = useMemo(
+    () => orders.filter((o: any) => o.status !== 'cancelled' && (!clientId || o.client_id === clientId)),
+    [orders, clientId]
+  )
+
+  function indicativePrice(type: string, id: string): number {
+    if (type === 'product') {
+      const v = variantOptions.find((o) => o.id === id)
+      return v ? (returnType === 'supplier' ? v.cost_price : v.price) : 0
     }
-    
+    const pkg = packagings.find((p: any) => p.id === id)
+    return Number(pkg?.deposit_price || 0)
+  }
+
+  function addItem() {
+    const qty = Number(newItemQty)
+    if (!newItemId || !Number.isInteger(qty) || qty <= 0) {
+      toast.error('Quantité invalide', { description: 'Saisissez un nombre entier supérieur à 0.' })
+      return
+    }
+    const label =
+      newItemType === 'product'
+        ? variantOptions.find((v) => v.id === newItemId)?.label
+        : packagings.find((p: any) => p.id === newItemId)?.name
+    if (!label) return
+
     setItems([...items, {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random()}`,
       item_type: newItemType,
       [newItemType === 'product' ? 'product_variant_id' : 'packaging_type_id']: newItemId,
-      quantity: Number(newItemQty),
-      unit_price: unitPrice,
+      quantity: qty,
+      unit_price: indicativePrice(newItemType, newItemId),
       reason: newItemReason,
-      [newItemType === 'product' ? 'product_name' : 'packaging_name']: item.name,
+      [newItemType === 'product' ? 'product_name' : 'packaging_name']: label,
     }])
     setNewItemId(''); setNewItemQty(''); setNewItemReason('')
   }
@@ -92,26 +138,50 @@ export default function NewReturnPage() {
     setItems(items.filter(i => i.id !== id))
   }
 
+  const estimatedTotal = items.reduce((s, i) => s + (i.unit_price || 0) * i.quantity, 0)
+
   async function handleSubmit() {
-    if (!depotId || items.length === 0) return
+    if (!depotId || items.length === 0 || submitting) return
+    if (returnType === 'client' && !clientId && !orderId) {
+      toast.error('Client requis', { description: 'Choisissez le client (ou la vente d’origine).' })
+      return
+    }
+    if (returnType === 'supplier' && !supplierId) {
+      toast.error('Fournisseur requis')
+      return
+    }
     const payload = {
       return_type: returnType,
       depot_id: depotId,
       reason,
-      items: items.map(({ id, ...item }) => item),
-      ...(returnType === 'client' && { client_id: clientId }),
+      // Le prix n'est pas envoyé : le serveur applique le prix de la vente d'origine / du catalogue
+      items: items.map(({ id, unit_price, product_name, packaging_name, ...item }) => item),
+      ...(returnType === 'client' && clientId && { client_id: clientId }),
       ...(returnType === 'supplier' && { supplier_id: supplierId }),
-      ...(orderId && { order_id: orderId }),
+      ...(returnType === 'client' && orderId && { sales_order_id: orderId }),
     }
     setSubmitting(true)
     try {
-      await fetch('/api/returns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const res = await apiFetch('/api/returns', { method: 'POST', body: payload })
+      toast.success(res?.data?.return_number ? `Retour ${res.data.return_number} enregistré` : 'Retour enregistré')
+      toastWarnings(res?.warnings)
       router.push('/dashboard/returns')
+    } catch (e) {
+      toastError(e, 'Retour non enregistré')
     } finally { setSubmitting(false) }
+  }
+
+  if (loading) return <PageSkeleton />
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <DashboardHeader title="Nouveau Retour" />
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger le formulaire" onRetry={loadData} />
+        </main>
+      </div>
+    )
   }
 
   return (
@@ -128,7 +198,7 @@ export default function NewReturnPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label>Type de retour</Label>
-                <Select value={returnType} onValueChange={setReturnType}>
+                <Select value={returnType} onValueChange={(v) => { setReturnType(v); setOrderId('') }}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="client">Retour client</SelectItem>
@@ -148,7 +218,14 @@ export default function NewReturnPage() {
               {returnType === 'client' && (
                 <div>
                   <Label>Client</Label>
-                  <Select value={clientId} onValueChange={setClientId}>
+                  <Select
+                    value={clientId}
+                    onValueChange={(v) => {
+                      setClientId(v)
+                      // La vente choisie doit appartenir au client
+                      if (orderId && !orders.some((o: any) => o.id === orderId && o.client_id === v)) setOrderId('')
+                    }}
+                  >
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
                     <SelectContent>
                       {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
@@ -167,15 +244,25 @@ export default function NewReturnPage() {
                   </Select>
                 </div>
               )}
-              <div>
-                <Label>Commande (optionnel)</Label>
-                <Select value={orderId} onValueChange={setOrderId}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
-                  <SelectContent>
-                    {orders.map(o => <SelectItem key={o.id} value={o.id}>{o.order_number}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              {returnType === 'client' && (
+                <div>
+                  <Label>Vente d&apos;origine (optionnel)</Label>
+                  <Select value={orderId || NO_ORDER} onValueChange={(v) => setOrderId(v === NO_ORDER ? '' : v)}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_ORDER}>Aucune</SelectItem>
+                      {orderOptions.map(o => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.order_number}{o.client_name ? ` — ${o.client_name}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Avec une vente d&apos;origine, le prix de cette vente est appliqué et la quantité est limitée à ce qui a été vendu.
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <Label>Raison générale</Label>
@@ -190,7 +277,7 @@ export default function NewReturnPage() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <div>
                 <Label>Type</Label>
-                <Select value={newItemType} onValueChange={setNewItemType}>
+                <Select value={newItemType} onValueChange={(v) => { setNewItemType(v); setNewItemId('') }}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="product">Produit</SelectItem>
@@ -203,15 +290,20 @@ export default function NewReturnPage() {
                 <Select value={newItemId} onValueChange={setNewItemId}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
                   <SelectContent>
-                    {(newItemType === 'product' ? products : packagings).map(item => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                    ))}
+                    {newItemType === 'product'
+                      ? variantOptions.map(v => <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>)
+                      : packagings.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {newItemId && (
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Prix indicatif : {formatMoney(indicativePrice(newItemType, newItemId))}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Quantité</Label>
-                <Input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="mt-1" />
+                <Input type="number" min={1} step={1} value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="mt-1" />
               </div>
               <div>
                 <Label>Raison</Label>
@@ -230,13 +322,25 @@ export default function NewReturnPage() {
                   <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
                       <div className="font-medium">{item.product_name || item.packaging_name}</div>
-                      <div className="text-sm text-zinc-500">Qté: {item.quantity} • {item.reason}</div>
+                      <div className="text-sm text-zinc-500">
+                        Qté : {formatNumber(item.quantity)} • Prix indicatif : {formatMoney(item.unit_price)}
+                        {item.reason ? ` • ${item.reason}` : ''}
+                      </div>
                     </div>
-                    <Button size="sm" variant="ghost" onClick={() => removeItem(item.id)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeItem(item.id)}
+                      aria-label={`Retirer ${item.product_name || item.packaging_name}`}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 ))}
+                <div className="flex justify-between text-sm pt-2">
+                  <span className="text-zinc-500">Total estimé (le montant final est calculé par le serveur)</span>
+                  <span className="font-semibold">{formatMoney(estimatedTotal)}</span>
+                </div>
               </div>
             )}
           </CardContent>

@@ -1,13 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Loader2, Phone, Mail, MapPin, Users, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, MapPin, Users, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
+import { apiFetch, ApiError } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { ErrorState, PageSkeleton } from '@/components/states'
 
 interface Agent {
     id: string
@@ -36,8 +39,7 @@ interface AgentDetail {
     performance: PerfRow[]
 }
 
-const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n || 0)
+const formatCurrency = formatMoney
 
 export default function AgentDetailPage() {
     const params = useParams()
@@ -45,39 +47,48 @@ export default function AgentDetailPage() {
     const [data, setData] = useState<AgentDetail | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [notFound, setNotFound] = useState(false)
 
-    useEffect(() => {
-        fetch(`/api/agents/${agentId}`)
-            .then((r) => r.json())
-            .then((result) => {
-                if (!result.data) {
-                    setError('Commercial introuvable')
-                    return
-                }
-                setData(result.data)
-            })
-            .catch(() => setError('Erreur lors du chargement'))
-            .finally(() => setLoading(false))
+    const load = useCallback(async () => {
+        setLoading(true)
+        setError(null)
+        setNotFound(false)
+        try {
+            const result = await apiFetch(`/api/agents/${agentId}`)
+            if (!result?.data) setNotFound(true)
+            else setData(result.data)
+        } catch (e) {
+            if (e instanceof ApiError && e.status === 404) setNotFound(true)
+            else setError(e instanceof Error ? e.message : 'Erreur lors du chargement')
+        } finally {
+            setLoading(false)
+        }
     }, [agentId])
 
+    useEffect(() => { load() }, [load])
+
     if (loading) {
+        return <PageSkeleton />
+    }
+
+    if (error) {
         return (
             <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Commercial" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <DashboardHeader title="Commercial" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <ErrorState title="Impossible de charger le commercial" description={error} onRetry={load} />
                 </main>
             </div>
         )
     }
 
-    if (error || !data) {
+    if (notFound || !data) {
         return (
             <div className="flex flex-col min-h-screen">
                 <DashboardHeader title="Commercial" description="Introuvable" />
                 <main className="flex-1 p-4 lg:p-6">
                     <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                        {error || 'Commercial introuvable'}
+                        Commercial introuvable
                     </div>
                     <div className="mt-4">
                         <Button variant="outline" asChild>
@@ -111,7 +122,7 @@ export default function AgentDetailPage() {
                                 {agent.is_active ? 'Actif' : 'Inactif'}
                             </Badge>
                             {agent.commission_rate != null && (
-                                <Badge variant="outline">Commission {agent.commission_rate}%</Badge>
+                                <Badge variant="outline">Commission {formatNumber(agent.commission_rate)} %</Badge>
                             )}
                         </CardTitle>
                     </CardHeader>
@@ -146,7 +157,7 @@ export default function AgentDetailPage() {
                                             {performance.map((p, i) => (
                                                 <tr key={i}>
                                                     <td className="p-2">{p.month}</td>
-                                                    <td className="p-2 text-center">{p.orders_count}</td>
+                                                    <td className="p-2 text-center">{formatNumber(p.orders_count)}</td>
                                                     <td className="p-2 text-right font-medium">{formatCurrency(Number(p.total_sales))}</td>
                                                 </tr>
                                             ))}

@@ -57,7 +57,8 @@ export async function apiFetch<T = any>(url: string, init: ApiInit = {}): Promis
   if (!res.ok) {
     // Session révoquée ou expirée : retour à la connexion (qui purge le cookie)
     if (res.status === 401 && typeof window !== 'undefined') {
-      window.location.assign('/login?error=SessionExpired')
+      const isAdmin = window.location.pathname.startsWith('/admin')
+      window.location.assign(isAdmin ? '/admin/login' : '/login?error=SessionExpired')
     }
     throw new ApiError(
       payload?.error || defaultMessage(res.status),

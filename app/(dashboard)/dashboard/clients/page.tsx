@@ -24,17 +24,16 @@ import {
   MoreHorizontal,
   Users,
   Edit,
-  Trash2,
   Eye,
   Phone,
   MapPin,
   CreditCard,
   Check,
-  Building2,
-  Clock,
   Package
 } from 'lucide-react'
 import Link from 'next/link'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { BalanceText } from './balance-text'
 
 interface Client {
   id: string
@@ -52,57 +51,72 @@ interface Client {
   packaging_balance: number
 }
 
-async function getClients(companyId: string): Promise<Client[]> {
-  try {
-    const clients = await sql`
-      SELECT 
+// Pas de try/catch : une panne de base affiche l'écran d'erreur (dashboard/error.tsx)
+// au lieu d'une liste vide trompeuse.
+async function getClients(companyId: string, q: string | null): Promise<Client[]> {
+  const pattern = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null
+  const clients = await sql`
+      SELECT
         c.*,
         COALESCE(
-          (SELECT balance FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'product'),
+          (SELECT SUM(balance) FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'product'),
           0
         ) as product_balance,
         COALESCE(
-          (SELECT balance FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'packaging'),
+          (SELECT SUM(balance) FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'packaging'),
           0
         ) as packaging_balance
       FROM clients c
       WHERE c.company_id = ${companyId}
+        AND (
+          ${pattern}::text IS NULL
+          OR c.name ILIKE ${pattern}::text
+          OR c.phone ILIKE ${pattern}::text
+          OR c.zone ILIKE ${pattern}::text
+          OR c.contact_name ILIKE ${pattern}::text
+        )
       ORDER BY c.name
     `
-    return clients as Client[]
-  } catch (error) {
-    console.error('Error fetching clients:', error)
-    return []
-  }
+  return clients as Client[]
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-  }).format(amount)
+const formatCurrency = formatMoney
+
+const typeLabels: Record<string, string> = {
+  retail: 'Détaillant',
+  wholesale: 'Grossiste',
+  restaurant: 'Restaurant/Maquis',
+  bar: 'Bar',
+  subdepot: 'Sous-dépôt',
 }
 
-export default async function ClientsPage() {
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string | string[] }>
+}) {
   const session = await requirePageSession()
-  const clients = await getClients(session?.user?.companyId || '')
+  const sp = await searchParams
+  const rawQ = Array.isArray(sp.q) ? sp.q[0] : sp.q
+  const q = rawQ?.trim().slice(0, 100) || null
+  const clients = await getClients(session?.user?.companyId || '', q)
 
   const activeClients = clients.filter(c => c.is_active)
-  const totalDebt = clients.reduce((acc, c) => acc + Math.max(0, Number(c.product_balance)), 0)
-  const totalPackagingDebt = clients.reduce((acc, c) => acc + Math.max(0, Number(c.packaging_balance)), 0)
+  // Solde négatif = le client doit (même convention que les ventes et encaissements)
+  const totalDebt = clients.reduce((acc, c) => acc + Math.max(0, -Number(c.product_balance)), 0)
+  const totalPackagingDebt = clients.reduce((acc, c) => acc + Math.max(0, -Number(c.packaging_balance)), 0)
 
   const statsData = [
     {
       title: "Total Clients",
-      value: clients.length,
-      description: "Base de données clients",
+      value: formatNumber(clients.length),
+      description: q ? `Résultats pour « ${q} »` : "Base de données clients",
       icon: Users,
       color: "bg-blue-500/10 text-blue-600",
     },
     {
       title: "Clients Actifs",
-      value: activeClients.length,
+      value: formatNumber(activeClients.length),
       description: "Partenaires réguliers",
       icon: Check,
       color: "bg-emerald-500/10 text-emerald-600",
@@ -154,11 +168,30 @@ export default async function ClientsPage() {
 
         {/* Clients Table */}
         <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
-          <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between gap-4">
+          <div className="px-4 py-3 border-b border-zinc-100 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-zinc-950">Répertoire clients</h3>
+            <form action="/dashboard/clients" method="get" role="search" className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
+              <Input
+                type="search"
+                name="q"
+                defaultValue={q ?? ''}
+                placeholder="Nom, téléphone, zone…"
+                aria-label="Rechercher un client"
+                className="h-9 w-56 pl-8 text-sm"
+              />
+            </form>
           </div>
 
-          {clients.length === 0 ? (
+          {clients.length === 0 && q ? (
+            <div className="text-center py-16 px-4">
+              <p className="text-sm font-semibold text-zinc-950">Aucun client trouvé</p>
+              <p className="mt-1 text-sm text-zinc-500">Aucun résultat pour « {q} ».</p>
+              <Button size="sm" variant="outline" className="mt-4" asChild>
+                <Link href="/dashboard/clients">Voir tous les clients</Link>
+              </Button>
+            </div>
+          ) : clients.length === 0 ? (
             <div className="text-center py-16 flex flex-col items-center px-4">
               <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
                 <Users className="h-6 w-6 text-zinc-400" />
@@ -184,8 +217,8 @@ export default async function ClientsPage() {
                       <TableHead className="text-xs font-medium text-zinc-500 pl-4">Client</TableHead>
                       <TableHead className="text-xs font-medium text-zinc-500">Contact</TableHead>
                       <TableHead className="text-xs font-medium text-zinc-500">Type / Zone</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Dette produits</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Dette emballages</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Solde produits</TableHead>
+                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Solde emballages</TableHead>
                       <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
                       <TableHead className="pr-4"></TableHead>
                     </TableRow>
@@ -220,20 +253,16 @@ export default async function ClientsPage() {
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded w-fit">
-                              {client.client_type}
+                              {typeLabels[client.client_type] || client.client_type}
                             </span>
                             <span className="text-xs text-zinc-400">{client.zone || '—'}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className={`text-sm font-medium ${Number(client.product_balance) > 0 ? 'text-red-600' : 'text-zinc-950'}`}>
-                            {formatCurrency(Number(client.product_balance))}
-                          </span>
+                          <BalanceText value={client.product_balance} className="text-sm font-medium" />
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className={`text-sm font-medium ${Number(client.packaging_balance) > 0 ? 'text-amber-600' : 'text-zinc-950'}`}>
-                            {formatCurrency(Number(client.packaging_balance))}
-                          </span>
+                          <BalanceText value={client.packaging_balance} className="text-sm font-medium" debtClassName="text-amber-600" />
                         </TableCell>
                         <TableCell>
                           <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
@@ -243,7 +272,7 @@ export default async function ClientsPage() {
                         <TableCell className="pr-4 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour ${client.name}`}>
                                 <MoreHorizontal className="h-4 w-4 text-zinc-400" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -294,7 +323,7 @@ export default async function ClientsPage() {
                       </div>
                       <div className="flex items-center gap-2 ml-2 shrink-0">
                         <span className="text-[10px] font-medium text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">
-                          {client.client_type}
+                          {typeLabels[client.client_type] || client.client_type}
                         </span>
                         <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
                           {client.is_active ? 'Actif' : 'Bloqué'}
@@ -304,14 +333,12 @@ export default async function ClientsPage() {
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-zinc-400">{client.zone || 'Sans zone'}</span>
                       <div className="flex items-center gap-3">
-                        {Number(client.product_balance) > 0 && (
-                          <span className="text-red-600 font-medium">
-                            {formatCurrency(Number(client.product_balance))}
-                          </span>
+                        {Number(client.product_balance) !== 0 && (
+                          <BalanceText value={client.product_balance} className="font-medium" />
                         )}
-                        {Number(client.packaging_balance) > 0 && (
-                          <span className="text-amber-600 font-medium">
-                            Emb: {formatCurrency(Number(client.packaging_balance))}
+                        {Number(client.packaging_balance) !== 0 && (
+                          <span className="font-medium">
+                            Emb. : <BalanceText value={client.packaging_balance} debtClassName="text-amber-600" />
                           </span>
                         )}
                       </div>

@@ -15,6 +15,9 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, ApiError, errorMessage } from '@/lib/api-client'
+import { ErrorState, PageSkeleton } from '@/components/states'
 
 const clientSchema = z.object({
     name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
@@ -57,6 +60,10 @@ export default function EditClientPage() {
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    // Erreur de chargement : on n'affiche PAS le formulaire (sinon un enregistrement
+    // écraserait la fiche avec les valeurs par défaut).
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [reloadKey, setReloadKey] = useState(0)
 
     const {
         register,
@@ -81,11 +88,12 @@ export default function EditClientPage() {
 
     useEffect(() => {
         async function fetchClient() {
+            setIsFetching(true)
+            setLoadError(null)
             try {
-                const res = await fetch(`/api/clients/${clientId}`)
-                const result = await res.json()
-                if (!res.ok || !result.data) {
-                    setError('Client introuvable')
+                const result = await apiFetch(`/api/clients/${clientId}`)
+                if (!result?.data) {
+                    setLoadError('Client introuvable')
                     return
                 }
                 const c = result.data
@@ -103,48 +111,52 @@ export default function EditClientPage() {
                     notes: c.notes || '',
                     isActive: c.is_active !== false,
                 })
-            } catch {
-                setError('Erreur lors du chargement du client')
+            } catch (e) {
+                setLoadError(e instanceof ApiError && e.status === 404 ? 'Client introuvable' : errorMessage(e))
             } finally {
                 setIsFetching(false)
             }
         }
         fetchClient()
-    }, [clientId, reset])
+    }, [clientId, reset, reloadKey])
 
     async function onSubmit(data: ClientForm) {
+        if (isLoading) return
         setIsLoading(true)
         setError(null)
 
         try {
-            const response = await fetch(`/api/clients/${clientId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            await apiFetch(`/api/clients/${clientId}`, { method: 'PATCH', body: data })
+            toast.success('Client mis à jour')
             router.push(`/dashboard/clients/${clientId}`)
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
     }
 
     if (isFetching) {
+        return <PageSkeleton />
+    }
+
+    if (loadError) {
         return (
             <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Modifier le client" description="Chargement..." />
-                <main className="flex-1 p-4 lg:p-6 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <DashboardHeader title="Modifier le client" />
+                <main className="flex-1 p-4 lg:p-6 space-y-4">
+                    <ErrorState
+                        title="Impossible de charger le client"
+                        description={loadError}
+                        onRetry={loadError === 'Client introuvable' ? undefined : () => setReloadKey((k) => k + 1)}
+                    />
+                    <Button variant="ghost" size="sm" asChild>
+                        <Link href="/dashboard/clients">
+                            <ArrowLeft className="h-4 w-4 mr-2" />
+                            Retour aux clients
+                        </Link>
+                    </Button>
                 </main>
             </div>
         )
@@ -169,7 +181,7 @@ export default function EditClientPage() {
 
                 <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                        <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
                             {error}
                         </div>
                     )}

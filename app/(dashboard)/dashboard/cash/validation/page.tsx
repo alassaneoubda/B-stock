@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { Shield, CheckCircle2, XCircle, AlertTriangle, Eye, Loader2 } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Shield, CheckCircle2, XCircle, Eye, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { apiFetch, toastError } from '@/lib/api-client'
+import { formatDateTime, formatMoney } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface CashMovement {
   id: string; movement_type: string; category: string; amount: number
@@ -17,7 +25,7 @@ interface CashMovement {
   validated_by_name: string | null; validated_at: string | null; validation_notes: string | null
 }
 
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA' }
+const fmt = formatMoney
 
 const categoryLabels: Record<string, string> = {
   sale: 'Vente', credit_payment: 'Encaissement crédit', expense: 'Dépense',
@@ -31,39 +39,61 @@ export default function CashValidationPage() {
   const [selectedMovement, setSelectedMovement] = useState<CashMovement | null>(null)
   const [validationNotes, setValidationNotes] = useState('')
   const [showValidationDialog, setShowValidationDialog] = useState(false)
+  const [confirmReject, setConfirmReject] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/cash/movements?requires_validation=true')
-      .then(res => res.json())
-      .then(json => setMovements(json.data || []))
-      .catch(console.error)
-      .finally(() => setIsLoading(false))
+  const fetchMovements = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(false)
+    try {
+      const json = await apiFetch('/api/cash/movements?requires_validation=true')
+      setMovements(json.data || [])
+    } catch (e) {
+      setLoadError(true)
+      toastError(e, 'Impossible de charger les mouvements')
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
 
+  useEffect(() => { fetchMovements() }, [fetchMovements])
+
   async function handleValidate(movement: CashMovement, approved: boolean) {
+    if (validating) return
     setValidating(movement.id)
     try {
-      await fetch(`/api/cash/movements/${movement.id}/validate`, {
+      await apiFetch(`/api/cash/movements/${movement.id}/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           approved,
           notes: validationNotes || undefined,
-        }),
+        },
       })
-      setMovements(movements.filter(m => m.id !== movement.id))
+      // Retiré de la liste uniquement si le serveur a accepté
+      setMovements(prev => prev.filter(m => m.id !== movement.id))
       setShowValidationDialog(false)
+      setConfirmReject(false)
       setValidationNotes('')
+      toast.success(approved ? 'Mouvement approuvé' : 'Mouvement rejeté')
+    } catch (e) {
+      setConfirmReject(false)
+      toastError(e, approved ? 'Approbation impossible' : 'Rejet impossible')
     } finally {
       setValidating(null)
     }
   }
 
   if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Validation Caisse" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
+        <DashboardHeader title="Validation des Mouvements de Caisse" />
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger les mouvements" onRetry={fetchMovements} />
+        </main>
       </div>
     )
   }
@@ -82,10 +112,12 @@ export default function CashValidationPage() {
           </CardHeader>
           <CardContent className="p-0">
             {movements.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">
-                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
-                Aucun mouvement en attente de validation
-              </div>
+              <EmptyState
+                icon={CheckCircle2}
+                className="m-4"
+                title="Aucun mouvement en attente de validation"
+                description="Les mouvements manuels de caisse à valider apparaîtront ici."
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -104,12 +136,7 @@ export default function CashValidationPage() {
                   {movements.map((movement) => (
                     <TableRow key={movement.id}>
                       <TableCell className="text-sm text-zinc-500">
-                        {new Date(movement.created_at).toLocaleString('fr-FR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {formatDateTime(movement.created_at)}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={
@@ -135,8 +162,9 @@ export default function CashValidationPage() {
                         }
                       </TableCell>
                       <TableCell>
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                        <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => {
                           setSelectedMovement(movement)
+                          setValidationNotes('')
                           setShowValidationDialog(true)
                         }}>
                           <Eye className="h-3 w-3 mr-1" /> Valider
@@ -151,7 +179,7 @@ export default function CashValidationPage() {
         </Card>
 
         {/* Validation Dialog */}
-        <Dialog open={showValidationDialog} onOpenChange={setShowValidationDialog}>
+        <Dialog open={showValidationDialog} onOpenChange={(o) => { if (!validating) setShowValidationDialog(o) }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Validation du mouvement de caisse</DialogTitle>
@@ -175,7 +203,7 @@ export default function CashValidationPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Date</span>
-                    <span>{new Date(selectedMovement.created_at).toLocaleString('fr-FR')}</span>
+                    <span>{formatDateTime(selectedMovement.created_at)}</span>
                   </div>
                   {selectedMovement.description && (
                     <div className="flex justify-between">
@@ -199,15 +227,15 @@ export default function CashValidationPage() {
               <Button variant="outline" onClick={() => setShowValidationDialog(false)}>Annuler</Button>
               <Button
                 variant="destructive"
-                onClick={() => selectedMovement && handleValidate(selectedMovement, false)}
-                disabled={validating === selectedMovement?.id}
+                onClick={() => setConfirmReject(true)}
+                disabled={validating !== null}
               >
-                {validating === selectedMovement?.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+                <XCircle className="h-4 w-4 mr-2" />
                 Rejeter
               </Button>
               <Button
                 onClick={() => selectedMovement && handleValidate(selectedMovement, true)}
-                disabled={validating === selectedMovement?.id}
+                disabled={validating !== null}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {validating === selectedMovement?.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
@@ -216,6 +244,31 @@ export default function CashValidationPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={confirmReject} onOpenChange={(o) => { if (!validating) setConfirmReject(o) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Rejeter ce mouvement ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {selectedMovement
+                  ? `${selectedMovement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'} de ${fmt(Number(selectedMovement.amount))} saisie par ${selectedMovement.created_by_name || 'un utilisateur'}. `
+                  : ''}
+                Un mouvement rejeté n'est pas compté dans la caisse. Cette décision est définitive.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={validating !== null}>Revenir</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); if (selectedMovement) handleValidate(selectedMovement, false) }}
+                disabled={validating !== null}
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                {validating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+                Oui, rejeter
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   )

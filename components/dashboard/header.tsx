@@ -12,12 +12,19 @@ import {
 import { Bell, Plus, ShoppingCart, Users, Truck } from 'lucide-react'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/api-client'
+import { usePermissions } from '@/components/providers/permissions-provider'
 
 interface DashboardHeaderProps {
   title: string
   description?: string
   actions?: React.ReactNode
 }
+
+const QUICK_ACTIONS = [
+  { href: '/dashboard/sales/new', label: 'Nouvelle vente', icon: ShoppingCart, permission: 'sales.write' },
+  { href: '/dashboard/clients/new', label: 'Nouveau client', icon: Users, permission: 'clients.write' },
+  { href: '/dashboard/deliveries/new', label: 'Nouvelle tournée', icon: Truck, permission: 'deliveries.write' },
+]
 
 const UNREAD_LIMIT = 100
 /** Clé SWR à invalider (mutate) après avoir marqué des alertes comme lues. */
@@ -38,7 +45,10 @@ async function fetchUnreadCount(url: string): Promise<number | null> {
 }
 
 export function DashboardHeader({ title, description, actions }: DashboardHeaderProps) {
-  const { data: unreadCount } = useSWR(UNREAD_ALERTS_KEY, fetchUnreadCount, {
+  const { can } = usePermissions()
+  const quickActions = QUICK_ACTIONS.filter((a) => can(a.permission))
+  // Pas de requête (ni de pastille) sans le droit de lire les alertes
+  const { data: unreadCount } = useSWR(can('alerts.read') ? UNREAD_ALERTS_KEY : null, fetchUnreadCount, {
     refreshInterval: 60_000,
     dedupingInterval: 30_000,
     revalidateOnFocus: true,
@@ -65,7 +75,8 @@ export function DashboardHeader({ title, description, actions }: DashboardHeader
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Quick Actions */}
+        {/* Actions rapides (selon les droits du rôle) */}
+        {quickActions.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" className="h-8 px-3 gap-1.5 text-xs font-medium" aria-label="Nouveau">
@@ -74,26 +85,17 @@ export function DashboardHeader({ title, description, actions }: DashboardHeader
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/dashboard/sales/new" className="flex items-center gap-2">
-                <ShoppingCart className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                <span className="text-sm">Nouvelle vente</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/dashboard/clients/new" className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                <span className="text-sm">Nouveau client</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/dashboard/deliveries/new" className="flex items-center gap-2">
-                <Truck className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                <span className="text-sm">Nouvelle tournée</span>
-              </Link>
-            </DropdownMenuItem>
+            {quickActions.map((action) => (
+              <DropdownMenuItem key={action.href} asChild className="cursor-pointer">
+                <Link href={action.href} className="flex items-center gap-2">
+                  <action.icon className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+                  <span className="text-sm">{action.label}</span>
+                </Link>
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
 
         {/* Alertes : pastille uniquement s'il existe des alertes non lues */}
         <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-md hover:bg-zinc-100" asChild>

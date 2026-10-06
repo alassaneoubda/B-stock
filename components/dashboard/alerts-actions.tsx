@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Loader2, RefreshCw, CheckCheck } from 'lucide-react'
+import { mutate } from 'swr'
 import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { UNREAD_ALERTS_KEY } from '@/components/dashboard/header'
 
 export function GenerateAlertsButton() {
     const router = useRouter()
@@ -27,6 +29,7 @@ export function GenerateAlertsButton() {
             })
             toastWarnings(data?.warnings)
             router.refresh()
+            mutate(UNREAD_ALERTS_KEY) // met à jour la pastille de la cloche
         } catch (e) {
             toastError(e, 'Analyse impossible')
         } finally {
@@ -67,6 +70,7 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
             })
             toast.success('Toutes les alertes sont marquées comme lues')
             router.refresh()
+            mutate(UNREAD_ALERTS_KEY) // met à jour la pastille de la cloche
         } catch (e) {
             toastError(e)
         } finally {
@@ -108,6 +112,7 @@ export function MarkAlertReadButton({ alertId }: { alertId: string }) {
             })
             toast.success('Alerte marquée comme lue')
             router.refresh()
+            mutate(UNREAD_ALERTS_KEY) // met à jour la pastille de la cloche
         } catch (e) {
             toastError(e)
         } finally {

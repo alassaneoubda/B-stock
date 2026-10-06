@@ -17,8 +17,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   CreditCard, AlertTriangle, Clock, CheckCircle2, Loader2, Banknote,
-  Phone, MessageSquare, Search, DollarSign,
+  Phone, Search,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface Credit {
   id: string; credit_number: string; client_name: string; client_phone: string
@@ -30,9 +34,7 @@ interface Stats {
   total_credits: number; total_outstanding: number; overdue_count: number; overdue_amount: number
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA'
-}
+const fmt = formatMoney
 
 const statusLabels: Record<string, { label: string; cls: string }> = {
   pending: { label: 'En attente', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -52,42 +54,58 @@ export default function CreditsPage() {
   const [payMethod, setPayMethod] = useState('cash')
   const [payNotes, setPayNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [remindingId, setRemindingId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const res = await fetch('/api/credits')
-      const json = await res.json()
+      const json = await apiFetch('/api/credits')
       setCredits(json.data?.credits || [])
       setStats(json.data?.stats || null)
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      // Premier chargement : écran d'erreur ; rafraîchissement : simple toast
+      setLoadError(true)
+      toastError(e, 'Impossible de charger les créances')
+    }
     finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   async function handlePay() {
-    if (!payDialog || !payAmount) return
+    if (!payDialog || !payAmount || submitting) return
     setSubmitting(true)
     try {
-      const res = await fetch(`/api/credits/${payDialog.id}/pay`, {
+      const res = await apiFetch(`/api/credits/${payDialog.id}/pay`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: Number(payAmount), payment_method: payMethod, notes: payNotes || undefined }),
+        body: { amount: Number(payAmount), payment_method: payMethod, notes: payNotes || undefined },
       })
-      if (res.ok) {
-        setPayDialog(null); setPayAmount(''); setPayNotes('')
-        fetchData()
-      }
+      toast.success(`Paiement de ${fmt(Number(payAmount))} enregistré`)
+      toastWarnings(res.warnings)
+      setPayDialog(null); setPayAmount(''); setPayNotes('')
+      fetchData()
+    } catch (e) {
+      toastError(e, 'Paiement non enregistré')
     } finally { setSubmitting(false) }
   }
 
+  // Enregistre une relance dans l'historique (aucun SMS n'est envoyé)
   async function handleRemind(credit: Credit, type: string) {
-    await fetch(`/api/credits/${credit.id}/remind`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reminder_type: type, message: `Relance pour créance ${credit.credit_number}` }),
-    })
-    fetchData()
+    if (remindingId) return
+    setRemindingId(credit.id)
+    try {
+      await apiFetch(`/api/credits/${credit.id}/remind`, {
+        method: 'POST',
+        body: { reminder_type: type, message: `Relance pour créance ${credit.credit_number}` },
+      })
+      toast.success('Relance enregistrée', { description: `${credit.client_name} — ${credit.credit_number}` })
+      fetchData()
+    } catch (e) {
+      toastError(e, 'Relance non enregistrée')
+    } finally {
+      setRemindingId(null)
+    }
   }
 
   const filtered = credits.filter(c =>
@@ -96,10 +114,16 @@ export default function CreditsPage() {
   )
 
   if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError && credits.length === 0 && !stats) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Crédits" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
+        <DashboardHeader title="Gestion des Crédits" />
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger les créances" onRetry={() => { setIsLoading(true); fetchData() }} />
+        </main>
       </div>
     )
   }
@@ -113,7 +137,7 @@ export default function CreditsPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">Créances totales</div>
-            <div className="text-xl font-bold text-zinc-950">{stats?.total_credits || 0}</div>
+            <div className="text-xl font-bold text-zinc-950">{formatNumber(stats?.total_credits || 0)}</div>
           </Card>
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">Montant en cours</div>
@@ -121,7 +145,7 @@ export default function CreditsPage() {
           </Card>
           <Card className="p-4 border-red-200 bg-red-50/30">
             <div className="flex items-center gap-1 text-xs text-red-600 mb-1"><AlertTriangle className="h-3 w-3" /> En retard</div>
-            <div className="text-xl font-bold text-red-600">{stats?.overdue_count || 0}</div>
+            <div className="text-xl font-bold text-red-600">{formatNumber(stats?.overdue_count || 0)}</div>
             <div className="text-xs text-red-500">{fmt(Number(stats?.overdue_amount || 0))}</div>
           </Card>
           <Card className="p-4">
@@ -134,15 +158,20 @@ export default function CreditsPage() {
 
         {/* Search */}
         <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-          <Input placeholder="Rechercher par client ou n° créance..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" aria-hidden="true" />
+          <Input aria-label="Rechercher une créance" placeholder="Rechercher par client ou n° créance..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
         {/* Table */}
         <Card>
           <CardContent className="p-0">
             {filtered.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucune créance</div>
+              <EmptyState
+                icon={CreditCard}
+                className="m-4"
+                title={search ? 'Aucune créance ne correspond à la recherche' : 'Aucune créance'}
+                description={search ? undefined : 'Les ventes à crédit apparaîtront ici.'}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -179,7 +208,7 @@ export default function CreditsPage() {
                         <TableCell className="text-sm">
                           {c.due_date ? (
                             <span className={c.is_overdue ? 'text-red-600 font-medium' : ''}>
-                              {new Date(c.due_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                              {formatDateShort(c.due_date)}
                               {c.is_overdue && ` (${c.days_overdue}j)`}
                             </span>
                           ) : '-'}
@@ -189,11 +218,19 @@ export default function CreditsPage() {
                           <div className="flex gap-1">
                             {c.status !== 'paid' && c.status !== 'written_off' && (
                               <>
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPayDialog(c); setPayAmount(String(remaining)) }}>
-                                  <Banknote className="h-3 w-3 mr-1" /> Encaisser
+                                <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => { setPayDialog(c); setPayAmount(String(remaining)) }}>
+                                  <Banknote className="h-3.5 w-3.5 mr-1" /> Encaisser
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => handleRemind(c, 'call')}>
-                                  <Phone className="h-3 w-3" />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-9 w-9 p-0"
+                                  onClick={() => handleRemind(c, 'call')}
+                                  disabled={remindingId !== null}
+                                  aria-label={`Enregistrer une relance (appel) pour ${c.client_name}`}
+                                  title="Enregistrer une relance (appel)"
+                                >
+                                  {remindingId === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
                                 </Button>
                               </>
                             )}
@@ -209,7 +246,7 @@ export default function CreditsPage() {
         </Card>
 
         {/* Pay dialog */}
-        <Dialog open={!!payDialog} onOpenChange={(o) => { if (!o) setPayDialog(null) }}>
+        <Dialog open={!!payDialog} onOpenChange={(o) => { if (!o && !submitting) setPayDialog(null) }}>
           <DialogContent>
             <DialogHeader><DialogTitle>Encaisser — {payDialog?.credit_number}</DialogTitle></DialogHeader>
             <div className="space-y-4 py-4">
@@ -221,7 +258,7 @@ export default function CreditsPage() {
               </div>
               <div>
                 <Label>Montant à encaisser (FCFA)</Label>
-                <Input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="mt-1" />
+                <Input type="number" min={1} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="mt-1" />
               </div>
               <div>
                 <Label>Mode de paiement</Label>
@@ -241,7 +278,7 @@ export default function CreditsPage() {
             </div>
             <DialogFooter>
               <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-              <Button onClick={handlePay} disabled={submitting || !payAmount} className="bg-emerald-600 hover:bg-emerald-700">
+              <Button onClick={handlePay} disabled={submitting || !payAmount || Number(payAmount) <= 0} className="bg-emerald-600 hover:bg-emerald-700">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Banknote className="h-4 w-4 mr-2" />} Encaisser
               </Button>
             </DialogFooter>

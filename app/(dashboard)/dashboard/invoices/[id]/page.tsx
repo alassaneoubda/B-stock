@@ -1,18 +1,27 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Loader2,
   Printer,
-  Download,
   ArrowLeft,
   FileText,
+  Trash2,
+  Ban,
 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, ApiError, toastError } from '@/lib/api-client'
+import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { ErrorState, PageSkeleton } from '@/components/states'
 
 type InvoiceItem = {
   id: string
@@ -57,28 +66,22 @@ const statusConfig: Record<string, { label: string; color: string }> = {
   cancelled: { label: 'Annulée', color: 'bg-red-50 text-red-600' },
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-  }).format(amount)
-}
+const formatCurrency = formatMoney
 
 export default function InvoiceDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const printRef = useRef<HTMLDivElement>(null)
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [confirmAction, setConfirmAction] = useState<'delete' | 'cancel' | null>(null)
+  const [acting, setActing] = useState(false)
 
   const invoiceId = params.id as string
   const shouldPrint = searchParams.get('print') === '1'
-
-  useEffect(() => {
-    fetchInvoice()
-  }, [invoiceId])
 
   useEffect(() => {
     if (shouldPrint && invoice && !isLoading) {
@@ -86,49 +89,86 @@ export default function InvoiceDetailPage() {
     }
   }, [shouldPrint, invoice, isLoading])
 
-  async function fetchInvoice() {
+  // L'id peut être celui d'une VENTE (lien « Facture » de la liste des ventes) :
+  // si aucune facture n'a cet id, on génère / retrouve celle de la vente.
+  const tryGenerateFromSale = useCallback(async () => {
+    setIsGenerating(true)
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}`)
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          setInvoice(data.data)
-        } else {
-          await tryGenerateFromSale()
-        }
-      } else if (res.status === 404) {
-        await tryGenerateFromSale()
+      const genData = await apiFetch('/api/invoices/generate', {
+        method: 'POST',
+        body: { orderId: invoiceId },
+      })
+      if (genData?.data?.id) {
+        const detail = await apiFetch(`/api/invoices/${genData.data.id}`)
+        setInvoice(detail.data)
       }
+    } catch (e) {
+      // 404 = ni facture ni vente : écran « Facture non trouvée »
+      if (!(e instanceof ApiError && e.status === 404)) {
+        setLoadError(e instanceof Error ? e.message : 'Erreur inattendue')
+      }
+    } finally {
+      setIsGenerating(false)
+    }
+  }, [invoiceId])
+
+  const fetchInvoice = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(null)
+    try {
+      const data = await apiFetch(`/api/invoices/${invoiceId}`)
+      if (data?.data) setInvoice(data.data)
+      else await tryGenerateFromSale()
     } catch (error) {
-      console.error('Error:', error)
-      await tryGenerateFromSale()
+      if (error instanceof ApiError && error.status === 404) {
+        await tryGenerateFromSale()
+      } else {
+        setLoadError(error instanceof Error ? error.message : 'Erreur inattendue')
+      }
     } finally {
       setIsLoading(false)
     }
+  }, [invoiceId, tryGenerateFromSale])
+
+  useEffect(() => {
+    fetchInvoice()
+  }, [fetchInvoice])
+
+  async function handleDelete() {
+    if (!invoice || acting) return
+    setActing(true)
+    try {
+      await apiFetch(`/api/invoices/${invoice.id}`, { method: 'DELETE' })
+      toast.success(`Facture ${invoice.invoice_number} supprimée`)
+      setConfirmAction(null)
+      router.push('/dashboard/invoices')
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // Facture payée / partiellement payée : proposer l'annulation à la place
+        toast.warning('Suppression impossible', { description: e.message })
+        setConfirmAction('cancel')
+      } else {
+        setConfirmAction(null)
+        toastError(e, 'Suppression impossible')
+      }
+    } finally {
+      setActing(false)
+    }
   }
 
-  async function tryGenerateFromSale() {
-    setIsGenerating(true)
+  async function handleCancel() {
+    if (!invoice || acting) return
+    setActing(true)
     try {
-      const genRes = await fetch('/api/invoices/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: invoiceId }),
-      })
-      if (genRes.ok) {
-        const genData = await genRes.json()
-        if (genData.success && genData.data?.id) {
-          const detailRes = await fetch(`/api/invoices/${genData.data.id}`)
-          if (detailRes.ok) {
-            const detail = await detailRes.json()
-            setInvoice(detail.data)
-          }
-        }
-      }
+      await apiFetch(`/api/invoices/${invoice.id}`, { method: 'PATCH', body: { status: 'cancelled' } })
+      toast.success(`Facture ${invoice.invoice_number} annulée`)
+      setInvoice({ ...invoice, status: 'cancelled' })
+      setConfirmAction(null)
     } catch (e) {
-      console.error('Error generating invoice:', e)
+      setConfirmAction(null)
+      toastError(e, 'Annulation impossible')
     } finally {
-      setIsGenerating(false)
+      setActing(false)
     }
   }
 
@@ -136,18 +176,31 @@ export default function InvoiceDetailPage() {
     window.print()
   }
 
-  if (isLoading || isGenerating) {
+  if (isGenerating) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
         <DashboardHeader title="Facture" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="h-8 w-8 animate-spin text-zinc-400 mx-auto mb-3" />
-            <p className="text-sm text-zinc-500">
-              {isGenerating ? 'Génération de la facture...' : 'Chargement...'}
-            </p>
+            <p className="text-sm text-zinc-500">Génération de la facture...</p>
           </div>
         </div>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <DashboardHeader title="Facture" />
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger la facture" description={loadError} onRetry={fetchInvoice} />
+        </main>
       </div>
     )
   }
@@ -160,7 +213,7 @@ export default function InvoiceDetailPage() {
           <div className="text-center">
             <FileText className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
             <h3 className="text-sm font-semibold text-zinc-950 mb-1">Facture non trouvée</h3>
-            <p className="text-sm text-zinc-500 mb-4">La facture demandée n'existe pas.</p>
+            <p className="text-sm text-zinc-500 mb-4">La facture demandée n&apos;existe pas.</p>
             <Button size="sm" asChild>
               <Link href="/dashboard/invoices">Retour aux factures</Link>
             </Button>
@@ -175,6 +228,9 @@ export default function InvoiceDetailPage() {
   const partyPhone = invoice.type === 'client' ? invoice.client_phone : invoice.supplier_phone
   const partyAddress = invoice.type === 'client' ? invoice.client_address : invoice.supplier_address
   const partyEmail = invoice.type === 'client' ? invoice.client_email : invoice.supplier_email
+  const isPaidOrPartial =
+    invoice.status === 'paid' || invoice.status === 'partial' || Number(invoice.amount_paid) > 0
+  const canAct = invoice.status !== 'cancelled'
   const productItems = invoice.items?.filter(i => i.item_type === 'product') || []
   const packagingItems = invoice.items?.filter(i => i.item_type === 'packaging') || []
 
@@ -192,6 +248,20 @@ export default function InvoiceDetailPage() {
                   Retour
                 </Link>
               </Button>
+              {canAct && (
+                isPaidOrPartial ? (
+                  <Button variant="outline" size="sm" className="h-8 text-xs text-red-600" onClick={() => setConfirmAction('cancel')}>
+                    <Ban className="h-3.5 w-3.5 mr-1" />
+                    <span className="hidden sm:inline">Annuler la facture</span>
+                    <span className="sm:hidden">Annuler</span>
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" className="h-8 text-xs text-red-600" onClick={() => setConfirmAction('delete')}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    Supprimer
+                  </Button>
+                )
+              )}
               <Button size="sm" className="h-8 text-xs" onClick={handlePrint}>
                 <Printer className="h-3.5 w-3.5 mr-1" />
                 <span className="hidden sm:inline">Imprimer / PDF</span>
@@ -239,9 +309,7 @@ export default function InvoiceDetailPage() {
                   {invoice.invoice_number}
                 </p>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Date: {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
-                    day: '2-digit', month: 'long', year: 'numeric'
-                  })}
+                  Date: {formatDateShort(invoice.created_at)}
                 </p>
                 <Badge className={`mt-2 text-xs font-medium ${status.color} border-none no-print`}>
                   {status.label}
@@ -304,7 +372,7 @@ export default function InvoiceDetailPage() {
                           <td className="px-4 py-2.5 text-sm text-zinc-900">
                             {item.product_name || item.description || 'Produit'}
                           </td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{Number(item.quantity)}</td>
+                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{formatNumber(item.quantity)}</td>
                           <td className="px-4 py-2.5 text-sm text-zinc-600 text-right hidden sm:table-cell">
                             {formatCurrency(Number(item.unit_price))}
                           </td>
@@ -340,7 +408,7 @@ export default function InvoiceDetailPage() {
                           <td className="px-4 py-2.5 text-sm text-zinc-900">
                             {item.product_name || item.description || 'Emballage'}
                           </td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{Number(item.quantity)}</td>
+                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{formatNumber(item.quantity)}</td>
                           <td className="px-4 py-2.5 text-sm text-zinc-600 text-right hidden sm:table-cell">
                             {formatCurrency(Number(item.unit_price))}
                           </td>
@@ -397,6 +465,34 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
       </main>
+
+      <AlertDialog open={confirmAction !== null} onOpenChange={(o) => { if (!o && !acting) setConfirmAction(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction === 'delete'
+                ? `Supprimer la facture ${invoice.invoice_number} ?`
+                : `Annuler la facture ${invoice.invoice_number} ?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction === 'delete'
+                ? 'La facture sera définitivement supprimée. Cette action est irréversible.'
+                : `La facture passera au statut « Annulée » et restera dans l'historique${Number(invoice.amount_paid) > 0 ? ` (${formatCurrency(Number(invoice.amount_paid))} déjà encaissés : régularisez le client si nécessaire)` : ''}. Cette action est définitive.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={acting}>Revenir</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); if (confirmAction === 'delete') handleDelete(); else handleCancel() }}
+              disabled={acting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {acting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {confirmAction === 'delete' ? 'Oui, supprimer' : 'Oui, annuler la facture'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

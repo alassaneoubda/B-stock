@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { requirePageSession } from '@/lib/page-auth'
 import { AuthProvider } from '@/components/providers/session-provider'
+import { PermissionsProvider } from '@/components/providers/permissions-provider'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { DashboardSidebar } from '@/components/dashboard/sidebar-nav'
 import { MobileBottomNav } from '@/components/dashboard/mobile-bottom-nav'
@@ -42,6 +43,7 @@ export default async function DashboardLayout({
 
   return (
     <AuthProvider session={session}>
+      <PermissionsProvider permissions={session.access.permissions}>
       {session.user.impersonatedBy && (
         <ImpersonationBanner companyName={session.user.companyName} />
       )}
@@ -58,6 +60,7 @@ export default async function DashboardLayout({
         </SidebarInset>
         <MobileBottomNav permissions={session.access.permissions} />
       </SidebarProvider>
+      </PermissionsProvider>
     </AuthProvider>
   )
 }

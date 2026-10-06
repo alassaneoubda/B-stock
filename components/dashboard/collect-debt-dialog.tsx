@@ -13,7 +13,10 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog'
-import { Banknote, Smartphone, Loader2, CheckCircle2 } from 'lucide-react'
+import { Banknote, Smartphone, Loader2, AlertTriangle } from 'lucide-react'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
+import { formatMoney } from '@/lib/format'
 
 interface CollectDebtDialogProps {
     clientId: string
@@ -22,9 +25,7 @@ interface CollectDebtDialogProps {
     packagingDebt: number
 }
 
-function formatCurrency(n: number) {
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(n)
-}
+const formatCurrency = formatMoney
 
 export function CollectDebtDialog({ clientId, clientName, productDebt, packagingDebt }: CollectDebtDialogProps) {
     const [open, setOpen] = useState(false)
@@ -33,7 +34,7 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
     const [reference, setReference] = useState('')
     const [notes, setNotes] = useState('')
     const [loading, setLoading] = useState(false)
-    const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+    const [error, setError] = useState<string | null>(null)
 
     const totalDebt = productDebt + packagingDebt
 
@@ -42,29 +43,27 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
     const previewPackaging = Math.min(packagingDebt, Math.max(0, amount - productDebt))
 
     async function handleSubmit() {
-        if (amount <= 0 || amount > totalDebt) return
+        if (loading || amount <= 0 || amount > totalDebt) return
         setLoading(true)
-        setResult(null)
+        setError(null)
 
         try {
-            const res = await fetch(`/api/clients/${clientId}/payments`, {
+            const data = await apiFetch(`/api/clients/${clientId}/payments`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount, paymentMethod, reference, notes }),
+                body: {
+                    amount,
+                    paymentMethod,
+                    reference: reference.trim() || undefined,
+                    notes: notes.trim() || undefined,
+                },
             })
-            const data = await res.json()
-            if (res.ok) {
-                setResult({ success: true, message: data.message })
-                setTimeout(() => {
-                    setOpen(false)
-                    window.location.reload()
-                }, 1500)
-            } else {
-                setResult({ success: false, message: data.error || 'Erreur' })
-            }
-        } catch {
-            setResult({ success: false, message: 'Erreur réseau' })
-        } finally {
+            toast.success(data.message || `Paiement de ${formatCurrency(amount)} enregistré`)
+            toastWarnings(data.warnings)
+            setOpen(false)
+            window.location.reload()
+        } catch (e) {
+            // Erreur affichée dans le formulaire (ex. 409 montant supérieur à la dette)
+            setError(errorMessage(e))
             setLoading(false)
         }
     }
@@ -77,7 +76,7 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
     ]
 
     return (
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) { setAmount(0); setResult(null) } }}>
+        <Dialog open={open} onOpenChange={(v) => { if (loading) return; setOpen(v); if (v) { setAmount(0); setError(null) } }}>
             <DialogTrigger asChild>
                 <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
                     <Banknote className="h-4 w-4 mr-2" />
@@ -92,14 +91,6 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                     </DialogDescription>
                 </DialogHeader>
 
-                {result ? (
-                    <div className={`rounded-xl p-6 text-center ${result.success ? 'bg-emerald-50' : 'bg-rose-50'}`}>
-                        {result.success && <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-emerald-600" />}
-                        <p className={`font-bold ${result.success ? 'text-emerald-700' : 'text-rose-700'}`}>
-                            {result.message}
-                        </p>
-                    </div>
-                ) : (
                     <div className="space-y-5 pt-2">
                         {/* Current debts summary */}
                         <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-100">
@@ -208,6 +199,19 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                             />
                         </div>
 
+                        {amount > totalDebt && (
+                            <p className="text-sm text-rose-600">
+                                Le montant dépasse la dette totale ({formatCurrency(totalDebt)}).
+                            </p>
+                        )}
+
+                        {error && (
+                            <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                                <span>{error}</span>
+                            </div>
+                        )}
+
                         {/* Submit */}
                         <Button
                             onClick={handleSubmit}
@@ -222,7 +226,6 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                             Enregistrer le paiement de {formatCurrency(amount)}
                         </Button>
                     </div>
-                )}
             </DialogContent>
         </Dialog>
     )

@@ -26,6 +26,9 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { CollectDebtDialog } from '@/components/dashboard/collect-debt-dialog'
+import { isUuid } from '@/lib/tenant'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { balanceLabel } from '../balance-text'
 
 interface ClientDetail {
     id: string
@@ -47,17 +50,17 @@ interface ClientDetail {
     created_at: string
 }
 
+// Pas de try/catch : une panne de base doit afficher l'écran d'erreur, pas « introuvable ».
 async function getClientDetail(clientId: string, companyId: string): Promise<ClientDetail | null> {
-    try {
-        const clients = await sql`
+    const clients = await sql`
       SELECT
         c.*,
         COALESCE(
-          (SELECT balance FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'product'),
+          (SELECT SUM(balance) FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'product'),
           0
         ) as product_balance,
         COALESCE(
-          (SELECT balance FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'packaging'),
+          (SELECT SUM(balance) FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'packaging'),
           0
         ) as packaging_balance,
         COALESCE(
@@ -67,35 +70,28 @@ async function getClientDetail(clientId: string, companyId: string): Promise<Cli
       FROM clients c
       WHERE c.id = ${clientId} AND c.company_id = ${companyId}
     `
-        return (clients[0] as ClientDetail) || null
-    } catch {
-        return null
-    }
+    return (clients[0] as ClientDetail) || null
 }
 
-async function getClientOrders(clientId: string) {
-    try {
-        const orders = await sql`
+async function getClientOrders(clientId: string, companyId: string) {
+    return sql`
       SELECT id, order_number, subtotal, packaging_total, total_amount,
              paid_amount, paid_amount_products, paid_amount_packaging,
              payment_method, status, created_at
       FROM sales_orders
-      WHERE client_id = ${clientId}
+      WHERE client_id = ${clientId} AND company_id = ${companyId}
       ORDER BY created_at DESC
       LIMIT 10
     `
-        return orders
-    } catch {
-        return []
-    }
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
+const formatCurrency = formatMoney
+
+const paymentLabels: Record<string, string> = {
+    cash: 'Espèces',
+    mobile_money: 'Mobile Money',
+    credit: 'Crédit',
+    mixed: 'Mixte',
 }
 
 const typeLabels: Record<string, string> = {
@@ -109,6 +105,8 @@ const typeLabels: Record<string, string> = {
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
     pending: { label: 'En attente', variant: 'secondary' },
     confirmed: { label: 'Confirmée', variant: 'default' },
+    preparing: { label: 'En préparation', variant: 'outline' },
+    ready: { label: 'Prête', variant: 'default' },
     delivered: { label: 'Livrée', variant: 'default' },
     cancelled: { label: 'Annulée', variant: 'destructive' },
 }
@@ -121,10 +119,11 @@ export default async function ClientDetailPage({
     const { id } = await params
     const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
+    if (!isUuid(id)) notFound()
 
     const [client, orders] = await Promise.all([
         getClientDetail(id, companyId),
-        getClientOrders(id),
+        getClientOrders(id, companyId),
     ])
 
     if (!client) notFound()
@@ -135,12 +134,14 @@ export default async function ClientDetailPage({
     const packagingDebt = packagingBalance < 0 ? Math.abs(packagingBalance) : 0
     const creditPct = client.credit_limit > 0 ? Math.min((creditUsed / Number(client.credit_limit)) * 100, 100) : 0
     const packagingPct = client.packaging_credit_limit > 0 ? Math.min((packagingDebt / Number(client.packaging_credit_limit)) * 100, 100) : 0
+    const productLabel = balanceLabel(productBalance)
+    const packagingLabel = balanceLabel(packagingBalance)
 
     return (
         <div className="flex flex-col min-h-screen">
             <DashboardHeader
                 title={client.name}
-                description={`${typeLabels[client.client_type] || client.client_type} — ${client.total_orders} commande${Number(client.total_orders) > 1 ? 's' : ''}`}
+                description={`${typeLabels[client.client_type] || client.client_type} — ${formatNumber(client.total_orders)} commande${Number(client.total_orders) > 1 ? 's' : ''}`}
                 actions={
                     <div className="flex gap-2 flex-wrap">
                         <Button variant="outline" asChild>
@@ -230,7 +231,7 @@ export default async function ClientDetailPage({
                                 </div>
                             )}
                             <div className="pt-2 border-t border-border/50 text-xs text-muted-foreground">
-                                Client depuis le {new Date(client.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                                Client depuis le {formatDate(client.created_at)}
                             </div>
                         </CardContent>
                     </Card>
@@ -254,11 +255,11 @@ export default async function ClientDetailPage({
                                 <div className="grid grid-cols-3 gap-4">
                                     <div>
                                         <p className="text-xs text-muted-foreground">Solde</p>
-                                        <p className={`text-xl font-bold ${productBalance < 0 ? 'text-destructive' : 'text-success'}`}>
-                                            {productBalance < 0 ? `-${formatCurrency(Math.abs(productBalance))}` : formatCurrency(productBalance)}
+                                        <p className={`text-xl font-bold ${productLabel.tone === 'debt' ? 'text-red-600' : productLabel.tone === 'credit' ? 'text-emerald-600' : ''}`}>
+                                            {productLabel.text}
                                         </p>
                                         <p className="text-xs text-muted-foreground mt-0.5">
-                                            {productBalance < 0 ? 'Doit' : 'Crédit'}
+                                            {productLabel.tone === 'debt' ? 'Le client vous doit ce montant' : productLabel.tone === 'credit' ? 'Avance du client' : 'Aucune dette'}
                                         </p>
                                     </div>
                                     <div>
@@ -293,11 +294,11 @@ export default async function ClientDetailPage({
                                 <div className="grid grid-cols-3 gap-4">
                                     <div>
                                         <p className="text-xs text-muted-foreground">Solde emballages</p>
-                                        <p className={`text-xl font-bold ${packagingBalance < 0 ? 'text-warning-foreground' : 'text-success'}`}>
-                                            {packagingBalance < 0 ? `-${formatCurrency(Math.abs(packagingBalance))}` : formatCurrency(packagingBalance)}
+                                        <p className={`text-xl font-bold ${packagingLabel.tone === 'debt' ? 'text-amber-600' : packagingLabel.tone === 'credit' ? 'text-emerald-600' : ''}`}>
+                                            {packagingLabel.text}
                                         </p>
                                         <p className="text-xs text-muted-foreground mt-0.5">
-                                            {packagingBalance < 0 ? 'Casiers dus' : 'Crédit'}
+                                            {packagingLabel.tone === 'debt' ? 'Consignes dues' : packagingLabel.tone === 'credit' ? 'Avance du client' : 'Aucune consigne due'}
                                         </p>
                                     </div>
                                     <div>
@@ -373,13 +374,11 @@ export default async function ClientDetailPage({
                                                     </Link>
                                                 </TableCell>
                                                 <TableCell className="text-sm text-muted-foreground">
-                                                    {new Date(order.created_at).toLocaleDateString('fr-FR')}
+                                                    {formatDate(order.created_at)}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline" className="text-xs">
-                                                        {order.payment_method === 'cash' ? 'Espèces' :
-                                                            order.payment_method === 'mobile_money' ? 'Mobile Money' :
-                                                                order.payment_method === 'credit' ? 'Crédit' : order.payment_method || '-'}
+                                                        {paymentLabels[order.payment_method] || order.payment_method || '-'}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-right font-medium">
@@ -387,7 +386,7 @@ export default async function ClientDetailPage({
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <span className={remaining > 0 ? 'text-destructive font-medium' : 'text-success'}>
-                                                        {remaining > 0 ? formatCurrency(remaining) : '✓'}
+                                                        {order.status === 'cancelled' ? '—' : remaining > 0 ? formatCurrency(remaining) : 'Soldé'}
                                                     </span>
                                                 </TableCell>
                                                 <TableCell>

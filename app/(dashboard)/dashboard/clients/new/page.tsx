@@ -15,6 +15,8 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage } from '@/lib/api-client'
 
 const clientSchema = z.object({
   name: z.string().min(2, 'Le nom doit contenir au moins 2 caracteres'),
@@ -72,27 +74,18 @@ export default function NewClientPage() {
   const isActive = watch('isActive')
 
   async function onSubmit(data: ClientForm) {
+    if (isLoading) return
     setIsLoading(true)
     setError(null)
 
     try {
-      const response = await fetch('/api/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        setError(result.error || 'Une erreur est survenue')
-        return
-      }
-
+      await apiFetch('/api/clients', { method: 'POST', body: data })
+      toast.success(`Client « ${data.name} » créé`)
       router.push('/dashboard/clients')
       router.refresh()
-    } catch {
-      setError('Une erreur est survenue. Veuillez reessayer.')
+    } catch (e) {
+      // Erreur affichée dans le formulaire (message du serveur)
+      setError(errorMessage(e))
     } finally {
       setIsLoading(false)
     }
@@ -117,7 +110,7 @@ export default function NewClientPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
           {error && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+            <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
               {error}
             </div>
           )}

@@ -16,6 +16,14 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDateShort, formatDateTime, formatMoney, formatSignedMoney } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
+import {
   Wallet, Plus, Minus, Lock, Unlock, ArrowDownCircle, ArrowUpCircle,
   Clock, FileText, Loader2, TrendingUp, TrendingDown, AlertTriangle,
   Receipt, Download,
@@ -31,6 +39,7 @@ interface CashSession {
   total_expenses: number
   total_cash_in: number
   total_cash_out: number
+  pending_validation_count?: number
   status: string
   notes: string | null
   opened_at: string
@@ -48,11 +57,11 @@ interface CashMovement {
   description: string | null
   created_by_name: string
   created_at: string
+  requires_validation?: boolean
+  validation_status?: string | null
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('fr-FR', { style: 'decimal', minimumFractionDigits: 0 }).format(amount) + ' FCFA'
-}
+const formatCurrency = formatMoney
 
 export default function CashPage() {
   const [currentSession, setCurrentSession] = useState<CashSession | null>(null)
@@ -68,20 +77,22 @@ export default function CashPage() {
   const [movementDesc, setMovementDesc] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [openDialog, setOpenDialog] = useState('')
+  const [loadError, setLoadError] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
 
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const [sessRes, movRes] = await Promise.all([
-        fetch('/api/cash'),
-        fetch('/api/cash/movements'),
+      const [sessJson, movJson] = await Promise.all([
+        apiFetch('/api/cash'),
+        apiFetch('/api/cash/movements'),
       ])
-      const sessJson = await sessRes.json()
-      const movJson = await movRes.json()
       setCurrentSession(sessJson.data?.currentSession || null)
       setSessions(sessJson.data?.sessions || [])
       setMovements(movJson.data || [])
     } catch (e) {
-      console.error(e)
+      setLoadError(true)
+      toastError(e, 'Impossible de charger la caisse')
     } finally {
       setIsLoading(false)
     }
@@ -90,61 +101,70 @@ export default function CashPage() {
   useEffect(() => { fetchData() }, [fetchData])
 
   async function handleOpenSession() {
+    if (submitting) return
     setSubmitting(true)
     try {
-      const res = await fetch('/api/cash', {
+      await apiFetch('/api/cash', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opening_amount: Number(openingAmount) || 0 }),
+        body: { opening_amount: Number(openingAmount) || 0 },
       })
-      if (res.ok) {
-        setOpeningAmount('')
-        setOpenDialog('')
-        fetchData()
-      }
+      toast.success('Caisse ouverte')
+      setOpeningAmount('')
+      setOpenDialog('')
+      fetchData()
+    } catch (e) {
+      toastError(e, 'Ouverture impossible')
     } finally {
       setSubmitting(false)
     }
   }
 
   async function handleCloseSession() {
+    if (submitting) return
     setSubmitting(true)
     try {
-      const res = await fetch('/api/cash/close', {
+      const res = await apiFetch('/api/cash/close', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ closing_amount: Number(closingAmount) || 0, notes: closingNotes || undefined }),
+        body: { closing_amount: Number(closingAmount) || 0, notes: closingNotes || undefined },
       })
-      if (res.ok) {
-        setClosingAmount('')
-        setClosingNotes('')
-        setOpenDialog('')
-        fetchData()
-      }
+      const variance = Number(res.data?.variance ?? 0)
+      toast.success('Caisse clôturée', {
+        description: variance === 0 ? 'Aucun écart.' : `Écart : ${formatSignedMoney(variance)}`,
+      })
+      toastWarnings(res.warnings)
+      setConfirmClose(false)
+      setClosingAmount('')
+      setClosingNotes('')
+      setOpenDialog('')
+      fetchData()
+    } catch (e) {
+      setConfirmClose(false)
+      toastError(e, 'Clôture impossible')
     } finally {
       setSubmitting(false)
     }
   }
 
   async function handleAddMovement() {
+    if (submitting) return
     setSubmitting(true)
     try {
-      const res = await fetch('/api/cash/movements', {
+      await apiFetch('/api/cash/movements', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           movement_type: movementType,
           category: movementCategory,
           amount: Number(movementAmount),
           description: movementDesc || undefined,
-        }),
+        },
       })
-      if (res.ok) {
-        setMovementAmount('')
-        setMovementDesc('')
-        setOpenDialog('')
-        fetchData()
-      }
+      toast.success('Mouvement enregistré', { description: 'Il sera compté après validation.' })
+      setMovementAmount('')
+      setMovementDesc('')
+      setOpenDialog('')
+      fetchData()
+    } catch (e) {
+      toastError(e, 'Mouvement non enregistré')
     } finally {
       setSubmitting(false)
     }
@@ -155,13 +175,34 @@ export default function CashPage() {
     refund: 'Remboursement', deposit: 'Dépôt', withdrawal: 'Retrait', other: 'Autre',
   }
 
+  const validationLabel = (m: CashMovement) =>
+    m.validation_status === 'rejected'
+      ? { label: 'Rejeté', cls: 'border-red-200 text-red-700 bg-red-50' }
+      : m.requires_validation && !m.validation_status
+        ? { label: 'En attente', cls: 'border-amber-200 text-amber-700 bg-amber-50' }
+        : null
+
+  // Totaux serveur : seuls les mouvements validés (ou sans validation) sont comptés
+  const totalIn = Number(currentSession?.total_cash_in || 0)
+  const totalOut = Number(currentSession?.total_cash_out || 0)
+  const expectedAmount = currentSession
+    ? Number(currentSession.expected_amount ?? Number(currentSession.opening_amount) + totalIn - totalOut)
+    : 0
+  const pendingCount = Number(currentSession?.pending_validation_count || 0)
+  const countedAmount = Number(closingAmount) || 0
+  const closeVariance = countedAmount - expectedAmount
+
   if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError && !currentSession && sessions.length === 0) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Caisse" />
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
-        </div>
+        <DashboardHeader title="Gestion de Caisse" />
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger la caisse" onRetry={() => { setIsLoading(true); fetchData() }} />
+        </main>
       </div>
     )
   }
@@ -195,7 +236,7 @@ export default function CashPage() {
                   <div className="space-y-4 py-4">
                     <div>
                       <Label>Fonds de caisse initial (FCFA)</Label>
-                      <Input type="number" value={openingAmount} onChange={(e) => setOpeningAmount(e.target.value)} placeholder="0" className="mt-1" />
+                      <Input type="number" min={0} value={openingAmount} onChange={(e) => setOpeningAmount(e.target.value)} placeholder="0" className="mt-1" />
                     </div>
                   </div>
                   <DialogFooter>
@@ -221,7 +262,7 @@ export default function CashPage() {
                     <div>
                       <p className="font-semibold text-zinc-950">Caisse ouverte</p>
                       <p className="text-xs text-zinc-500">
-                        Depuis {new Date(currentSession.opened_at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        Depuis {formatDateTime(currentSession.opened_at)}
                         {currentSession.opened_by_name && ` par ${currentSession.opened_by_name}`}
                       </p>
                     </div>
@@ -236,7 +277,7 @@ export default function CashPage() {
                         <div className="space-y-4 py-4">
                           <div>
                             <Label>Type</Label>
-                            <Select value={movementType} onValueChange={setMovementType}>
+                            <Select value={movementType} onValueChange={(v) => { setMovementType(v); setMovementCategory(v === 'cash_in' ? 'sale' : 'expense') }}>
                               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="cash_in">Entrée d'argent</SelectItem>
@@ -269,7 +310,7 @@ export default function CashPage() {
                           </div>
                           <div>
                             <Label>Montant (FCFA)</Label>
-                            <Input type="number" value={movementAmount} onChange={(e) => setMovementAmount(e.target.value)} placeholder="0" className="mt-1" />
+                            <Input type="number" min={1} value={movementAmount} onChange={(e) => setMovementAmount(e.target.value)} placeholder="0" className="mt-1" />
                           </div>
                           <div>
                             <Label>Description</Label>
@@ -278,14 +319,14 @@ export default function CashPage() {
                         </div>
                         <DialogFooter>
                           <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-                          <Button onClick={handleAddMovement} disabled={submitting || !movementAmount}>
+                          <Button onClick={handleAddMovement} disabled={submitting || !movementAmount || Number(movementAmount) <= 0}>
                             {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Enregistrer
                           </Button>
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
 
-                    <Dialog open={openDialog === 'close'} onOpenChange={(o) => setOpenDialog(o ? 'close' : '')}>
+                    <Dialog open={openDialog === 'close'} onOpenChange={(o) => { setOpenDialog(o ? 'close' : ''); if (o) fetchData() }}>
                       <DialogTrigger asChild>
                         <Button size="sm" variant="destructive"><Lock className="h-4 w-4 mr-1" /> Clôturer</Button>
                       </DialogTrigger>
@@ -294,12 +335,19 @@ export default function CashPage() {
                         <div className="space-y-4 py-4">
                           <div className="bg-zinc-50 rounded-lg p-3 space-y-2 text-sm">
                             <div className="flex justify-between"><span className="text-zinc-500">Fonds initial</span><span className="font-medium">{formatCurrency(Number(currentSession.opening_amount))}</span></div>
-                            <div className="flex justify-between text-emerald-600"><span>Total entrées</span><span className="font-medium">+{formatCurrency(Number(currentSession.total_cash_in) || movements.filter(m => m.movement_type === 'cash_in').reduce((s, m) => s + Number(m.amount), 0))}</span></div>
-                            <div className="flex justify-between text-red-600"><span>Total sorties</span><span className="font-medium">-{formatCurrency(Number(currentSession.total_cash_out) || movements.filter(m => m.movement_type === 'cash_out').reduce((s, m) => s + Number(m.amount), 0))}</span></div>
+                            <div className="flex justify-between text-emerald-600"><span>Total entrées</span><span className="font-medium">+{formatCurrency(totalIn)}</span></div>
+                            <div className="flex justify-between text-red-600"><span>Total sorties</span><span className="font-medium">-{formatCurrency(totalOut)}</span></div>
+                            <div className="flex justify-between font-semibold border-t pt-2"><span>Montant attendu</span><span>{formatCurrency(expectedAmount)}</span></div>
+                            {pendingCount > 0 && (
+                              <p className="text-xs text-amber-700 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                {pendingCount} mouvement(s) en attente de validation ne sont pas comptés.
+                              </p>
+                            )}
                           </div>
                           <div>
                             <Label>Montant compté en caisse (FCFA)</Label>
-                            <Input type="number" value={closingAmount} onChange={(e) => setClosingAmount(e.target.value)} placeholder="Comptez l'argent..." className="mt-1" />
+                            <Input type="number" min={0} value={closingAmount} onChange={(e) => setClosingAmount(e.target.value)} placeholder="Comptez l'argent..." className="mt-1" />
                           </div>
                           <div>
                             <Label>Notes</Label>
@@ -308,12 +356,49 @@ export default function CashPage() {
                         </div>
                         <DialogFooter>
                           <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-                          <Button onClick={handleCloseSession} disabled={submitting || !closingAmount} variant="destructive">
-                            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />} Clôturer
+                          <Button onClick={() => setConfirmClose(true)} disabled={submitting || closingAmount === ''} variant="destructive">
+                            <Lock className="h-4 w-4 mr-2" /> Clôturer
                           </Button>
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
+
+                    <AlertDialog open={confirmClose} onOpenChange={(o) => { if (!submitting) setConfirmClose(o) }}>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Clôturer la caisse ?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            La session sera définitivement fermée : aucun mouvement ne pourra plus y être ajouté.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <div className="bg-zinc-50 rounded-lg p-3 space-y-2 text-sm">
+                          <div className="flex justify-between"><span className="text-zinc-500">Montant attendu</span><span className="font-medium">{formatCurrency(expectedAmount)}</span></div>
+                          <div className="flex justify-between"><span className="text-zinc-500">Montant compté</span><span className="font-medium">{formatCurrency(countedAmount)}</span></div>
+                          <div className={`flex justify-between font-semibold border-t pt-2 ${closeVariance < 0 ? 'text-red-600' : closeVariance > 0 ? 'text-emerald-600' : 'text-zinc-700'}`}>
+                            <span>Écart</span>
+                            <span>
+                              {closeVariance === 0 ? 'Aucun écart' : `${formatSignedMoney(closeVariance)} (${closeVariance < 0 ? 'manquant' : 'excédent'})`}
+                            </span>
+                          </div>
+                          {pendingCount > 0 && (
+                            <p className="text-xs text-amber-700">
+                              {pendingCount} mouvement(s) en attente de validation ne seront pas comptés.
+                            </p>
+                          )}
+                        </div>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={submitting}>Revenir</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={(e) => { e.preventDefault(); handleCloseSession() }}
+                            disabled={submitting}
+                            className="bg-destructive text-white hover:bg-destructive/90"
+                          >
+                            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
+                            Confirmer la clôture
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
 
@@ -325,21 +410,18 @@ export default function CashPage() {
                   </div>
                   <div className="bg-white rounded-lg border p-3">
                     <div className="flex items-center gap-1 text-xs text-emerald-600 mb-1"><ArrowDownCircle className="h-3 w-3" /> Entrées</div>
-                    <div className="text-lg font-bold text-emerald-600">{formatCurrency(movements.filter(m => m.movement_type === 'cash_in').reduce((s, m) => s + Number(m.amount), 0))}</div>
+                    <div className="text-lg font-bold text-emerald-600">{formatCurrency(totalIn)}</div>
                   </div>
                   <div className="bg-white rounded-lg border p-3">
                     <div className="flex items-center gap-1 text-xs text-red-600 mb-1"><ArrowUpCircle className="h-3 w-3" /> Sorties</div>
-                    <div className="text-lg font-bold text-red-600">{formatCurrency(movements.filter(m => m.movement_type === 'cash_out').reduce((s, m) => s + Number(m.amount), 0))}</div>
+                    <div className="text-lg font-bold text-red-600">{formatCurrency(totalOut)}</div>
                   </div>
                   <div className="bg-white rounded-lg border p-3">
-                    <div className="text-xs text-zinc-500 mb-1">Solde estimé</div>
-                    <div className="text-lg font-bold text-zinc-950">
-                      {formatCurrency(
-                        Number(currentSession.opening_amount) +
-                        movements.filter(m => m.movement_type === 'cash_in').reduce((s, m) => s + Number(m.amount), 0) -
-                        movements.filter(m => m.movement_type === 'cash_out').reduce((s, m) => s + Number(m.amount), 0)
-                      )}
-                    </div>
+                    <div className="text-xs text-zinc-500 mb-1">Solde attendu</div>
+                    <div className="text-lg font-bold text-zinc-950">{formatCurrency(expectedAmount)}</div>
+                    {pendingCount > 0 && (
+                      <div className="text-[11px] text-amber-700 mt-0.5">{pendingCount} en attente de validation</div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -352,12 +434,17 @@ export default function CashPage() {
               </CardHeader>
               <CardContent className="p-0">
                 {movements.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-zinc-400">Aucun mouvement enregistré</div>
+                  <EmptyState
+                    icon={Receipt}
+                    className="m-4"
+                    title="Aucun mouvement enregistré"
+                    description="Les ventes en espèces et les mouvements manuels apparaîtront ici."
+                  />
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[100px]">Heure</TableHead>
+                        <TableHead className="w-[130px]">Date</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead>Catégorie</TableHead>
                         <TableHead>Description</TableHead>
@@ -369,12 +456,17 @@ export default function CashPage() {
                       {movements.map((m) => (
                         <TableRow key={m.id}>
                           <TableCell className="text-xs text-zinc-500">
-                            {new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                            {formatDateTime(m.created_at)}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className={m.movement_type === 'cash_in' ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-red-200 text-red-700 bg-red-50'}>
                               {m.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'}
                             </Badge>
+                            {validationLabel(m) && (
+                              <Badge variant="outline" className={`ml-1 ${validationLabel(m)!.cls}`}>
+                                {validationLabel(m)!.label}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm">{categoryLabels[m.category] || m.category}</TableCell>
                           <TableCell className="text-sm text-zinc-600 max-w-[200px] truncate">{m.description || '-'}</TableCell>
@@ -414,16 +506,16 @@ export default function CashPage() {
                 <TableBody>
                   {sessions.filter(s => s.status === 'closed').map((s) => (
                     <TableRow key={s.id}>
-                      <TableCell className="text-sm">{new Date(s.opened_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</TableCell>
+                      <TableCell className="text-sm">{formatDateShort(s.opened_at)}</TableCell>
                       <TableCell className="text-sm">{formatCurrency(Number(s.opening_amount))}</TableCell>
                       <TableCell className="text-sm">{s.closing_amount != null ? formatCurrency(Number(s.closing_amount)) : '-'}</TableCell>
                       <TableCell className="text-sm text-emerald-600">{formatCurrency(Number(s.total_sales))}</TableCell>
                       <TableCell className="text-sm text-red-600">{formatCurrency(Number(s.total_expenses))}</TableCell>
                       <TableCell className={`text-right text-sm font-medium ${Number(s.variance) < 0 ? 'text-red-600' : Number(s.variance) > 0 ? 'text-emerald-600' : 'text-zinc-500'}`}>
-                        {s.variance != null ? (Number(s.variance) > 0 ? '+' : '') + formatCurrency(Number(s.variance)) : '-'}
+                        {s.variance != null ? formatSignedMoney(s.variance) : '-'}
                       </TableCell>
                       <TableCell>
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => window.open(`/api/export/pdf?type=cash_report&id=${s.id}`, '_blank')}>
+                        <Button size="sm" variant="ghost" className="h-9 text-xs" aria-label={`Télécharger le rapport PDF du ${formatDateShort(s.opened_at)}`} onClick={() => window.open(`/api/export/pdf?type=cash_report&id=${s.id}`, '_blank')}>
                           <Download className="h-3 w-3 mr-1" /> PDF
                         </Button>
                       </TableCell>

@@ -52,6 +52,8 @@ export function httpErrorMessage(res: Response, payload: any): string {
 export function credentialsErrorMessage(error: string, code?: string | null): string {
   if (error === 'CredentialsSignin') {
     switch (code) {
+      case 'invalid_token':
+        return 'Lien d’assistance invalide, expiré ou déjà utilisé. Relancez-le depuis l’administration.'
       case 'rate_limited':
         return 'Trop de tentatives. Réessayez dans quelques minutes.'
       case 'suspended':

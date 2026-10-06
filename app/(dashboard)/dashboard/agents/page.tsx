@@ -13,9 +13,13 @@ import {
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Users, Loader2, Plus, Eye, Edit, DollarSign, TrendingUp, UserCheck,
+  Users, Loader2, Plus, Eye, UserCheck,
 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, toastError } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface SalesAgent {
   id: string; full_name: string; phone: string | null; email: string | null
@@ -23,7 +27,7 @@ interface SalesAgent {
   client_count: number; monthly_sales: number; pending_commissions: number
 }
 
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA' }
+const fmt = formatMoney
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<SalesAgent[]>([])
@@ -36,43 +40,56 @@ export default function AgentsPage() {
   const [newZone, setNewZone] = useState('')
   const [newCommission, setNewCommission] = useState('')
 
+  const [loadError, setLoadError] = useState(false)
+
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const res = await fetch('/api/agents')
-      const json = await res.json()
+      const json = await apiFetch('/api/agents')
       setAgents(json.data || [])
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      setLoadError(true)
+      toastError(e, 'Impossible de charger les commerciaux')
+    }
     finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   async function handleCreate() {
-    if (!newName) return
+    if (!newName.trim() || submitting) return
     setSubmitting(true)
     try {
-      await fetch('/api/agents', {
+      await apiFetch('/api/agents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          full_name: newName,
+        body: {
+          full_name: newName.trim(),
           phone: newPhone || undefined,
           email: newEmail || undefined,
           zone: newZone || undefined,
           commission_rate: Number(newCommission) || 0,
-        }),
+        },
       })
+      toast.success('Commercial ajouté')
       setOpenNew(false)
       setNewName(''); setNewPhone(''); setNewEmail(''); setNewZone(''); setNewCommission('')
       fetchData()
+    } catch (e) {
+      toastError(e, 'Commercial non ajouté')
     } finally { setSubmitting(false) }
   }
 
   if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError && agents.length === 0) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
         <DashboardHeader title="Commerciaux" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger les commerciaux" onRetry={() => { setIsLoading(true); fetchData() }} />
+        </main>
       </div>
     )
   }
@@ -86,11 +103,11 @@ export default function AgentsPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">Total commerciaux</div>
-            <div className="text-xl font-bold text-zinc-950">{agents.length}</div>
+            <div className="text-xl font-bold text-zinc-950">{formatNumber(agents.length)}</div>
           </Card>
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">Actifs</div>
-            <div className="text-xl font-bold text-emerald-600">{agents.filter(a => a.is_active).length}</div>
+            <div className="text-xl font-bold text-emerald-600">{formatNumber(agents.filter(a => a.is_active).length)}</div>
           </Card>
           <Card className="p-4">
             <div className="text-xs text-zinc-500 mb-1">Ventes du mois</div>
@@ -104,7 +121,7 @@ export default function AgentsPage() {
 
         <div className="flex items-center justify-between">
           <div className="text-sm text-zinc-500">{agents.length} commercial(aux)</div>
-          <Dialog open={openNew} onOpenChange={setOpenNew}>
+          <Dialog open={openNew} onOpenChange={(o) => { if (!submitting) setOpenNew(o) }}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Nouveau commercial</Button>
             </DialogTrigger>
@@ -132,13 +149,13 @@ export default function AgentsPage() {
                   </div>
                   <div>
                     <Label>Taux commission (%)</Label>
-                    <Input type="number" step="0.1" value={newCommission} onChange={(e) => setNewCommission(e.target.value)} className="mt-1" />
+                    <Input type="number" step="0.1" min={0} max={100} value={newCommission} onChange={(e) => setNewCommission(e.target.value)} className="mt-1" />
                   </div>
                 </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-                <Button onClick={handleCreate} disabled={submitting || !newName} className="bg-emerald-600 hover:bg-emerald-700">
+                <Button onClick={handleCreate} disabled={submitting || !newName.trim()} className="bg-emerald-600 hover:bg-emerald-700">
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Users className="h-4 w-4 mr-2" />} Ajouter
                 </Button>
               </DialogFooter>
@@ -149,7 +166,13 @@ export default function AgentsPage() {
         <Card>
           <CardContent className="p-0">
             {agents.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucun commercial</div>
+              <EmptyState
+                icon={Users}
+                className="m-4"
+                title="Aucun commercial"
+                description="Ajoutez vos commerciaux pour suivre leurs ventes et commissions."
+                action={{ label: 'Nouveau commercial', onClick: () => setOpenNew(true) }}
+              />
             ) : (
               <Table>
                 <TableHeader>
@@ -180,7 +203,7 @@ export default function AgentsPage() {
                         {agent.email && <div className="text-xs text-zinc-400">{agent.email}</div>}
                       </TableCell>
                       <TableCell className="text-sm">{agent.zone || '-'}</TableCell>
-                      <TableCell className="text-center text-sm">{agent.client_count}</TableCell>
+                      <TableCell className="text-center text-sm">{formatNumber(agent.client_count)}</TableCell>
                       <TableCell className="text-right text-sm font-medium">{fmt(Number(agent.monthly_sales))}</TableCell>
                       <TableCell className="text-right text-sm text-amber-600">{fmt(Number(agent.pending_commissions))}</TableCell>
                       <TableCell>
@@ -190,11 +213,11 @@ export default function AgentsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Link href={`/dashboard/agents/${agent.id}`}>
-                            <Button size="sm" variant="outline" className="h-7 text-xs">
-                              <Eye className="h-3 w-3 mr-1" /> Détails
-                            </Button>
-                          </Link>
+                          <Button size="sm" variant="outline" className="h-9 text-xs" asChild>
+                            <Link href={`/dashboard/agents/${agent.id}`}>
+                              <Eye className="h-3.5 w-3.5 mr-1" /> Détails
+                            </Link>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>

@@ -20,13 +20,10 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-    Loader2,
     Search,
     FileText,
     Eye,
-    Download,
     MoreHorizontal,
-    Filter,
     Printer,
     Receipt,
     Banknote,
@@ -34,6 +31,10 @@ import {
     CheckCircle2,
 } from 'lucide-react'
 import Link from 'next/link'
+import { apiFetch, toastError } from '@/lib/api-client'
+import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
 type Invoice = {
     id: string
@@ -62,33 +63,37 @@ export default function InvoicesPage() {
     const [searchTerm, setSearchTerm] = useState('')
     const [filterType, setFilterType] = useState<string>('all')
     const [filterStatus, setFilterStatus] = useState<string>('all')
+    const [loadError, setLoadError] = useState(false)
+    const debouncedSearch = useDebouncedValue(searchTerm.trim(), 300)
 
-    const fetchInvoices = useCallback(async () => {
+    const fetchInvoices = useCallback(async (signal?: AbortSignal) => {
         setIsLoading(true)
+        setLoadError(false)
         try {
             const params = new URLSearchParams()
             if (filterType !== 'all') params.set('type', filterType)
             if (filterStatus !== 'all') params.set('status', filterStatus)
-            if (searchTerm) params.set('search', searchTerm)
+            if (debouncedSearch) params.set('search', debouncedSearch)
 
-            const response = await fetch(`/api/invoices?${params}`)
-            if (response.ok) {
-                const data = await response.json()
-                setInvoices(data.data || [])
-            }
+            const data = await apiFetch(`/api/invoices?${params}`, { signal })
+            setInvoices(data.data || [])
         } catch (error) {
-            console.error('Error fetching invoices:', error)
+            if ((error as Error)?.name === 'AbortError') return
+            setLoadError(true)
+            toastError(error, 'Impossible de charger les factures')
         } finally {
-            setIsLoading(false)
+            if (!signal?.aborted) setIsLoading(false)
         }
-    }, [filterType, filterStatus, searchTerm])
+    }, [filterType, filterStatus, debouncedSearch])
 
     useEffect(() => {
-        fetchInvoices()
+        const controller = new AbortController()
+        fetchInvoices(controller.signal)
+        return () => controller.abort()
     }, [fetchInvoices])
 
-    const formatCurrency = (amount: number) =>
-        new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(amount)
+    const formatCurrency = formatMoney
+    const hasFilters = filterType !== 'all' || filterStatus !== 'all' || debouncedSearch !== ''
 
     const totalAmount = invoices.reduce((s, i) => s + Number(i.total_amount), 0)
     const totalPaid = invoices.reduce((s, i) => s + Number(i.amount_paid), 0)
@@ -96,10 +101,10 @@ export default function InvoicesPage() {
     const paidCount = invoices.filter(i => i.status === 'paid').length
 
     const statsData = [
-        { title: 'Total factures', value: invoices.length.toString(), icon: Receipt, color: 'bg-blue-500/10 text-blue-600', desc: 'factures générées' },
+        { title: 'Total factures', value: formatNumber(invoices.length), icon: Receipt, color: 'bg-blue-500/10 text-blue-600', desc: 'factures générées' },
         { title: 'Montant total', value: formatCurrency(totalAmount), icon: Banknote, color: 'bg-emerald-500/10 text-emerald-600', desc: 'chiffre d\'affaires' },
         { title: 'Encours impayé', value: formatCurrency(totalRemaining), icon: Clock, color: 'bg-amber-500/10 text-amber-600', desc: 'à recouvrer' },
-        { title: 'Factures soldées', value: paidCount.toString(), icon: CheckCircle2, color: 'bg-emerald-500/10 text-emerald-600', desc: `sur ${invoices.length}` },
+        { title: 'Factures soldées', value: formatNumber(paidCount), icon: CheckCircle2, color: 'bg-emerald-500/10 text-emerald-600', desc: `sur ${invoices.length}` },
     ]
 
     return (
@@ -128,9 +133,10 @@ export default function InvoicesPage() {
                 <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
                     <div className="px-4 py-3 border-b border-zinc-100 flex flex-col sm:flex-row sm:items-center gap-3">
                         <div className="relative flex-1 max-w-sm">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" aria-hidden="true" />
                             <Input
                                 placeholder="Rechercher..."
+                                aria-label="Rechercher une facture"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="pl-9 h-9 text-sm"
@@ -140,6 +146,7 @@ export default function InvoicesPage() {
                             <select
                                 value={filterType}
                                 onChange={(e) => setFilterType(e.target.value)}
+                                aria-label="Filtrer par type"
                                 className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600"
                             >
                                 <option value="all">Tous types</option>
@@ -149,30 +156,43 @@ export default function InvoicesPage() {
                             <select
                                 value={filterStatus}
                                 onChange={(e) => setFilterStatus(e.target.value)}
+                                aria-label="Filtrer par statut"
                                 className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600"
                             >
                                 <option value="all">Tous statuts</option>
                                 <option value="paid">Payée</option>
                                 <option value="partial">Partielle</option>
                                 <option value="draft">Brouillon</option>
+                                <option value="sent">Envoyée</option>
+                                <option value="cancelled">Annulée</option>
                             </select>
                         </div>
                     </div>
 
                     {isLoading ? (
-                        <div className="flex justify-center items-center h-48">
-                            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+                        <div className="p-4">
+                            <TableSkeleton rows={6} columns={5} />
                         </div>
+                    ) : loadError ? (
+                        <ErrorState className="m-4" title="Impossible de charger les factures" onRetry={() => fetchInvoices()} />
                     ) : invoices.length === 0 ? (
-                        <div className="text-center py-16 flex flex-col items-center px-4">
-                            <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
-                                <FileText className="h-6 w-6 text-zinc-400" />
-                            </div>
-                            <h3 className="text-sm font-semibold text-zinc-950">Aucune facture</h3>
-                            <p className="mt-1 text-sm text-zinc-500 max-w-xs">
-                                Les factures seront générées automatiquement lors de la création de ventes.
-                            </p>
-                        </div>
+                        hasFilters ? (
+                            <EmptyState
+                                icon={Search}
+                                className="m-4"
+                                title="Aucune facture ne correspond"
+                                description="Modifiez la recherche ou les filtres."
+                                action={{ label: 'Réinitialiser les filtres', onClick: () => { setSearchTerm(''); setFilterType('all'); setFilterStatus('all') } }}
+                            />
+                        ) : (
+                            <EmptyState
+                                icon={FileText}
+                                className="m-4"
+                                title="Aucune facture"
+                                description="Les factures sont générées automatiquement lors de la création de ventes."
+                                action={{ label: 'Nouvelle vente', href: '/dashboard/sales/new' }}
+                            />
+                        )
                     ) : (
                         <>
                             {/* Desktop table */}
@@ -210,7 +230,7 @@ export default function InvoicesPage() {
                                                     </TableCell>
                                                     <TableCell>
                                                         <span className="text-xs text-zinc-500">
-                                                            {new Date(inv.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                            {formatDateShort(inv.created_at)}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="text-right">
@@ -235,7 +255,7 @@ export default function InvoicesPage() {
                                                     <TableCell className="pr-4 text-right">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour la facture ${inv.invoice_number}`}>
                                                                     <MoreHorizontal className="h-4 w-4 text-zinc-400" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
@@ -278,7 +298,7 @@ export default function InvoicesPage() {
                                                         {inv.client_name || inv.supplier_name || 'Sans nom'}
                                                     </p>
                                                     <p className="text-xs text-zinc-400 font-mono">
-                                                        {inv.invoice_number} · {new Date(inv.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                                                        {inv.invoice_number} · {formatDateShort(inv.created_at)}
                                                     </p>
                                                 </div>
                                                 <Badge className={`text-[10px] font-medium ml-2 shrink-0 ${status.color} border-none`}>

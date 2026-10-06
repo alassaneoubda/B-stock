@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,11 @@ import { Switch } from '@/components/ui/switch'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
 } from '@/components/ui/dialog'
-import { Percent, Tag, Plus, Edit, Trash2, Calendar, DollarSign } from 'lucide-react'
+import { Percent, Tag, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { apiFetch, toastError } from '@/lib/api-client'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface PriceRule {
   id: string; product_name: string; packaging_name: string; client_type: string
@@ -29,7 +33,24 @@ interface Promotion {
   is_active: boolean; valid_from: string | null; valid_until: string | null
 }
 
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA' }
+const fmt = formatMoney
+
+const clientTypeLabels: Record<string, string> = {
+  retail: 'Détail',
+  wholesale: 'Gros',
+  semi_wholesale: 'Semi-gros',
+  depot: 'Dépôt',
+  restaurant: 'Restaurant',
+  bar: 'Bar',
+  subdepot: 'Sous-dépôt',
+}
+
+function validityLabel(from: string | null, until: string | null) {
+  if (from && until) return `${formatDate(from)} - ${formatDate(until)}`
+  if (from) return `À partir du ${formatDate(from)}`
+  if (until) return `Jusqu'au ${formatDate(until)}`
+  return 'Illimitée'
+}
 
 export default function PricingPage() {
   const [priceRules, setPriceRules] = useState<PriceRule[]>([])
@@ -39,9 +60,9 @@ export default function PricingPage() {
   const [openRule, setOpenRule] = useState(false)
   const [openPromo, setOpenPromo] = useState(false)
   const [products, setProducts] = useState<any[]>([])
-  const [depots, setDepots] = useState<any[]>([])
-  const [editingRule, setEditingRule] = useState<PriceRule | null>(null)
-  const [editingPromo, setEditingPromo] = useState<Promotion | null>(null)
+  const [loadError, setLoadError] = useState(false)
+  const [savingRule, setSavingRule] = useState(false)
+  const [savingPromo, setSavingPromo] = useState(false)
 
   // Form states for price rule
   const [ruleProductId, setRuleProductId] = useState('')
@@ -62,33 +83,41 @@ export default function PricingPage() {
   const [promoActive, setPromoActive] = useState(true)
 
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const [priceRes, promoRes, prodRes] = await Promise.all([
-        fetch('/api/pricing'),
-        fetch('/api/products'),
-        fetch('/api/depots'),
+      // Auparavant les promotions étaient lues dans la réponse produits (toujours vides)
+      // et les produits dans la réponse dépôts.
+      const [pricingJson, prodJson] = await Promise.all([
+        apiFetch('/api/pricing'),
+        apiFetch('/api/products?limit=500'),
       ])
-      if (!priceRes.ok || !promoRes.ok || !prodRes.ok) {
-        throw new Error('Failed to fetch data')
-      }
-      const priceJson = await priceRes.json()
-      const promoJson = await promoRes.json()
-      const prodJson = await prodRes.json()
-      setPriceRules(priceJson.data?.priceRules || [])
-      setPromotions(promoJson.data?.promotions || [])
+      setPriceRules(pricingJson.data?.priceRules || [])
+      setPromotions(pricingJson.data?.promotions || [])
       setProducts(Array.isArray(prodJson.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : [])
-      setDepots([])
-    } catch (e) { 
-      console.error('Error fetching pricing data:', e)
-      setProducts([])
-      setDepots([])
+    } catch (e) {
+      setLoadError(true)
+      toastError(e, 'Impossible de charger la tarification')
     }
     finally { setIsLoading(false) }
   }, [])
 
+  // Produits aplatis en variantes « Produit — Emballage » (l'API attend un id de variante)
+  const variantOptions = useMemo(
+    () =>
+      products.flatMap((p: any) =>
+        (Array.isArray(p.variants) ? p.variants : []).map((v: any) => ({
+          id: v.id as string,
+          label: v.packaging_name ? `${p.name} — ${v.packaging_name}` : (p.name as string),
+          price: Number(v.price || 0),
+        }))
+      ),
+    [products]
+  )
+
   useEffect(() => { fetchData() }, [fetchData])
 
   async function handleSaveRule() {
+    if (savingRule) return
     const body = {
       type: 'price_rule',
       product_variant_id: ruleProductId,
@@ -96,17 +125,22 @@ export default function PricingPage() {
       price: Number(rulePrice),
       min_quantity: Number(ruleMinQty),
     }
-    await fetch('/api/pricing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    setOpenRule(false); setEditingRule(null)
-    setRuleProductId(''); setRuleClientType('retail'); setRulePrice(''); setRuleMinQty('1')
-    fetchData()
+    setSavingRule(true)
+    try {
+      await apiFetch('/api/pricing', { method: 'POST', body })
+      toast.success('Règle de prix enregistrée')
+      setOpenRule(false)
+      setRuleProductId(''); setRuleClientType('retail'); setRulePrice(''); setRuleMinQty('1')
+      fetchData()
+    } catch (e) {
+      toastError(e, 'Règle non enregistrée')
+    } finally {
+      setSavingRule(false)
+    }
   }
 
   async function handleSavePromo() {
+    if (savingPromo) return
     const body = {
       type: 'promotion',
       name: promoName,
@@ -120,23 +154,33 @@ export default function PricingPage() {
       min_order_amount: promoMinOrder ? Number(promoMinOrder) : undefined,
       is_active: promoActive,
     }
-    await fetch('/api/pricing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    setOpenPromo(false); setEditingPromo(null)
-    setPromoName(''); setPromoDiscountType('percentage'); setPromoDiscountValue('')
-    setPromoAppliesTo('all'); setPromoProductId(''); setPromoCategory('')
-    setPromoClientType(''); setPromoMinQty('1'); setPromoMinOrder(''); setPromoActive(true)
-    fetchData()
+    setSavingPromo(true)
+    try {
+      await apiFetch('/api/pricing', { method: 'POST', body })
+      toast.success('Promotion enregistrée')
+      setOpenPromo(false)
+      setPromoName(''); setPromoDiscountType('percentage'); setPromoDiscountValue('')
+      setPromoAppliesTo('all'); setPromoProductId(''); setPromoCategory('')
+      setPromoClientType(''); setPromoMinQty('1'); setPromoMinOrder(''); setPromoActive(true)
+      fetchData()
+    } catch (e) {
+      toastError(e, 'Promotion non enregistrée')
+    } finally {
+      setSavingPromo(false)
+    }
   }
 
   if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError && priceRules.length === 0 && promotions.length === 0) {
     return (
       <div className="flex flex-col min-h-screen bg-zinc-50/50">
         <DashboardHeader title="Tarification" />
-        <div className="flex-1 flex items-center justify-center text-sm text-zinc-400">Chargement...</div>
+        <main className="flex-1 p-4 lg:p-6">
+          <ErrorState title="Impossible de charger la tarification" onRetry={() => { setIsLoading(true); fetchData() }} />
+        </main>
       </div>
     )
   }
@@ -170,7 +214,13 @@ export default function PricingPage() {
               <CardHeader><CardTitle className="text-sm">Règles de prix par client</CardTitle></CardHeader>
               <CardContent className="p-0">
                 {priceRules.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-zinc-400">Aucune règle de prix</div>
+                  <EmptyState
+                    icon={Tag}
+                    className="m-4"
+                    title="Aucune règle de prix"
+                    description="Définissez un prix spécifique par type de client et quantité minimale."
+                    action={{ label: 'Nouvelle règle', onClick: () => setOpenRule(true) }}
+                  />
                 ) : (
                   <Table>
                     <TableHeader>
@@ -181,33 +231,22 @@ export default function PricingPage() {
                         <TableHead className="text-right">Prix</TableHead>
                         <TableHead>Validité</TableHead>
                         <TableHead>Statut</TableHead>
-                        <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {priceRules.map((rule) => (
                         <TableRow key={rule.id}>
-                          <TableCell className="text-sm">{rule.product_name} {rule.packaging_name}</TableCell>
-                          <TableCell className="text-sm capitalize">{rule.client_type}</TableCell>
-                          <TableCell className="text-center text-sm">{rule.min_quantity}</TableCell>
+                          <TableCell className="text-sm">{rule.product_name}{rule.packaging_name ? ` — ${rule.packaging_name}` : ''}</TableCell>
+                          <TableCell className="text-sm">{clientTypeLabels[rule.client_type] || rule.client_type}</TableCell>
+                          <TableCell className="text-center text-sm">{formatNumber(rule.min_quantity)}</TableCell>
                           <TableCell className="text-right text-sm font-medium">{fmt(Number(rule.price))}</TableCell>
                           <TableCell className="text-sm text-zinc-500">
-                            {rule.valid_from && rule.valid_until
-                              ? `${new Date(rule.valid_from).toLocaleDateString('fr-FR')} - ${new Date(rule.valid_until).toLocaleDateString('fr-FR')}`
-                              : rule.valid_from
-                              ? `À partir du ${new Date(rule.valid_from).toLocaleDateString('fr-FR')}`
-                              : 'Illimitée'
-                            }
+                            {validityLabel(rule.valid_from, rule.valid_until)}
                           </TableCell>
                           <TableCell>
                             <Badge variant={rule.is_active ? 'default' : 'secondary'}>
                               {rule.is_active ? 'Active' : 'Inactive'}
                             </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button size="sm" variant="ghost" className="h-7 text-xs">
-                              <Edit className="h-3 w-3" />
-                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -224,7 +263,13 @@ export default function PricingPage() {
               <CardHeader><CardTitle className="text-sm">Promotions et remises</CardTitle></CardHeader>
               <CardContent className="p-0">
                 {promotions.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-zinc-400">Aucune promotion</div>
+                  <EmptyState
+                    icon={Percent}
+                    className="m-4"
+                    title="Aucune promotion"
+                    description="Créez une remise en pourcentage ou en montant fixe."
+                    action={{ label: 'Nouvelle promotion', onClick: () => setOpenPromo(true) }}
+                  />
                 ) : (
                   <Table>
                     <TableHeader>
@@ -236,7 +281,6 @@ export default function PricingPage() {
                         <TableHead>Conditions</TableHead>
                         <TableHead>Validité</TableHead>
                         <TableHead>Statut</TableHead>
-                        <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -249,33 +293,23 @@ export default function PricingPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm font-medium">
-                            {promo.discount_type === 'percentage' ? `${promo.discount_value}%` : fmt(Number(promo.discount_value))}
+                            {promo.discount_type === 'percentage' ? `${formatNumber(promo.discount_value)} %` : fmt(Number(promo.discount_value))}
                           </TableCell>
                           <TableCell className="text-sm">
                             {promo.applies_to === 'all' ? 'Tous' : promo.applies_to === 'category' ? promo.category : promo.product_name}
                           </TableCell>
                           <TableCell className="text-sm text-zinc-500">
-                            {promo.min_quantity > 1 && `Min ${promo.min_quantity} pcs`}
-                            {promo.min_order_amount && ` • Min ${fmt(Number(promo.min_order_amount))}`}
-                            {promo.client_type && ` • ${promo.client_type}`}
+                            {promo.min_quantity > 1 && `Min ${formatNumber(promo.min_quantity)} pcs`}
+                            {promo.min_order_amount ? ` • Min ${fmt(Number(promo.min_order_amount))}` : null}
+                            {promo.client_type && ` • ${clientTypeLabels[promo.client_type] || promo.client_type}`}
                           </TableCell>
                           <TableCell className="text-sm text-zinc-500">
-                            {promo.valid_from && promo.valid_until
-                              ? `${new Date(promo.valid_from).toLocaleDateString('fr-FR')} - ${new Date(promo.valid_until).toLocaleDateString('fr-FR')}`
-                              : promo.valid_from
-                              ? `À partir du ${new Date(promo.valid_from).toLocaleDateString('fr-FR')}`
-                              : 'Illimitée'
-                            }
+                            {validityLabel(promo.valid_from, promo.valid_until)}
                           </TableCell>
                           <TableCell>
                             <Badge variant={promo.is_active ? 'default' : 'secondary'}>
                               {promo.is_active ? 'Active' : 'Inactive'}
                             </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button size="sm" variant="ghost" className="h-7 text-xs">
-                              <Edit className="h-3 w-3" />
-                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -288,7 +322,7 @@ export default function PricingPage() {
         </Tabs>
 
         {/* Price Rule Dialog */}
-        <Dialog open={openRule} onOpenChange={setOpenRule}>
+        <Dialog open={openRule} onOpenChange={(o) => { if (!savingRule) setOpenRule(o) }}>
           <DialogContent>
             <DialogHeader><DialogTitle>Nouvelle règle de prix</DialogTitle></DialogHeader>
             <div className="space-y-4 py-4">
@@ -297,11 +331,16 @@ export default function PricingPage() {
                 <Select value={ruleProductId} onValueChange={setRuleProductId}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
                   <SelectContent>
-                    {products.map((p: any) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    {variantOptions.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {ruleProductId && (
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Prix catalogue : {fmt(variantOptions.find((v) => v.id === ruleProductId)?.price ?? 0)}
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -318,25 +357,25 @@ export default function PricingPage() {
                 </div>
                 <div>
                   <Label>Quantité min</Label>
-                  <Input type="number" value={ruleMinQty} onChange={(e) => setRuleMinQty(e.target.value)} className="mt-1" />
+                  <Input type="number" min={1} value={ruleMinQty} onChange={(e) => setRuleMinQty(e.target.value)} className="mt-1" />
                 </div>
               </div>
               <div>
                 <Label>Prix (FCFA) *</Label>
-                <Input type="number" value={rulePrice} onChange={(e) => setRulePrice(e.target.value)} className="mt-1" />
+                <Input type="number" min={1} value={rulePrice} onChange={(e) => setRulePrice(e.target.value)} className="mt-1" />
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-              <Button onClick={handleSaveRule} disabled={!ruleProductId || !rulePrice}>
-                <Tag className="h-4 w-4 mr-2" /> Créer
+              <Button onClick={handleSaveRule} disabled={savingRule || !ruleProductId || !rulePrice}>
+                {savingRule ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Tag className="h-4 w-4 mr-2" />} Créer
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* Promotion Dialog */}
-        <Dialog open={openPromo} onOpenChange={setOpenPromo}>
+        <Dialog open={openPromo} onOpenChange={(o) => { if (!savingPromo) setOpenPromo(o) }}>
           <DialogContent className="max-w-lg">
             <DialogHeader><DialogTitle>Nouvelle promotion</DialogTitle></DialogHeader>
             <div className="space-y-4 py-4">
@@ -377,8 +416,8 @@ export default function PricingPage() {
                   <Select value={promoProductId} onValueChange={setPromoProductId}>
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
                     <SelectContent>
-                      {products.map((p: any) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      {variantOptions.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -401,14 +440,14 @@ export default function PricingPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Switch checked={promoActive} onCheckedChange={setPromoActive} />
-                <Label>Active</Label>
+                <Switch id="promo-active" checked={promoActive} onCheckedChange={setPromoActive} />
+                <Label htmlFor="promo-active">Active</Label>
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-              <Button onClick={handleSavePromo} disabled={!promoName || !promoDiscountValue}>
-                <Percent className="h-4 w-4 mr-2" /> Créer
+              <Button onClick={handleSavePromo} disabled={savingPromo || !promoName || !promoDiscountValue || (promoAppliesTo === 'product' && !promoProductId)}>
+                {savingPromo ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Percent className="h-4 w-4 mr-2" />} Créer
               </Button>
             </DialogFooter>
           </DialogContent>

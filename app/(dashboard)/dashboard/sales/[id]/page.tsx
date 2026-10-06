@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -37,7 +37,11 @@ import {
     CheckCircle2,
     XCircle,
     BoxesIcon,
+    Loader2,
 } from 'lucide-react'
+import { apiFetch, ApiError, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDateShort, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
+import { ErrorState, PageSkeleton } from '@/components/states'
 
 interface SaleDetail {
     id: string
@@ -96,12 +100,13 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.E
     cancelled: { label: 'Annulée', color: 'bg-rose-50 text-rose-600', icon: XCircle },
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
+const paymentMethodLabels: Record<string, string> = {
+    cash: 'Espèces',
+    mobile_money: 'Mobile Money',
+    credit: 'Crédit',
+    mixed: 'Mixte',
+    bank_transfer: 'Virement',
+    check: 'Chèque',
 }
 
 export default function SaleDetailPage() {
@@ -109,22 +114,24 @@ export default function SaleDetailPage() {
     const router = useRouter()
     const [sale, setSale] = useState<SaleDetail | null>(null)
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState<'not_found' | 'error' | null>(null)
 
-    useEffect(() => {
-        async function fetchSale() {
-            try {
-                const res = await fetch(`/api/sales/${params.id}`)
-                const data = await res.json()
-                if (data.success) {
-                    setSale(data.data)
-                }
-            } catch (error) {
-                console.error('Error fetching sale:', error)
-            }
+    const fetchSale = useCallback(async () => {
+        setLoading(true)
+        setLoadError(null)
+        try {
+            const data = await apiFetch(`/api/sales/${params.id}`)
+            setSale(data.data)
+        } catch (error) {
+            setLoadError(error instanceof ApiError && error.status === 404 ? 'not_found' : 'error')
+        } finally {
             setLoading(false)
         }
-        fetchSale()
     }, [params.id])
+
+    useEffect(() => {
+        fetchSale()
+    }, [fetchSale])
 
     const [updating, setUpdating] = useState(false)
 
@@ -132,33 +139,35 @@ export default function SaleDetailPage() {
         if (updating) return
         setUpdating(true)
         try {
-            const res = await fetch(`/api/sales/${params.id}`, {
+            const data = await apiFetch(`/api/sales/${params.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
+                body: { status: newStatus },
             })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok || !data.success) {
-                toast.error('Action impossible', { description: data.error || 'Veuillez réessayer.' })
-                return
-            }
             setSale((prev) => prev ? { ...prev, status: newStatus } : prev)
             toast.success(data.message || 'Statut mis à jour')
-            for (const warning of data.warnings ?? []) {
-                toast.warning(warning, { duration: 10000 })
+            toastWarnings(data.warnings)
+            if (newStatus === 'cancelled') {
+                router.refresh()
+                fetchSale()
             }
-            if (newStatus === 'cancelled') router.refresh()
-        } catch {
-            toast.error('Erreur réseau', { description: 'Vérifiez votre connexion et réessayez.' })
+        } catch (e) {
+            toastError(e)
         } finally {
             setUpdating(false)
         }
     }
 
-    if (loading) {
+    if (loading && !sale) {
+        return <PageSkeleton />
+    }
+
+    if (loadError === 'error') {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-zinc-50/50">
-                <div className="text-slate-400 font-bold animate-pulse">Chargement...</div>
+            <div className="flex flex-col min-h-screen bg-zinc-50/50">
+                <DashboardHeader title="Commande" />
+                <main className="flex-1 p-4 lg:p-6">
+                    <ErrorState title="Impossible de charger la commande" onRetry={fetchSale} />
+                </main>
             </div>
         )
     }
@@ -179,12 +188,21 @@ export default function SaleDetailPage() {
     const remainingPackaging = Number(sale.packaging_total) - Number(sale.paid_amount_packaging || 0)
     const status = statusConfig[sale.status] || statusConfig.pending
     const StatusIcon = status.icon
+    const paymentLabel = paymentMethodLabels[sale.payment_method ?? ''] || sale.payment_method || '—'
+    const paymentStatus =
+        sale.status === 'cancelled'
+            ? { label: 'Vente annulée', color: 'text-slate-500' }
+            : remaining <= 0
+                ? { label: 'Soldée', color: 'text-emerald-600' }
+                : Number(sale.paid_amount) > 0
+                    ? { label: `Partiellement payée — ${formatMoney(sale.paid_amount)} encaissés`, color: 'text-amber-600' }
+                    : { label: 'Non payée (à crédit)', color: 'text-rose-600' }
 
     return (
         <div className="flex flex-col min-h-screen bg-zinc-50/50">
             <DashboardHeader
                 title={`Commande ${sale.order_number}`}
-                description={`Créée le ${new Date(sale.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                description={`Créée le ${formatDateTime(sale.created_at)}`}
                 actions={
                     <Button variant="outline" asChild className="rounded-md h-11 px-6 font-bold">
                         <Link href="/dashboard/sales">
@@ -231,7 +249,7 @@ export default function SaleDetailPage() {
                             </div>
                             <div>
                                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total</p>
-                                <p className="text-lg font-semibold text-slate-950">{formatCurrency(Number(sale.total_amount))}</p>
+                                <p className="text-lg font-semibold text-slate-950">{formatMoney(Number(sale.total_amount))}</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -245,8 +263,9 @@ export default function SaleDetailPage() {
                             <div>
                                 <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Reste à payer</p>
                                 <p className={`text-lg font-semibold ${remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                    {remaining > 0 ? formatCurrency(remaining) : 'Soldé ✓'}
+                                    {remaining > 0 ? formatMoney(remaining) : 'Soldé ✓'}
                                 </p>
+                                <p className="text-xs text-slate-500">Paiement : {paymentLabel}</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -261,18 +280,18 @@ export default function SaleDetailPage() {
                                 <div>
                                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Dette Produits</p>
                                     <p className={`text-xl font-semibold ${remainingProducts > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                        {remainingProducts > 0 ? formatCurrency(remainingProducts) : 'Soldé ✓'}
+                                        {remainingProducts > 0 ? formatMoney(remainingProducts) : 'Soldé ✓'}
                                     </p>
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Dette Emballages</p>
                                     <p className={`text-xl font-semibold ${remainingPackaging > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                        {remainingPackaging > 0 ? formatCurrency(remainingPackaging) : 'Soldé ✓'}
+                                        {remainingPackaging > 0 ? formatMoney(remainingPackaging) : 'Soldé ✓'}
                                     </p>
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Restant</p>
-                                    <p className="text-xl font-semibold text-rose-600">{formatCurrency(remaining)}</p>
+                                    <p className="text-xl font-semibold text-rose-600">{formatMoney(remaining)}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -284,23 +303,24 @@ export default function SaleDetailPage() {
                     <Card className="rounded-[2rem] border-slate-200/60 shadow-sm">
                         <CardContent className="p-6 flex flex-wrap gap-3">
                             <p className="text-sm font-bold text-slate-500 mr-4 self-center">Changer le statut :</p>
+                            {updating && <Loader2 className="h-4 w-4 animate-spin self-center text-slate-400" aria-label="Mise à jour en cours" />}
                             {sale.status === 'pending' && (
-                                <Button onClick={() => updateStatus('confirmed')} className="rounded-md bg-blue-600 hover:bg-blue-700 font-bold">
+                                <Button onClick={() => updateStatus('confirmed')} disabled={updating} className="rounded-md bg-blue-600 hover:bg-blue-700 font-bold">
                                     Confirmer la commande
                                 </Button>
                             )}
                             {sale.status === 'confirmed' && (
-                                <Button onClick={() => updateStatus('preparing')} className="rounded-md bg-amber-600 hover:bg-amber-700 font-bold">
+                                <Button onClick={() => updateStatus('preparing')} disabled={updating} className="rounded-md bg-amber-600 hover:bg-amber-700 font-bold">
                                     Mettre en préparation
                                 </Button>
                             )}
                             {sale.status === 'preparing' && (
-                                <Button onClick={() => updateStatus('ready')} className="rounded-md bg-indigo-600 hover:bg-indigo-700 font-bold">
+                                <Button onClick={() => updateStatus('ready')} disabled={updating} className="rounded-md bg-indigo-600 hover:bg-indigo-700 font-bold">
                                     Marquer comme prête
                                 </Button>
                             )}
                             {sale.status === 'ready' && (
-                                <Button onClick={() => updateStatus('delivered')} className="rounded-md bg-emerald-600 hover:bg-emerald-700 font-bold">
+                                <Button onClick={() => updateStatus('delivered')} disabled={updating} className="rounded-md bg-emerald-600 hover:bg-emerald-700 font-bold">
                                     Marquer comme livrée
                                 </Button>
                             )}
@@ -365,15 +385,15 @@ export default function SaleDetailPage() {
                                                 {item.packaging_name || 'Standard'}
                                             </Badge>
                                         </TableCell>
-                                        <TableCell className="py-5 text-right font-semibold text-slate-950">{item.quantity}</TableCell>
-                                        <TableCell className="py-5 text-right font-bold text-slate-600">{formatCurrency(Number(item.unit_price))}</TableCell>
-                                        <TableCell className="py-5 text-right font-semibold text-slate-950 pr-8">{formatCurrency(Number(item.total_price))}</TableCell>
+                                        <TableCell className="py-5 text-right font-semibold text-slate-950">{formatNumber(item.quantity)}</TableCell>
+                                        <TableCell className="py-5 text-right font-bold text-slate-600">{formatMoney(Number(item.unit_price))}</TableCell>
+                                        <TableCell className="py-5 text-right font-semibold text-slate-950 pr-8">{formatMoney(Number(item.total_price))}</TableCell>
                                     </TableRow>
                                 ))}
                                 {/* Subtotal row */}
                                 <TableRow className="bg-slate-50/50 border-none">
                                     <TableCell colSpan={4} className="py-4 pl-8 font-semibold text-slate-600 text-right">Sous-total produits :</TableCell>
-                                    <TableCell className="py-4 text-right font-semibold text-slate-950 pr-8">{formatCurrency(Number(sale.subtotal))}</TableCell>
+                                    <TableCell className="py-4 text-right font-semibold text-slate-950 pr-8">{formatMoney(Number(sale.subtotal))}</TableCell>
                                 </TableRow>
                             </TableBody>
                         </Table>
@@ -405,7 +425,7 @@ export default function SaleDetailPage() {
                                             <TableCell className="py-5 text-right font-bold text-rose-600">{pkg.quantity_out}</TableCell>
                                             <TableCell className="py-5 text-right font-bold text-emerald-600">{pkg.quantity_in}</TableCell>
                                             <TableCell className="py-5 text-right font-semibold text-slate-950 pr-8">
-                                                {formatCurrency((Number(pkg.quantity_out) - Number(pkg.quantity_in)) * Number(pkg.unit_price))}
+                                                {formatMoney((Number(pkg.quantity_out) - Number(pkg.quantity_in)) * Number(pkg.unit_price))}
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -421,6 +441,9 @@ export default function SaleDetailPage() {
                         <CardTitle className="text-xl font-semibold text-slate-950 flex items-center gap-3">
                             <CreditCard className="h-5 w-5 text-emerald-600" /> Paiements
                         </CardTitle>
+                        <p className={`text-sm font-medium ${paymentStatus.color}`}>
+                            Mode : {paymentLabel} · {paymentStatus.label}
+                        </p>
                     </CardHeader>
                     <CardContent className="p-0">
                         {sale.payments.length === 0 ? (
@@ -439,15 +462,15 @@ export default function SaleDetailPage() {
                                     {sale.payments.map((p) => (
                                         <TableRow key={p.id} className="border-b border-slate-50">
                                             <TableCell className="py-5 pl-8 font-bold text-slate-600">
-                                                {new Date(p.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                {formatDateShort(p.created_at)}
                                             </TableCell>
                                             <TableCell className="py-5">
                                                 <Badge className="rounded-lg bg-slate-100 text-slate-600 border-none font-bold text-[10px] uppercase">
-                                                    {p.payment_method}
+                                                    {paymentMethodLabels[p.payment_method] || p.payment_method}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell className="py-5 text-sm font-mono text-slate-500">{p.reference || '—'}</TableCell>
-                                            <TableCell className="py-5 text-right font-semibold text-emerald-600 pr-8">{formatCurrency(Number(p.amount))}</TableCell>
+                                            <TableCell className="py-5 text-right font-semibold text-emerald-600 pr-8">{formatMoney(Number(p.amount))}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
