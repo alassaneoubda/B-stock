@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -70,7 +70,7 @@ const typeLabels: Record<string, string> = {
 }
 
 export default async function SuppliersPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const suppliers = await getSuppliers(companyId)
 

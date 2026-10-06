@@ -21,7 +21,7 @@ async function readSessionToken(req: NextRequest) {
   return null
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
   const token = await readSessionToken(req)
 
@@ -58,13 +58,20 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/admin', req.url))
   }
 
-  if (!isLoggedIn && (isDashboardRoute || isProtectedApiRoute)) {
+  if (!isLoggedIn && isProtectedApiRoute) {
+    return NextResponse.json({ error: 'Non autorisé', code: 'UNAUTHENTICATED' }, { status: 401 })
+  }
+
+  if (!isLoggedIn && isDashboardRoute) {
     const loginUrl = new URL('/login', req.url)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  if (isLoggedIn && (pathname === '/login' || pathname === '/register')) {
+  // /login?error=... doit rester accessible : la page purge alors une session
+  // révoquée (sinon boucle /login -> /dashboard -> /login).
+  const hasAuthError = req.nextUrl.searchParams.has('error')
+  if (isLoggedIn && !hasAuthError && (pathname === '/login' || pathname === '/register')) {
     return NextResponse.redirect(
       new URL(isPlatformAdmin ? '/admin' : '/dashboard', req.url)
     )

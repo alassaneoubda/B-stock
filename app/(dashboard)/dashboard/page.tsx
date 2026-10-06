@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { SubscriptionBanner } from '@/components/dashboard/subscription-banner'
@@ -69,7 +69,7 @@ function translateStatus(status: string) {
 }
 
 export default async function DashboardPage() {
-  const session = await auth()
+  const session = await requirePageSession()
   const companyId = session?.user?.companyId || ''
   const stats = await getDashboardStats(companyId)
 

@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -72,7 +72,7 @@ function formatCurrency(amount: number) {
 }
 
 export default async function ProductsPage() {
-  const session = await auth()
+  const session = await requirePageSession()
   const products = await getProducts(session?.user?.companyId || '')
 
   const statsData = [

@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { notFound } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
@@ -119,7 +119,7 @@ export default async function ClientDetailPage({
     params: Promise<{ id: string }>
 }) {
     const { id } = await params
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
 
     const [client, orders] = await Promise.all([

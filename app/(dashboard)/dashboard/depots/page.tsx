@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -40,7 +40,7 @@ async function getDepots(companyId: string): Promise<Depot[]> {
 }
 
 export default async function DepotsPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const depots = await getDepots(companyId)
 

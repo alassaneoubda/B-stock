@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 /**
  * Impersonation tokens — short-lived, HMAC-signed proofs that a super-admin
@@ -12,6 +12,7 @@ type ImpersonationPayload = {
   uid: string // target user id
   adminId: string // platform admin who initiated
   exp: number // unix seconds
+  jti: string // identifiant unique — le jeton n'est utilisable qu'une seule fois
 }
 
 function secret(): string {
@@ -33,6 +34,7 @@ export function createImpersonationToken(
     uid,
     adminId,
     exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+    jti: randomBytes(16).toString('hex'),
   }
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
   return `${body}.${sign(body)}`
@@ -53,7 +55,7 @@ export function verifyImpersonationToken(
     const payload = JSON.parse(
       Buffer.from(body, 'base64url').toString('utf8')
     ) as ImpersonationPayload
-    if (!payload.uid || !payload.adminId || !payload.exp) return null
+    if (!payload.uid || !payload.adminId || !payload.exp || !payload.jti) return null
     if (payload.exp < Math.floor(Date.now() / 1000)) return null
     return payload
   } catch {

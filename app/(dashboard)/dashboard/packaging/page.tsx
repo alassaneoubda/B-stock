@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -68,7 +68,7 @@ async function getPackagingTypes(companyId: string): Promise<PackagingType[]> {
 }
 
 export default async function PackagingPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const packagingTypes = await getPackagingTypes(companyId)
 

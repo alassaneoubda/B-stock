@@ -24,7 +24,11 @@ import Link from 'next/link'
 const userSchema = z.object({
     fullName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
     email: z.string().email('Email invalide'),
-    password: z.string().min(6, 'Le mot de passe doit contenir au moins 6 caractères'),
+    password: z
+        .string()
+        .min(8, 'Le mot de passe doit contenir au moins 8 caractères')
+        .regex(/[A-Za-z]/, 'Le mot de passe doit contenir au moins une lettre')
+        .regex(/[0-9]/, 'Le mot de passe doit contenir au moins un chiffre'),
     role: z.enum(['manager', 'cashier', 'warehouse_keeper']),
     phone: z.string().optional(),
     permissions: z.array(z.string()).default([]),

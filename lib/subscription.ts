@@ -9,6 +9,13 @@ export type SubscriptionInfo = {
   trialEndsAt: string | null
 }
 
+export type SubscriptionRow = {
+  subscription_status: string | null
+  trial_ends_at: string | Date | null
+  subscription_ends_at: string | Date | null
+  plan_name?: string | null
+}
+
 /**
  * Get full subscription info for a company.
  * Checks trial AND paid subscription expiry.
@@ -16,13 +23,13 @@ export type SubscriptionInfo = {
 export async function getSubscriptionInfo(companyId: string): Promise<SubscriptionInfo> {
   const companies = await sql`
     SELECT c.subscription_status, c.trial_ends_at, c.subscription_ends_at,
-           sp.name as plan_name
+           COALESCE(c.subscription_plan_name, sp.display_name, sp.name) as plan_name
     FROM companies c
     LEFT JOIN subscription_plans sp ON c.subscription_plan_id = sp.id
     WHERE c.id = ${companyId}
   `
 
-  const company = companies[0]
+  const company = companies[0] as SubscriptionRow | undefined
   if (!company) {
     return {
       isActive: false,
@@ -34,7 +41,14 @@ export async function getSubscriptionInfo(companyId: string): Promise<Subscripti
     }
   }
 
-  const now = new Date()
+  return evaluateSubscription(company)
+}
+
+/**
+ * Calcule l'état d'abonnement à partir d'une ligne `companies` (fonction pure,
+ * utilisée par getSubscriptionInfo et par le contrôle d'accès API).
+ */
+export function evaluateSubscription(company: SubscriptionRow, now = new Date()): SubscriptionInfo {
 
   // 1. Trialing
   if (company.subscription_status === 'trialing') {

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { DashboardSidebar } from '@/components/dashboard/sidebar-nav'
 import { MobileBottomNav } from '@/components/dashboard/mobile-bottom-nav'
@@ -14,11 +14,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const session = await auth()
-
-  if (!session) {
-    redirect('/login')
-  }
+  const session = await requirePageSession()
 
   // Newly provisioned (e.g. Google) accounts must set their company name first
   if (session.user.onboardingCompleted === false) {

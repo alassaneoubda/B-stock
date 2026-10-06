@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { ArrowLeft, Loader2, ShieldCheck, KeyRound } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { signOut } from 'next-auth/react'
 
 export default function SecuritySettingsPage() {
     const router = useRouter()
@@ -35,14 +36,33 @@ export default function SecuritySettingsPage() {
         }
 
         setIsLoading(true)
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        setIsLoading(false)
+        try {
+            const res = await fetch('/api/profile/password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    currentPassword: passwords.current,
+                    newPassword: passwords.newPass,
+                }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) {
+                toast.error('Modification impossible', { description: data.error || 'Veuillez réessayer.' })
+                return
+            }
 
-        setPasswords({ current: '', newPass: '', confirm: '' })
-        toast.success('Mot de passe mis à jour', {
-            description: "Votre mot de passe a été modifié avec succès."
-        })
+            setPasswords({ current: '', newPass: '', confirm: '' })
+            toast.success('Mot de passe mis à jour', {
+                description: 'Reconnectez-vous avec votre nouveau mot de passe.',
+            })
+            // Toutes les sessions ont été invalidées côté serveur
+            await signOut({ redirect: false })
+            router.push('/login')
+        } catch {
+            toast.error('Erreur réseau', { description: 'Vérifiez votre connexion et réessayez.' })
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     return (

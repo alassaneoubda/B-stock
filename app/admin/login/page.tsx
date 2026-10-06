@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { signIn } from 'next-auth/react'
+import { safeCallbackUrl } from '@/lib/safe-redirect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,7 +25,7 @@ export default function AdminLoginPage() {
 
 function AdminLoginContent() {
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/admin'
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'), '/admin')
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -46,7 +47,7 @@ function AdminLoginContent() {
         setError('Identifiants invalides ou compte non autorisé')
       } else {
         // Navigation complète : le cookie Auth.js doit être renvoyé au middleware
-        window.location.assign(callbackUrl.startsWith('/') ? callbackUrl : '/admin')
+        window.location.assign(callbackUrl)
       }
     } catch {
       setError('Une erreur est survenue. Réessayez.')

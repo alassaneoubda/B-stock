@@ -1,63 +1,63 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { hash } from 'bcryptjs'
+import { z } from 'zod'
 import { sql, sqlRaw, transaction } from '@/lib/db'
 import { getSettings } from '@/lib/settings'
 import { ensureCompaniesSchema } from '@/lib/ensure-companies-schema'
 import { ensureUsersFullNameColumn } from '@/lib/ensure-users-schema'
+import { AppError, handleRouteError } from '@/lib/errors'
+import { passwordPolicyError } from '@/lib/permissions'
+import { clientIp, rateLimit } from '@/lib/rate-limit'
+
+const registerSchema = z.object({
+  companyName: z.string().trim().min(2, "Le nom de l'entreprise est requis").max(255),
+  fullName: z.string().trim().min(2, 'Votre nom est requis').max(255),
+  email: z.string().trim().toLowerCase().email('Email invalide').max(255),
+  phone: z.string().trim().max(20).optional().nullable(),
+  password: z.string().max(200),
+})
 
 export async function POST(request: Request) {
   try {
-    await ensureCompaniesSchema()
-    await ensureUsersFullNameColumn()
+    // Anti-abus : 5 inscriptions par heure et par adresse IP
+    const limited = await rateLimit('register', clientIp(request.headers), { limit: 5, windowSeconds: 3600 })
+    if (limited) return limited
 
-    const body = await request.json()
-    const { companyName, fullName, email, phone, password } = body
-
-    // Validate required fields
-    if (!companyName || !fullName || !email || !password) {
-      return NextResponse.json(
-        { error: 'Tous les champs obligatoires doivent etre remplis' },
-        { status: 400 }
-      )
+    const parsed = registerSchema.safeParse(await request.json().catch(() => ({})))
+    if (!parsed.success) {
+      const first = parsed.error.errors[0]?.message
+      throw new AppError(400, first || 'Tous les champs obligatoires doivent être remplis', 'VALIDATION_ERROR')
     }
+    const { companyName, fullName, email, phone, password } = parsed.data
 
-    if (typeof password !== 'string' || password.length < 8) {
-      return NextResponse.json(
-        { error: 'Le mot de passe doit contenir au moins 8 caractères' },
-        { status: 400 }
-      )
-    }
+    const policyError = passwordPolicyError(password)
+    if (policyError) throw new AppError(400, policyError, 'WEAK_PASSWORD')
 
     // Respect global platform configuration
     const settings = await getSettings()
     if (!settings.registrations_open) {
-      return NextResponse.json(
-        { error: 'Les inscriptions sont temporairement fermees' },
-        { status: 403 }
-      )
+      throw new AppError(403, 'Les inscriptions sont temporairement fermées', 'REGISTRATIONS_CLOSED')
     }
 
-    // Check if email already exists
-    const existingUsers = await sql`
-      SELECT id FROM users WHERE email = ${email}
-    `
+    await ensureCompaniesSchema()
+    await ensureUsersFullNameColumn()
 
+    const existingUsers = await sql`SELECT 1 FROM users WHERE lower(email) = ${email} LIMIT 1`
     if (existingUsers.length > 0) {
-      return NextResponse.json(
-        { error: 'Cet email est deja utilise' },
-        { status: 400 }
-      )
+      throw new AppError(409, 'Cet email est déjà utilisé', 'EMAIL_TAKEN')
     }
 
-    // Create slug from company name
-    const slug = companyName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      + '-' + Date.now().toString(36)
+    const slug =
+      companyName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') +
+      '-' +
+      Date.now().toString(36)
 
-    // Hash password
     const passwordHash = await hash(password, 12)
 
     // Calculate trial end date from global configuration
@@ -79,19 +79,12 @@ export async function POST(request: Request) {
       `,
       sqlRaw`
         INSERT INTO depots (company_id, name, is_main)
-        VALUES (${companyId}, 'Depot Principal', true)
+        VALUES (${companyId}, 'Dépôt principal', true)
       `,
     ])
 
-    return NextResponse.json(
-      { message: 'Compte cree avec succes' },
-      { status: 201 }
-    )
+    return NextResponse.json({ message: 'Compte créé avec succès' }, { status: 201 })
   } catch (error) {
-    console.error('Registration error:', error)
-    return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la creation du compte' },
-      { status: 500 }
-    )
+    return handleRouteError(error, 'auth.register')
   }
 }

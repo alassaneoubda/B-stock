@@ -1,9 +1,10 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { signIn } from 'next-auth/react'
+import { signIn, signOut } from 'next-auth/react'
+import { safeCallbackUrl } from '@/lib/safe-redirect'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -21,6 +22,8 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>
 
+const SESSION_ERRORS = new Set(['SessionExpired', 'CompanySuspended', 'AccountDisabled'])
+
 function mapAuthError(code: string): string {
   switch (code) {
     case 'Configuration':
@@ -32,6 +35,18 @@ function mapAuthError(code: string): string {
     case 'OAuthSignin':
     case 'OAuthCallback':
       return 'Échec de la connexion Google. Veuillez réessayer.'
+    case 'SessionExpired':
+      return 'Votre session a expiré. Veuillez vous reconnecter.'
+    case 'CompanySuspended':
+      return 'Le compte de votre entreprise est suspendu. Contactez le support.'
+    case 'AccountDisabled':
+      return 'Votre compte a été désactivé. Contactez le responsable de votre entreprise.'
+    case 'GoogleDisabled':
+      return 'La connexion Google est momentanément désactivée. Utilisez votre email.'
+    case 'RegistrationsClosed':
+      return 'Les inscriptions sont momentanément fermées.'
+    case 'UseAdminLogin':
+      return 'Les administrateurs se connectent depuis l’espace administration.'
     default:
       return 'Une erreur est survenue lors de la connexion. Veuillez réessayer.'
   }
@@ -53,8 +68,16 @@ export default function LoginPage() {
 
 function LoginContent() {
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'))
   const urlError = searchParams.get('error')
+
+  // Session révoquée ou entreprise suspendue : on purge le cookie de session
+  // pour que l'utilisateur puisse se reconnecter (sinon boucle de redirection).
+  useEffect(() => {
+    if (urlError && SESSION_ERRORS.has(urlError)) {
+      signOut({ redirect: false }).catch(() => {})
+    }
+  }, [urlError])
   const registered = searchParams.get('registered') === 'true'
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -82,7 +105,7 @@ function LoginContent() {
       if (result?.error) {
         setError('Email ou mot de passe incorrect')
       } else {
-        window.location.assign(callbackUrl.startsWith('/') ? callbackUrl : '/dashboard')
+        window.location.assign(callbackUrl)
       }
     } catch {
       setError('Une erreur est survenue. Veuillez réessayer.')

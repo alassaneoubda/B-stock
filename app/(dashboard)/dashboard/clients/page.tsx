@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -85,7 +85,7 @@ function formatCurrency(amount: number) {
 }
 
 export default async function ClientsPage() {
-  const session = await auth()
+  const session = await requirePageSession()
   const clients = await getClients(session?.user?.companyId || '')
 
   const activeClients = clients.filter(c => c.is_active)

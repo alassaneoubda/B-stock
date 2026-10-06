@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOwner } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 
 const onboardingSchema = z.object({
@@ -12,14 +12,10 @@ const onboardingSchema = z.object({
 // POST /api/onboarding — Finalize a freshly provisioned (e.g. Google) company
 export async function POST(request: NextRequest) {
   try {
-    const authz = await requireAuth({ skipSubscriptionCheck: true })
-    if (!authz.ok) return authz.response
-    const { session, companyId } = authz
-
     // Only the owner can set up the company identity
-    if (session.user.role !== 'owner') {
-      return NextResponse.json({ error: 'Accès propriétaire requis' }, { status: 403 })
-    }
+    const authz = await requireOwner({ skipSubscriptionCheck: true })
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
     const body = await request.json()
     const data = onboardingSchema.parse(body)

@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -112,7 +112,7 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
 }
 
 export default async function ProcurementPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const [stats, orders] = await Promise.all([
         getProcurementStats(companyId),

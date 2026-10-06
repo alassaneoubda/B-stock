@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -103,7 +103,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
 
 export default async function ProcurementDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params
-    const session = await auth()
+    const session = await requirePageSession()
     if (!session?.user?.companyId) return null
 
     const order = await getOrderDetails(id, session.user.companyId)

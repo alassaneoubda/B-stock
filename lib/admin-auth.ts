@@ -32,6 +32,16 @@ export async function requireSuperAdmin(): Promise<AdminAuthResult> {
       ),
     }
   }
+  // Relu en base : un admin désactivé perd l'accès immédiatement (JWT de 30 jours)
+  const active = await sql`
+    SELECT 1 FROM platform_admins WHERE id = ${session.user.id} AND is_active = true
+  `
+  if (active.length === 0) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Session expirée' }, { status: 401 }),
+    }
+  }
   return {
     ok: true,
     session,

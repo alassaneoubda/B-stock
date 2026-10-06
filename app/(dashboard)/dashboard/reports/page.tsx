@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -160,7 +160,7 @@ const paymentLabels: Record<string, string> = {
 }
 
 export default async function ReportsPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const data = await getReportData(companyId)
 
