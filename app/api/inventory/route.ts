@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { handleRouteError } from '@/lib/errors'
+import { assertOwned } from '@/lib/tenant'
+import { nextDocumentNumber } from '@/lib/sequences'
+
+const listSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(30),
+  offset: z.coerce.number().int().min(0).default(0),
+})
 
 // GET /api/inventory — List inventory sessions
 export async function GET(request: NextRequest) {
@@ -8,6 +17,12 @@ export async function GET(request: NextRequest) {
     const authz = await requirePermission('inventory.read')
     if (!authz.ok) return authz.response
     const { companyId } = authz
+
+    const { searchParams } = new URL(request.url)
+    const { limit, offset } = listSchema.parse({
+      limit: searchParams.get('limit') || undefined,
+      offset: searchParams.get('offset') || undefined,
+    })
 
     const sessions = await sql`
       SELECT is2.*,
@@ -19,16 +34,21 @@ export async function GET(request: NextRequest) {
       LEFT JOIN users su ON is2.started_by = su.id
       LEFT JOIN users cu ON is2.completed_by = cu.id
       WHERE is2.company_id = ${companyId}
-      ORDER BY is2.created_at DESC
-      LIMIT 30
+      ORDER BY is2.created_at DESC, is2.id DESC
+      LIMIT ${limit} OFFSET ${offset}
     `
 
     return NextResponse.json({ success: true, data: sessions })
   } catch (error) {
-    console.error('Inventory sessions error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'inventory.list')
   }
 }
+
+const createSchema = z.object({
+  depot_id: z.string({ required_error: 'Dépôt requis' }).uuid(),
+  inventory_type: z.enum(['full', 'partial', 'spot_check']).default('full'),
+  notes: z.string().trim().max(2000).nullish(),
+})
 
 // POST /api/inventory — Start a new inventory session
 export async function POST(request: NextRequest) {
@@ -37,60 +57,55 @@ export async function POST(request: NextRequest) {
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const body = await request.json()
-    const { depot_id, inventory_type, notes } = body
+    const data = createSchema.parse(await request.json())
 
-    if (!depot_id) {
-      return NextResponse.json({ error: 'Dépôt requis' }, { status: 400 })
-    }
+    const session = await withTransaction(async (tx) => {
+      await assertOwned(tx.sql, companyId, { depots: [data.depot_id] })
 
-    const countResult = await sql`SELECT COUNT(*) as count FROM inventory_sessions WHERE company_id = ${companyId}`
-    const sessionNumber = `INV-${String(Number(countResult[0].count) + 1).padStart(5, '0')}`
+      const sessionNumber = await nextDocumentNumber(tx, companyId, 'inventory')
 
-    const result = await sql`
-      INSERT INTO inventory_sessions (company_id, depot_id, session_number, inventory_type, started_by, notes)
-      VALUES (${companyId}, ${depot_id}, ${sessionNumber}, ${inventory_type || 'full'}, ${userId}, ${notes || null})
-      RETURNING *
-    `
+      const [created] = await tx.sql`
+        INSERT INTO inventory_sessions (company_id, depot_id, session_number, inventory_type, started_by, notes)
+        VALUES (${companyId}, ${data.depot_id}, ${sessionNumber}, ${data.inventory_type}, ${userId}, ${data.notes || null})
+        RETURNING *
+      `
 
-    // Pre-populate with current stock items
-    const stockItems = await sql`
-      SELECT s.product_variant_id, s.quantity, 
-        COALESCE(pv.price, 0) as unit_value
-      FROM stock s
-      JOIN product_variants pv ON s.product_variant_id = pv.id
-      WHERE s.depot_id = ${depot_id} AND s.quantity > 0
-    `
-
-    for (const item of stockItems) {
-      await sql`
+      // Photo du stock : TOUTES les variantes des produits actifs (0 si aucun stock),
+      // pour pouvoir compter aussi les articles théoriquement épuisés.
+      const products = await tx.exec`
         INSERT INTO inventory_items (inventory_session_id, product_variant_id, item_type, system_quantity, unit_value)
-        VALUES (${result[0].id}, ${item.product_variant_id}, 'product', ${item.quantity}, ${item.unit_value})
+        SELECT ${created.id}, pv.id, 'product',
+          COALESCE((
+            SELECT SUM(s.quantity) FROM stock s
+            WHERE s.depot_id = ${data.depot_id} AND s.product_variant_id = pv.id
+          ), 0)::int,
+          COALESCE(pv.price, 0)
+        FROM product_variants pv
+        JOIN products p ON p.id = pv.product_id
+        WHERE p.company_id = ${companyId} AND p.is_active = true
       `
-    }
 
-    // Also add packaging stock
-    const pkgItems = await sql`
-      SELECT ps.packaging_type_id, ps.quantity,
-        COALESCE(pt.deposit_price, 0) as unit_value
-      FROM packaging_stock ps
-      JOIN packaging_types pt ON ps.packaging_type_id = pt.id
-      WHERE ps.depot_id = ${depot_id} AND ps.quantity > 0
-    `
-
-    for (const item of pkgItems) {
-      await sql`
+      // Emballages : tous les types d'emballage de l'entreprise.
+      const packagings = await tx.exec`
         INSERT INTO inventory_items (inventory_session_id, packaging_type_id, item_type, system_quantity, unit_value)
-        VALUES (${result[0].id}, ${item.packaging_type_id}, 'packaging', ${item.quantity}, ${item.unit_value})
+        SELECT ${created.id}, pt.id, 'packaging',
+          COALESCE((
+            SELECT SUM(ps.quantity) FROM packaging_stock ps
+            WHERE ps.depot_id = ${data.depot_id} AND ps.packaging_type_id = pt.id
+          ), 0)::int,
+          COALESCE(pt.deposit_price, 0)
+        FROM packaging_types pt
+        WHERE pt.company_id = ${companyId}
       `
-    }
 
-    const totalItems = stockItems.length + pkgItems.length
-    await sql`UPDATE inventory_sessions SET total_items = ${totalItems} WHERE id = ${result[0].id}`
+      const totalItems = products.rowCount + packagings.rowCount
+      await tx.sql`UPDATE inventory_sessions SET total_items = ${totalItems} WHERE id = ${created.id}`
 
-    return NextResponse.json({ success: true, data: { ...result[0], total_items: totalItems } })
+      return { ...created, total_items: totalItems }
+    })
+
+    return NextResponse.json({ success: true, data: session })
   } catch (error) {
-    console.error('Create inventory error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'inventory.create')
   }
 }

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { requirePageSession } from '@/lib/page-auth'
+import { AuthProvider } from '@/components/providers/session-provider'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { DashboardSidebar } from '@/components/dashboard/sidebar-nav'
 import { MobileBottomNav } from '@/components/dashboard/mobile-bottom-nav'
@@ -38,7 +39,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <>
+    <AuthProvider session={session}>
       {session.user.impersonatedBy && (
         <ImpersonationBanner companyName={session.user.companyName} />
       )}
@@ -52,6 +53,6 @@ export default async function DashboardLayout({
         </SidebarInset>
         <MobileBottomNav />
       </SidebarProvider>
-    </>
+    </AuthProvider>
   )
 }

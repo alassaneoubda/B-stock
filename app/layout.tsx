@@ -45,22 +45,17 @@ export const viewport: Viewport = {
   themeColor: '#F58233',
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  let session = null
-  try {
-    session = await auth()
-  } catch {
-    session = null
-  }
-
   return (
     <html lang="fr">
       <body className="font-sans antialiased">
-        <AuthProvider session={session}>
+        {/* Pas de session sérialisée ici : les pages publiques restent cachables sans
+            fuite de données ; les espaces connectés fournissent la leur (layout dashboard). */}
+        <AuthProvider>
           {children}
           {/* Notifications globales (aucun Toaster n'était monté : les toasts ne s'affichaient jamais) */}
           <Toaster position="top-center" theme="light" richColors closeButton />

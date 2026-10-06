@@ -1,77 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { AppError, handleRouteError, notFound } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
 
 const supplierUpdateSchema = z.object({
-    name: z.string().min(2).optional(),
-    type: z.enum(['manufacturer', 'distributor', 'wholesaler']).optional(),
-    contactName: z.string().optional(),
-    phone: z.string().optional(),
-    email: z.string().email().optional().or(z.literal('')),
-    address: z.string().optional(),
-    notes: z.string().optional(),
+  name: z.string().trim().min(2).max(200).optional(),
+  type: z.enum(['manufacturer', 'distributor', 'wholesaler']).optional(),
+  contactName: z.string().max(200).optional(),
+  phone: z.string().max(50).optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  address: z.string().max(500).optional(),
+  notes: z.string().max(2000).optional(),
 })
 
 // GET /api/suppliers/[id]
 export async function GET(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-    try {
-        const authz = await requirePermission('suppliers.read')
-        if (!authz.ok) return authz.response
-        const { session } = authz
-        const { id } = await params
+  try {
+    const authz = await requirePermission('suppliers.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Fournisseur')
 
-        const suppliers = await sql`
+    const suppliers = await sql`
       SELECT * FROM suppliers
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
+      WHERE id = ${id} AND company_id = ${companyId}
     `
-        if (suppliers.length === 0) {
-            return NextResponse.json({ error: 'Fournisseur introuvable' }, { status: 404 })
-        }
+    if (suppliers.length === 0) throw notFound('Fournisseur')
 
-        const recentOrders = await sql`
+    const recentOrders = await sql`
       SELECT id, order_number, total_amount, status, created_at
       FROM purchase_orders
-      WHERE supplier_id = ${id}
+      WHERE supplier_id = ${id} AND company_id = ${companyId}
       ORDER BY created_at DESC
       LIMIT 20
     `
 
-        return NextResponse.json({
-            success: true,
-            data: { ...suppliers[0], recentOrders },
-        })
-    } catch (error) {
-        console.error('Error fetching supplier:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
-    }
+    return NextResponse.json({
+      success: true,
+      data: { ...suppliers[0], recentOrders },
+    })
+  } catch (error) {
+    return handleRouteError(error, 'suppliers.detail')
+  }
 }
 
 // PATCH /api/suppliers/[id]
 export async function PATCH(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-    try {
-        const authz = await requirePermission('suppliers.write')
-        if (!authz.ok) return authz.response
-        const { session } = authz
-        const { id } = await params
-        const body = await request.json()
-        const data = supplierUpdateSchema.parse(body)
+  try {
+    const authz = await requirePermission('suppliers.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Fournisseur')
 
-        const existing = await sql`
-      SELECT id FROM suppliers
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-    `
-        if (existing.length === 0) {
-            return NextResponse.json({ error: 'Fournisseur introuvable' }, { status: 404 })
-        }
+    const data = supplierUpdateSchema.parse(await request.json())
 
-        const suppliers = await sql`
+    const suppliers = await sql`
       UPDATE suppliers SET
         name = COALESCE(${data.name ?? null}, name),
         type = COALESCE(${data.type ?? null}, type),
@@ -80,53 +73,62 @@ export async function PATCH(
         email = COALESCE(${data.email ?? null}, email),
         address = COALESCE(${data.address ?? null}, address),
         notes = COALESCE(${data.notes ?? null}, notes)
-      WHERE id = ${id}
+      WHERE id = ${id} AND company_id = ${companyId}
       RETURNING *
     `
+    if (suppliers.length === 0) throw notFound('Fournisseur')
 
-        return NextResponse.json({ success: true, data: suppliers[0] })
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: 'Données invalides', details: error.errors }, { status: 400 })
-        }
-        console.error('Error updating supplier:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
-    }
+    return NextResponse.json({ success: true, data: suppliers[0] })
+  } catch (error) {
+    return handleRouteError(error, 'suppliers.update')
+  }
 }
 
 // DELETE /api/suppliers/[id]
 export async function DELETE(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-    try {
-        const authz = await requirePermission('suppliers.write')
-        if (!authz.ok) return authz.response
-        const { session } = authz
-        const { id } = await params
+  try {
+    const authz = await requirePermission('suppliers.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Fournisseur')
 
-        const existing = await sql`
-      SELECT id FROM suppliers
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-    `
-        if (existing.length === 0) {
-            return NextResponse.json({ error: 'Fournisseur introuvable' }, { status: 404 })
+    await withTransaction(async (tx) => {
+      const [existing] = await tx.sql`
+        SELECT id FROM suppliers WHERE id = ${id} AND company_id = ${companyId} FOR UPDATE
+      `
+      if (!existing) throw notFound('Fournisseur')
+
+      const [orders] = await tx.sql<{ count: number }>`
+        SELECT COUNT(*)::int as count FROM purchase_orders WHERE supplier_id = ${id}
+      `
+      if (Number(orders?.count || 0) > 0) {
+        throw new AppError(
+          400,
+          'Impossible de supprimer : ce fournisseur a des commandes liées.',
+          'SUPPLIER_IN_USE'
+        )
+      }
+
+      try {
+        await tx.sql`DELETE FROM suppliers WHERE id = ${id} AND company_id = ${companyId}`
+      } catch (error) {
+        if ((error as { code?: string })?.code === '23503') {
+          throw new AppError(
+            400,
+            'Impossible de supprimer : ce fournisseur est référencé ailleurs (factures, produits…).',
+            'SUPPLIER_IN_USE'
+          )
         }
+        throw error
+      }
+    })
 
-        const orders = await sql`
-      SELECT COUNT(*)::int as count FROM purchase_orders WHERE supplier_id = ${id}
-    `
-        if (Number(orders[0]?.count || 0) > 0) {
-            return NextResponse.json(
-                { error: 'Impossible de supprimer : ce fournisseur a des commandes liées.' },
-                { status: 400 },
-            )
-        }
-
-        await sql`DELETE FROM suppliers WHERE id = ${id}`
-        return NextResponse.json({ success: true, message: 'Fournisseur supprimé' })
-    } catch (error) {
-        console.error('Error deleting supplier:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
-    }
+    return NextResponse.json({ success: true, message: 'Fournisseur supprimé' })
+  } catch (error) {
+    return handleRouteError(error, 'suppliers.delete')
+  }
 }

@@ -1,82 +1,119 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { withTransaction } from '@/lib/db'
+import { AppError, badRequest, handleRouteError, notFound } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
+import { removeStock } from '@/lib/domain/stock'
 
 const returnSchema = z.object({
-    items: z.array(z.object({
+  items: z
+    .array(
+      z.object({
         productVariantId: z.string().uuid(),
         quantity: z.number().int().positive(),
-        unitPrice: z.number().min(0),
-    })),
-    reason: z.string().optional(),
+        // Conservé pour compatibilité ; non utilisé pour le calcul du stock.
+        unitPrice: z.number().nonnegative().optional(),
+      })
+    )
+    .min(1, 'Au moins un article est requis'),
+  reason: z.string().trim().max(1000).optional(),
 })
 
+/** Pas de retour sur une commande non réceptionnée ou annulée. */
+const NON_RETURNABLE_STATUSES = ['pending', 'cancelled']
+
+// POST /api/procurement/[id]/return — retour fournisseur de marchandises reçues
 export async function POST(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-    try {
-        const authz = await requirePermission('purchases.write')
-        if (!authz.ok) return authz.response
-        const { session, companyId } = authz
+  try {
+    const authz = await requirePermission('purchases.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-        const { id } = await params
-        const body = await request.json()
-        const data = returnSchema.parse(body)
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Approvisionnement')
 
-        // 1. Get procurement details
-        const orders = await sql`
-            SELECT supplier_id, depot_id FROM purchase_orders
-            WHERE id = ${id} AND company_id = ${companyId}
-        `
-        if (orders.length === 0) {
-            return NextResponse.json({ error: 'Approvisionnement introuvable' }, { status: 404 })
-        }
-        const { depot_id: depotId } = orders[0]
+    const data = returnSchema.parse(await request.json())
 
-        // 2. Process returns
-        for (const item of data.items) {
-            // Check stock level first
-            const stock = await sql`
-                SELECT quantity FROM stock 
-                WHERE depot_id = ${depotId} AND product_variant_id = ${item.productVariantId}
-            `
-            const currentQty = stock.length > 0 ? Number(stock[0].quantity) : 0
-            if (currentQty < item.quantity) {
-                return NextResponse.json({
-                    error: `Stock insuffisant pour effectuer le retour de ce produit. Stock actuel: ${currentQty}`
-                }, { status: 400 })
-            }
-
-            // Decrease stock
-            await sql`
-                UPDATE stock
-                SET quantity = quantity - ${item.quantity}, updated_at = NOW()
-                WHERE depot_id = ${depotId} AND product_variant_id = ${item.productVariantId}
-            `
-
-            // Record movement
-            await sql`
-                INSERT INTO stock_movements (
-                    company_id, depot_id, product_variant_id,
-                    movement_type, quantity, reference_type, reference_id,
-                    notes, created_by
-                ) VALUES (
-                    ${companyId}, ${depotId}, ${item.productVariantId},
-                    'return', ${-item.quantity}, 'purchase_order', ${id},
-                    ${data.reason || 'Retour fournisseur'}, ${session.user.id}
-                )
-            `
-        }
-
-        return NextResponse.json({
-            success: true,
-            message: 'Retour fournisseur enregistré avec succès'
-        })
-
-    } catch (error) {
-        console.error('Error processing procurement return:', error)
-        return NextResponse.json({ error: 'Erreur lors du traitement du retour' }, { status: 500 })
+    // Regroupe les éventuels doublons par variante.
+    const requested = new Map<string, number>()
+    for (const item of data.items) {
+      requested.set(item.productVariantId, (requested.get(item.productVariantId) ?? 0) + item.quantity)
     }
+
+    await withTransaction(async (tx) => {
+      const [po] = await tx.sql<{ id: string; depot_id: string; status: string; order_number: string }>`
+        SELECT id, depot_id, status, order_number FROM purchase_orders
+        WHERE id = ${id} AND company_id = ${companyId}
+        FOR UPDATE
+      `
+      if (!po) throw notFound('Approvisionnement')
+      if (NON_RETURNABLE_STATUSES.includes(po.status)) {
+        throw new AppError(
+          409,
+          "Retour impossible : cette commande n'a pas encore été réceptionnée",
+          'INVALID_STATUS'
+        )
+      }
+
+      const variantIds = [...requested.keys()]
+
+      // Quantités reçues sur cette commande, par variante.
+      const received = await tx.sql<{ product_variant_id: string; received: number }>`
+        SELECT product_variant_id, COALESCE(SUM(quantity_received), 0)::int AS received
+        FROM purchase_order_items
+        WHERE purchase_order_id = ${po.id} AND product_variant_id = ANY(${variantIds}::uuid[])
+        GROUP BY product_variant_id
+      `
+      // Quantités déjà retournées au fournisseur pour cette commande.
+      const returned = await tx.sql<{ product_variant_id: string; returned: number }>`
+        SELECT product_variant_id, COALESCE(-SUM(quantity), 0)::int AS returned
+        FROM stock_movements
+        WHERE company_id = ${companyId}
+          AND reference_type = 'purchase_order' AND reference_id = ${po.id}
+          AND movement_type = 'return'
+          AND product_variant_id = ANY(${variantIds}::uuid[])
+        GROUP BY product_variant_id
+      `
+      const receivedMap = new Map(received.map((r) => [r.product_variant_id, Number(r.received)]))
+      const returnedMap = new Map(returned.map((r) => [r.product_variant_id, Number(r.returned)]))
+
+      for (const [variantId, quantity] of requested) {
+        if (!receivedMap.has(variantId)) {
+          throw badRequest('Ce produit ne fait pas partie de la commande')
+        }
+        const returnable = (receivedMap.get(variantId) ?? 0) - (returnedMap.get(variantId) ?? 0)
+        if (quantity > returnable) {
+          throw new AppError(
+            409,
+            `Quantité retournée (${quantity}) supérieure à la quantité reçue non encore retournée (${Math.max(returnable, 0)})`,
+            'OVER_RETURN'
+          )
+        }
+
+        await removeStock(tx, {
+          companyId,
+          depotId: po.depot_id,
+          variantId,
+          quantity,
+          movementType: 'return',
+          referenceType: 'purchase_order',
+          referenceId: po.id,
+          userId,
+          notes: data.reason || 'Retour fournisseur',
+          label: 'le retour fournisseur',
+        })
+      }
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Retour fournisseur enregistré avec succès',
+    })
+  } catch (error) {
+    return handleRouteError(error, 'procurement.return')
+  }
 }

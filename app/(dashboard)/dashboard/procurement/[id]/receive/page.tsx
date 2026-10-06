@@ -25,6 +25,7 @@ interface POItem {
     product_name: string
     quantity_ordered: number
     quantity_received: number
+    quantity_damaged?: number
     packaging_name: string
 }
 
@@ -62,7 +63,8 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                     productName: item.product_name,
                     packagingName: item.packaging_name,
                     quantityOrdered: item.quantity_ordered,
-                    quantityReceived: item.quantity_ordered - (item.quantity_received || 0), // Default to remaining
+                    // Reste à recevoir : commandé − déjà reçu − déjà déclaré cassé
+                    quantityReceived: Math.max(0, item.quantity_ordered - (item.quantity_received || 0) - (item.quantity_damaged || 0)),
                     quantityDamaged: 0,
                     lotNumber: '',
                     expiryDate: ''

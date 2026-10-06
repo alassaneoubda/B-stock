@@ -64,7 +64,14 @@ export default function NewTransferPage() {
       const prodJson = await prodRes.json()
       const pkgJson = await pkgRes.json()
       setDepots(Array.isArray(depotJson.data) ? depotJson.data : Array.isArray(depotJson) ? depotJson : [])
-      setProducts(Array.isArray(prodJson.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : [])
+      const productList = Array.isArray(prodJson.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : []
+      // L'API attend des identifiants de variante (produit + conditionnement), pas de produit.
+      setProducts(productList.flatMap((p: any) =>
+        (Array.isArray(p.variants) ? p.variants : []).map((v: any) => ({
+          id: v.id,
+          name: v.packaging_name ? `${p.name} — ${v.packaging_name}` : p.name,
+        }))
+      ))
       setPackagings(Array.isArray(pkgJson.data) ? pkgJson.data : Array.isArray(pkgJson) ? pkgJson : [])
     })
   }, [])

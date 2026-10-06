@@ -1,6 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql, sqlRaw, transaction, type SqlQuery } from '@/lib/db'
+import { withTransaction, type Tx } from '@/lib/db'
+import { AppError, badRequest, handleRouteError, notFound } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
+import { addStock, adjustPackagingStock, removeStock, type LotMovement } from '@/lib/domain/stock'
+
+const receiveSchema = z.object({
+  // Absent ou vide : tout est considéré reçu tel qu'envoyé (cas de l'écran actuel).
+  items: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        quantity_received: z.number().int().nonnegative().nullish(),
+        // Ignoré : la casse est toujours déduite (envoyé - reçu).
+        quantity_damaged: z.number().int().nonnegative().nullish(),
+      })
+    )
+    .optional()
+    .default([]),
+})
+
+/** `pending` : rien n'a encore quitté la source. `in_transit` : la source a déjà été débitée. */
+const RECEIVABLE_STATUSES = ['pending', 'in_transit']
+
+type TransferItemRow = {
+  id: string
+  product_variant_id: string | null
+  packaging_type_id: string | null
+  item_type: string | null
+  quantity_sent: number
+  unit_value: string | null
+  label: string | null
+}
+
+/** Répartit la quantité reçue sur les lots sortis de la source (la perte est imputée aux derniers lots). */
+function splitReceivedAcrossLots(consumed: LotMovement[], received: number): LotMovement[] {
+  const result: LotMovement[] = []
+  let left = received
+  for (const lot of consumed) {
+    if (left === 0) break
+    const take = Math.min(lot.quantity, left)
+    result.push({ lotNumber: lot.lotNumber, quantity: take })
+    left -= take
+  }
+  return result
+}
+
+async function lotExpiry(tx: Tx, depotId: string, variantId: string, lotNumber: string) {
+  const [row] = await tx.sql<{ expiry_date: string | null }>`
+    SELECT expiry_date::text AS expiry_date FROM stock
+    WHERE depot_id = ${depotId} AND product_variant_id = ${variantId}
+      AND COALESCE(lot_number, '') = ${lotNumber}
+  `
+  return row?.expiry_date ?? null
+}
 
 // POST /api/transfers/[id]/receive — Receive a depot transfer (deduct source, add destination)
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,130 +64,175 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { companyId, userId } = authz
 
     const transferId = (await params).id
-    const body = await request.json()
-    const { items } = body // [{ id, quantity_received, quantity_damaged }]
+    if (!isUuid(transferId)) throw notFound('Transfert')
 
-    const transfers = await sql`
-      SELECT * FROM depot_transfers WHERE id = ${transferId} AND company_id = ${companyId}
-    `
-    if (transfers.length === 0) {
-      return NextResponse.json({ error: 'Transfert introuvable' }, { status: 404 })
+    const rawBody = await request.json().catch(() => ({}))
+    const data = receiveSchema.parse(rawBody ?? {})
+
+    const ids = data.items.map((i) => i.id)
+    if (new Set(ids).size !== ids.length) {
+      throw badRequest('Une même ligne de transfert apparaît plusieurs fois')
     }
 
-    const transfer = transfers[0]
-    if (transfer.status === 'received') {
-      return NextResponse.json({ error: 'Transfert déjà réceptionné' }, { status: 400 })
-    }
+    const result = await withTransaction(async (tx) => {
+      const [transfer] = await tx.sql<{
+        id: string
+        status: string
+        transfer_number: string | null
+        source_depot_id: string
+        destination_depot_id: string
+      }>`
+        SELECT id, status, transfer_number, source_depot_id, destination_depot_id
+        FROM depot_transfers
+        WHERE id = ${transferId} AND company_id = ${companyId}
+        FOR UPDATE
+      `
+      if (!transfer) throw notFound('Transfert')
+      if (!RECEIVABLE_STATUSES.includes(transfer.status)) {
+        throw new AppError(
+          409,
+          transfer.status === 'received' || transfer.status === 'partial'
+            ? 'Transfert déjà réceptionné'
+            : 'Ce transfert ne peut pas être réceptionné dans son état actuel',
+          'INVALID_STATUS'
+        )
+      }
 
-    // Read all transfer items once
-    const transferItems = await sql`
-      SELECT * FROM depot_transfer_items WHERE depot_transfer_id = ${transferId}
-    `
+      const transferItems = await tx.sql<TransferItemRow>`
+        SELECT dti.id, dti.product_variant_id, dti.packaging_type_id, dti.item_type, dti.quantity_sent,
+          COALESCE(pv.price, pt_pkg.deposit_price, 0) AS unit_value,
+          COALESCE(p.name || COALESCE(' — ' || pt_var.name, ''), pt_pkg.name) AS label
+        FROM depot_transfer_items dti
+        LEFT JOIN product_variants pv ON pv.id = dti.product_variant_id
+        LEFT JOIN products p ON p.id = pv.product_id
+        LEFT JOIN packaging_types pt_var ON pt_var.id = pv.packaging_type_id
+        LEFT JOIN packaging_types pt_pkg ON pt_pkg.id = dti.packaging_type_id
+        WHERE dti.depot_transfer_id = ${transfer.id}
+        ORDER BY dti.created_at, dti.id
+      `
+      const itemIds = new Set(transferItems.map((i) => i.id))
+      const receivedById = new Map<string, number | null | undefined>()
+      for (const it of data.items) {
+        if (!itemIds.has(it.id)) throw notFound('Ligne de transfert')
+        receivedById.set(it.id, it.quantity_received)
+      }
 
-    // Map received/damaged quantities provided in the body (by item id)
-    const bodyMap = new Map<string, { quantity_received?: number; quantity_damaged?: number }>()
-    if (items && Array.isArray(items)) {
-      for (const it of items) {
-        if (it?.id) {
-          bodyMap.set(it.id, {
-            quantity_received: it.quantity_received,
-            quantity_damaged: it.quantity_damaged,
+      const reference = transfer.transfer_number || transfer.id
+      const deductSource = transfer.status === 'pending'
+      let allReceived = true
+
+      for (const item of transferItems) {
+        const sent = Number(item.quantity_sent)
+        const provided = receivedById.get(item.id)
+        const received = provided == null ? sent : provided
+        if (received > sent) {
+          throw new AppError(
+            409,
+            `Quantité reçue (${received}) supérieure à la quantité envoyée (${sent})${item.label ? ` pour ${item.label}` : ''}`,
+            'OVER_RECEPTION'
+          )
+        }
+        const damaged = sent - received
+        if (damaged > 0) allReceived = false
+
+        const movement = {
+          companyId,
+          movementType: 'transfer' as const,
+          referenceType: 'depot_transfer',
+          referenceId: transfer.id,
+          userId,
+          notes: `Transfert ${reference}`,
+        }
+
+        if (item.product_variant_id) {
+          const variantId = item.product_variant_id
+          if (deductSource && sent > 0) {
+            const consumed = await removeStock(tx, {
+              ...movement,
+              depotId: transfer.source_depot_id,
+              variantId,
+              quantity: sent,
+              label: item.label ?? undefined,
+            })
+            // Les lots (et leur péremption) suivent la marchandise jusqu'au dépôt de destination.
+            for (const lot of splitReceivedAcrossLots(consumed, received)) {
+              const expiryDate = lot.lotNumber
+                ? await lotExpiry(tx, transfer.source_depot_id, variantId, lot.lotNumber)
+                : null
+              await addStock(tx, {
+                ...movement,
+                depotId: transfer.destination_depot_id,
+                variantId,
+                quantity: lot.quantity,
+                lotNumber: lot.lotNumber,
+                expiryDate,
+              })
+            }
+          } else if (received > 0) {
+            await addStock(tx, {
+              ...movement,
+              depotId: transfer.destination_depot_id,
+              variantId,
+              quantity: received,
+            })
+          }
+        } else if (item.packaging_type_id) {
+          if (deductSource) {
+            await adjustPackagingStock(tx, {
+              depotId: transfer.source_depot_id,
+              packagingTypeId: item.packaging_type_id,
+              delta: -sent,
+              label: item.label ?? undefined,
+            })
+          }
+          await adjustPackagingStock(tx, {
+            depotId: transfer.destination_depot_id,
+            packagingTypeId: item.packaging_type_id,
+            delta: received,
           })
         }
-      }
-    }
 
-    // Pre-read destination existing stock to decide insert vs update (no read inside the tx)
-    const existingDestStock = await sql`
-      SELECT product_variant_id FROM stock WHERE depot_id = ${transfer.destination_depot_id}
-    `
-    const destStockSet = new Set(existingDestStock.map((r: any) => r.product_variant_id))
-    const existingDestPkg = await sql`
-      SELECT packaging_type_id FROM packaging_stock WHERE depot_id = ${transfer.destination_depot_id}
-    `
-    const destPkgSet = new Set(existingDestPkg.map((r: any) => r.packaging_type_id))
+        await tx.sql`
+          UPDATE depot_transfer_items
+          SET quantity_received = ${received}, quantity_damaged = ${damaged}
+          WHERE id = ${item.id}
+        `
 
-    const writes: SqlQuery[] = []
-
-    // 1. If still pending, deduct from source depot
-    if (transfer.status === 'pending') {
-      for (const item of transferItems) {
-        if (item.product_variant_id) {
-          writes.push(sqlRaw`
-            UPDATE stock SET quantity = quantity - ${item.quantity_sent}, updated_at = NOW()
-            WHERE depot_id = ${transfer.source_depot_id} AND product_variant_id = ${item.product_variant_id}
-          `)
-          writes.push(sqlRaw`
-            INSERT INTO stock_movements (company_id, depot_id, product_variant_id, movement_type, quantity, reference_type, reference_id, created_by)
-            VALUES (${companyId}, ${transfer.source_depot_id}, ${item.product_variant_id}, 'transfer', ${-item.quantity_sent}, 'depot_transfer', ${transferId}, ${userId})
-          `)
-        }
-        if (item.packaging_type_id) {
-          writes.push(sqlRaw`
-            UPDATE packaging_stock SET quantity = quantity - ${item.quantity_sent}, updated_at = NOW()
-            WHERE depot_id = ${transfer.source_depot_id} AND packaging_type_id = ${item.packaging_type_id}
-          `)
+        // La différence est perdue en route : on la trace comme casse déjà approuvée
+        // (le stock n'a pas été crédité, il n'y a donc rien à déduire).
+        if (damaged > 0 && (item.product_variant_id || item.packaging_type_id)) {
+          const unitValue = Number(item.unit_value || 0)
+          await tx.sql`
+            INSERT INTO breakage_records (
+              company_id, depot_id, record_type, product_variant_id, packaging_type_id, item_type,
+              quantity, unit_value, total_value, reason, reported_by, approved_by, status
+            ) VALUES (
+              ${companyId}, ${transfer.destination_depot_id}, 'breakage',
+              ${item.product_variant_id}, ${item.packaging_type_id},
+              ${item.product_variant_id ? 'product' : 'packaging'},
+              ${damaged}, ${unitValue}, ${damaged * unitValue},
+              ${`Transfert ${reference}`}, ${userId}, ${userId}, 'approved'
+            )
+          `
         }
       }
-    }
 
-    // 2. Update received quantities (scoped to this transfer)
-    for (const [itemId, vals] of bodyMap) {
-      writes.push(sqlRaw`
-        UPDATE depot_transfer_items SET
-          quantity_received = ${vals.quantity_received || 0},
-          quantity_damaged = ${vals.quantity_damaged || 0}
-        WHERE id = ${itemId} AND depot_transfer_id = ${transferId}
-      `)
-    }
+      const status = allReceived ? 'received' : 'partial'
+      await tx.sql`
+        UPDATE depot_transfers
+        SET status = ${status}, received_by = ${userId}, received_at = NOW(),
+            shipped_at = COALESCE(shipped_at, NOW()), updated_at = NOW()
+        WHERE id = ${transfer.id}
+      `
+      return { status }
+    })
 
-    // 3. Add to destination depot (upsert using pre-read sets)
-    for (const item of transferItems) {
-      const qtyReceived = Number(bodyMap.get(item.id)?.quantity_received || item.quantity_sent)
-      if (item.product_variant_id) {
-        if (destStockSet.has(item.product_variant_id)) {
-          writes.push(sqlRaw`
-            UPDATE stock SET quantity = quantity + ${qtyReceived}, updated_at = NOW()
-            WHERE depot_id = ${transfer.destination_depot_id} AND product_variant_id = ${item.product_variant_id}
-          `)
-        } else {
-          writes.push(sqlRaw`
-            INSERT INTO stock (depot_id, product_variant_id, quantity) VALUES (${transfer.destination_depot_id}, ${item.product_variant_id}, ${qtyReceived})
-          `)
-          destStockSet.add(item.product_variant_id)
-        }
-        writes.push(sqlRaw`
-          INSERT INTO stock_movements (company_id, depot_id, product_variant_id, movement_type, quantity, reference_type, reference_id, created_by)
-          VALUES (${companyId}, ${transfer.destination_depot_id}, ${item.product_variant_id}, 'transfer', ${qtyReceived}, 'depot_transfer', ${transferId}, ${userId})
-        `)
-      }
-      if (item.packaging_type_id) {
-        if (destPkgSet.has(item.packaging_type_id)) {
-          writes.push(sqlRaw`
-            UPDATE packaging_stock SET quantity = quantity + ${qtyReceived}, updated_at = NOW()
-            WHERE depot_id = ${transfer.destination_depot_id} AND packaging_type_id = ${item.packaging_type_id}
-          `)
-        } else {
-          writes.push(sqlRaw`
-            INSERT INTO packaging_stock (depot_id, packaging_type_id, quantity) VALUES (${transfer.destination_depot_id}, ${item.packaging_type_id}, ${qtyReceived})
-          `)
-          destPkgSet.add(item.packaging_type_id)
-        }
-      }
-    }
-
-    // 4. Mark transfer as received
-    writes.push(sqlRaw`
-      UPDATE depot_transfers SET status = 'received', received_by = ${userId}, received_at = NOW(), updated_at = NOW()
-      WHERE id = ${transferId}
-    `)
-
-    // Execute the whole reception atomically
-    await transaction(writes)
-
-    return NextResponse.json({ success: true, message: 'Transfert réceptionné' })
+    return NextResponse.json({
+      success: true,
+      data: result,
+      message: result.status === 'received' ? 'Transfert réceptionné' : 'Transfert réceptionné partiellement',
+    })
   } catch (error) {
-    console.error('Receive transfer error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'transfers.receive')
   }
 }
