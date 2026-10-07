@@ -41,7 +41,8 @@ async function getAlerts(companyId: string): Promise<Alert[]> {
 /**
  * Lien vers l'entité liée, selon reference_type écrit par lib/domain/alerts.ts :
  * 'stock' (ligne de stock : low_stock, expiry), 'client' (credit_limit,
- * packaging_debt), 'sales_order' (payment_overdue). Type inconnu : pas de lien.
+ * packaging_debt), 'sales_order' (payment_overdue), 'purchase_order'
+ * (supplier_overdue). Type inconnu : pas de lien.
  */
 function alertEntityHref(alert: Alert): string | null {
     switch (alert.reference_type) {
@@ -53,6 +54,8 @@ function alertEntityHref(alert: Alert): string | null {
             return alert.reference_id ? `/dashboard/sales/${alert.reference_id}` : null
         case 'credit_note':
             return '/dashboard/credits'
+        case 'purchase_order':
+            return alert.reference_id ? `/dashboard/procurement/${alert.reference_id}` : null
         default:
             return null
     }
@@ -66,6 +69,7 @@ const alertTypeConfig: Record<string, { label: string; icon: LucideIcon }> = {
     credit_limit: { label: 'Limite de crédit', icon: CreditCard },
     packaging_debt: { label: 'Dette d’emballages', icon: ArchiveRestore },
     payment_overdue: { label: 'Retard de paiement', icon: CreditCard },
+    supplier_overdue: { label: 'Facture fournisseur en retard', icon: CreditCard },
     low_packaging: { label: 'Emballages', icon: Package },
 }
 

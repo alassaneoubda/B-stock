@@ -12,6 +12,8 @@ const supplierSchema = z.object({
   email: z.string().email().optional().or(z.literal('')),
   address: z.string().max(500).optional(),
   notes: z.string().max(2000).optional(),
+  // Conditions de paiement (jours après réception) ; 0 = comptant
+  paymentTermsDays: z.coerce.number().int().min(0).max(365).optional(),
 })
 
 const listSchema = z.object({
@@ -58,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     const suppliers = await sql`
       INSERT INTO suppliers (
-        company_id, name, type, contact_name, phone, email, address, notes
+        company_id, name, type, contact_name, phone, email, address, notes, payment_terms_days
       ) VALUES (
         ${companyId},
         ${data.name},
@@ -67,7 +69,8 @@ export async function POST(request: NextRequest) {
         ${data.phone || null},
         ${data.email || null},
         ${data.address || null},
-        ${data.notes || null}
+        ${data.notes || null},
+        ${data.paymentTermsDays ?? 0}
       )
       RETURNING *
     `

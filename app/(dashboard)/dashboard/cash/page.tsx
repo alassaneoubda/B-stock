@@ -171,6 +171,7 @@ export default function CashPage() {
   const categoryLabels: Record<string, string> = {
     sale: 'Vente', credit_payment: 'Encaissement crédit', expense: 'Dépense',
     refund: 'Remboursement', deposit: 'Dépôt', withdrawal: 'Retrait', other: 'Autre',
+    supplier_payment: 'Paiement fournisseur', supplier_payment_cancel: 'Annulation paiement fournisseur',
   }
 
   const validationLabel = (m: CashMovement): { label: string; tone: 'danger' | 'warning' } | null =>

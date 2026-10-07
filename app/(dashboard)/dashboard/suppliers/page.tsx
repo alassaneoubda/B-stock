@@ -19,7 +19,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Building2, Edit, Eye, Factory, Mail, MoreHorizontal, Phone, Plus, ShoppingCart, Truck } from 'lucide-react'
+import { Building2, Edit, Eye, Factory, Mail, MoreHorizontal, Phone, Plus, ShoppingCart, Truck, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { formatNumber } from '@/lib/format'
 
@@ -72,6 +72,14 @@ export default async function SuppliersPage() {
                 title="Fournisseurs"
                 description="Brasseries, distributeurs et grossistes avec qui vous travaillez"
                 actions={
+                    <div className="flex items-center gap-2">
+                    <Button asChild size="sm" variant="outline" className="h-9">
+                        <Link href="/dashboard/suppliers/payables">
+                            <Wallet className="h-4 w-4" aria-hidden="true" />
+                            <span className="hidden sm:inline">Dettes fournisseurs</span>
+                            <span className="sm:hidden">Dettes</span>
+                        </Link>
+                    </Button>
                     <Button asChild size="sm" className="h-9">
                         <Link href="/dashboard/suppliers/new">
                             <Plus className="h-4 w-4" aria-hidden="true" />
@@ -79,6 +87,7 @@ export default async function SuppliersPage() {
                             <span className="sm:hidden">Nouveau</span>
                         </Link>
                     </Button>
+                    </div>
                 }
             />
 

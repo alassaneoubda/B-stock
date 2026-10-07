@@ -1,8 +1,10 @@
 import { withTransaction, type Tx } from '../db'
+import { listPayables } from './payables'
 
 /**
  * Génération automatique des alertes d'une entreprise (stock bas, péremption,
- * crédit dépassé, dette emballages, paiements en retard).
+ * crédit dépassé, dette emballages, paiements en retard, factures
+ * fournisseurs en retard).
  *
  * - Requêtes ensemblistes : une lecture + une insertion groupée par type
  *   (plus de boucle N+1).
@@ -242,6 +244,28 @@ async function generateInTx(tx: Tx, companyId: string): Promise<GenerateAlertsRe
         message: `Commande ${order.order_number} — ${order.client_name} : ${fmt(remaining)} FCFA impayés, ${daysOverdue} jour(s) de retard`,
       }
     })
+  )
+
+  // 6. Factures fournisseurs en retard (bon de commande reçu, reste à payer, échéance dépassée)
+  const supplierOverdue = (await listPayables(tx.sql, companyId)).filter((p) => p.payment_status === 'overdue')
+  alertsResolved += await resolveStale(
+    tx,
+    companyId,
+    'supplier_overdue',
+    'purchase_order',
+    supplierOverdue.map((p) => p.purchase_order_id)
+  )
+  alertsCreated += await insertNew(
+    tx,
+    companyId,
+    'supplier_overdue',
+    'purchase_order',
+    supplierOverdue.map((p) => ({
+      refId: p.purchase_order_id,
+      severity: p.days_overdue > 30 ? 'critical' : p.days_overdue > 14 ? 'high' : 'medium',
+      title: `Facture fournisseur en retard : ${p.supplier_name ?? 'Fournisseur'}`,
+      message: `Commande ${p.order_number} — ${p.supplier_name ?? 'Fournisseur'} : ${fmt(p.remaining)} FCFA à payer, échéance dépassée de ${p.days_overdue} jour(s)`,
+    }))
   )
 
   return { alertsCreated, alertsResolved }

@@ -27,6 +27,11 @@ const supplierSchema = z.object({
     email: z.string().email('Adresse e-mail invalide').optional().or(z.literal('')),
     address: z.string().optional(),
     notes: z.string().optional(),
+    paymentTermsDays: z
+        .string()
+        .regex(/^\d{0,3}$/, 'Nombre de jours invalide')
+        .refine((v) => !v || Number(v) <= 365, 'Au maximum 365 jours')
+        .optional(),
 })
 
 type SupplierForm = z.infer<typeof supplierSchema>
@@ -76,6 +81,7 @@ export default function EditSupplierPage() {
                     email: s.email || '',
                     address: s.address || '',
                     notes: s.notes || '',
+                    paymentTermsDays: String(s.payment_terms_days ?? 0),
                 })
             } catch (e) {
                 setLoadError(errorMessage(e))
@@ -92,7 +98,7 @@ export default function EditSupplierPage() {
         try {
             const result = await apiFetch<{ warnings?: unknown }>(`/api/suppliers/${supplierId}`, {
                 method: 'PATCH',
-                body: data,
+                body: { ...data, paymentTermsDays: data.paymentTermsDays ? Number(data.paymentTermsDays) : 0 },
             })
             toast.success('Fournisseur mis à jour')
             toastWarnings(result?.warnings)
@@ -191,6 +197,26 @@ export default function EditSupplierPage() {
                             <div className="space-y-2">
                                 <Label htmlFor="contactName">Nom du contact</Label>
                                 <Input id="contactName" {...register('contactName')} disabled={isLoading} />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="paymentTermsDays">Conditions de paiement (jours)</Label>
+                                <Input
+                                    id="paymentTermsDays"
+                                    type="number"
+                                    min={0}
+                                    max={365}
+                                    inputMode="numeric"
+                                    placeholder="0 = comptant, ex. 30"
+                                    {...register('paymentTermsDays')}
+                                    disabled={isLoading}
+                                    aria-invalid={!!errors.paymentTermsDays}
+                                />
+                                {errors.paymentTermsDays ? (
+                                    <p className="text-xs text-destructive">{errors.paymentTermsDays.message}</p>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground">Délai accordé après réception : sert au calcul des échéances.</p>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
