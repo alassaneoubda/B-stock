@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
-import { formatNumber } from '@/lib/format'
+import { formatDateTime, formatNumber } from '@/lib/format'
 import { PageShell, PageIntro, StatusBadge } from '@/components/app/blocks'
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 import {
@@ -74,19 +74,37 @@ type Announcement = {
   title: string
   body: string
   level: 'info' | 'success' | 'warning' | 'critical'
-  audience: 'all' | 'company' | 'status'
+  audience: 'all' | 'company' | 'status' | 'plan'
   target_company_id: string | null
   company_name: string | null
   target_status: string | null
+  target_plan_id: string | null
+  plan_name: string | null
   dismissible: boolean
   is_active: boolean
   starts_at: string | null
   ends_at: string | null
   dismissals: number
+  views: number
+  target_users: number
   created_at: string
 }
 
 type Company = { id: string; name: string }
+type Plan = { id: string; name: string; display_name: string | null; is_active: boolean }
+
+/** Diffusion selon l'état et les dates : Inactive / Programmée / En cours / Terminée. */
+function scheduleStatus(a: Announcement, now = Date.now()): { label: string; tone: 'default' | 'info' | 'success' } {
+  if (!a.is_active) return { label: 'Inactive', tone: 'default' }
+  if (a.starts_at && new Date(a.starts_at).getTime() > now) return { label: 'Programmée', tone: 'info' }
+  if (a.ends_at && new Date(a.ends_at).getTime() < now) return { label: 'Terminée', tone: 'default' }
+  return { label: 'En cours', tone: 'success' }
+}
+
+function reach(a: Announcement): string {
+  if (!a.target_users) return '—'
+  return `${Math.min(100, Math.round((a.views / a.target_users) * 100))} %`
+}
 
 const levelMeta: Record<
   string,
@@ -102,6 +120,7 @@ const audienceLabel = (a: Announcement) => {
   if (a.audience === 'all') return 'Toutes les entreprises'
   if (a.audience === 'company') return a.company_name ? `Entreprise : ${a.company_name}` : 'Entreprise ciblée'
   if (a.audience === 'status') return `Statut : ${STATUS_LABELS[a.target_status || ''] || a.target_status}`
+  if (a.audience === 'plan') return a.plan_name ? `Plan : ${a.plan_name}` : 'Plan supprimé'
   return a.audience
 }
 
@@ -112,6 +131,7 @@ const emptyForm = {
   audience: 'all' as Announcement['audience'],
   target_company_id: '',
   target_status: 'trialing',
+  target_plan_id: '',
   dismissible: true,
   is_active: true,
   starts_at: '',
@@ -142,6 +162,12 @@ export default function AdminAnnouncementsPage() {
   )
   const companies = companiesData?.data || []
 
+  const { data: plansData, error: plansError } = useSWR<{ data: Plan[] }>(
+    open && form.audience === 'plan' ? '/api/admin/plans' : null,
+    fetcher
+  )
+  const plans = plansData?.data || []
+
   function openCreate() {
     setEditing(null)
     setForm(emptyForm)
@@ -158,6 +184,7 @@ export default function AdminAnnouncementsPage() {
       audience: a.audience,
       target_company_id: a.target_company_id || '',
       target_status: a.target_status || 'trialing',
+      target_plan_id: a.target_plan_id || '',
       dismissible: a.dismissible,
       is_active: a.is_active,
       starts_at: toLocalInput(a.starts_at),
@@ -172,6 +199,10 @@ export default function AdminAnnouncementsPage() {
     setError('')
     if (!editing && form.audience === 'company' && !form.target_company_id) {
       setError('Sélectionnez l\u2019entreprise ciblée.')
+      return
+    }
+    if (!editing && form.audience === 'plan' && !form.target_plan_id) {
+      setError('Sélectionnez le plan ciblé.')
       return
     }
     if (form.starts_at && form.ends_at && new Date(form.ends_at) <= new Date(form.starts_at)) {
@@ -194,6 +225,7 @@ export default function AdminAnnouncementsPage() {
               audience: form.audience,
               target_company_id: form.audience === 'company' ? form.target_company_id : null,
               target_status: form.audience === 'status' ? form.target_status : null,
+              target_plan_id: form.audience === 'plan' ? form.target_plan_id : null,
             }),
       }
       const url = editing ? `/api/admin/announcements/${editing.id}` : '/api/admin/announcements'
@@ -257,7 +289,7 @@ export default function AdminAnnouncementsPage() {
       <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
           <div className="p-5">
-            <TableSkeleton columns={6} />
+            <TableSkeleton columns={8} />
           </div>
         ) : loadError ? (
           <ErrorState className="m-5" description={errorMessage(loadError)} onRetry={() => mutate()} />
@@ -276,8 +308,14 @@ export default function AdminAnnouncementsPage() {
                   <th className="px-5 py-3 font-medium">Annonce</th>
                   <th className="px-5 py-3 font-medium">Niveau</th>
                   <th className="px-5 py-3 font-medium">Audience</th>
-                  <th className="px-5 py-3 font-medium">Statut</th>
+                  <th className="px-5 py-3 font-medium">Diffusion</th>
+                  <th className="px-5 py-3 text-right font-medium">Vues</th>
                   <th className="px-5 py-3 text-right font-medium">Fermetures</th>
+                  <th className="px-5 py-3 text-right font-medium">
+                    <abbr title="Utilisateurs ayant vu l\u2019annonce / utilisateurs actuellement ciblés" className="no-underline">
+                      Portée
+                    </abbr>
+                  </th>
                   <th className="px-5 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -285,6 +323,7 @@ export default function AdminAnnouncementsPage() {
                 {items.map((a) => {
                   const meta = levelMeta[a.level] || levelMeta.info
                   const Icon = meta.icon
+                  const schedule = scheduleStatus(a)
                   return (
                     <tr key={a.id} className="border-b border-border align-top transition-colors last:border-0 hover:bg-muted/50">
                       <td className="px-5 py-3 max-w-md">
@@ -305,10 +344,23 @@ export default function AdminAnnouncementsPage() {
                           className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                           aria-label={a.is_active ? `Désactiver l\u2019annonce « ${a.title} »` : `Activer l\u2019annonce « ${a.title} »`}
                         >
-                          <StatusBadge label={a.is_active ? 'Active' : 'Inactive'} tone={a.is_active ? 'success' : 'default'} />
+                          <StatusBadge label={schedule.label} tone={schedule.tone} />
                         </button>
+                        {(a.starts_at || a.ends_at) && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {a.starts_at ? `Du ${formatDateTime(a.starts_at)}` : 'Dès maintenant'}
+                            {a.ends_at ? ` au ${formatDateTime(a.ends_at)}` : ''}
+                          </p>
+                        )}
                       </td>
+                      <td className="tabular px-5 py-3 text-right text-muted-foreground">{formatNumber(a.views)}</td>
                       <td className="tabular px-5 py-3 text-right text-muted-foreground">{formatNumber(a.dismissals)}</td>
+                      <td
+                        className="tabular px-5 py-3 text-right text-muted-foreground"
+                        title={`${formatNumber(a.views)} vue(s) sur ${formatNumber(a.target_users)} utilisateur(s) ciblé(s)`}
+                      >
+                        {reach(a)}
+                      </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <button
@@ -397,6 +449,7 @@ export default function AdminAnnouncementsPage() {
                   <option value="all">Toutes les entreprises</option>
                   <option value="company">Une entreprise spécifique</option>
                   <option value="status">Par statut d&apos;abonnement</option>
+                  <option value="plan">Par plan d&apos;abonnement</option>
                 </select>
               </div>
             )}
@@ -444,6 +497,32 @@ export default function AdminAnnouncementsPage() {
               </div>
             )}
 
+            {!editing && form.audience === 'plan' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="ann-plan">Plan d’abonnement</Label>
+                <select
+                  id="ann-plan"
+                  value={form.target_plan_id}
+                  onChange={(e) => setForm({ ...form, target_plan_id: e.target.value })}
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-describedby="ann-plan-help"
+                >
+                  <option value="">{plansData || plansError ? '— Sélectionner —' : 'Chargement des plans…'}</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name || p.name}
+                      {p.is_active ? '' : ' (inactif)'}
+                    </option>
+                  ))}
+                </select>
+                <p id="ann-plan-help" className="text-xs text-muted-foreground">
+                  {plansError
+                    ? `Plans indisponibles : ${errorMessage(plansError)}`
+                    : 'Diffusée aux entreprises actuellement abonnées à ce plan.'}
+                </p>
+              </div>
+            )}
+
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="ann-start">Début (optionnel)</Label>
@@ -480,7 +559,7 @@ export default function AdminAnnouncementsPage() {
             <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
               <div>
                 <p id="ann-active" className="text-sm font-medium text-foreground">Active</p>
-                <p className="text-xs text-muted-foreground">Diffusée immédiatement aux entreprises</p>
+                <p className="text-xs text-muted-foreground">Diffusée aux entreprises ciblées pendant la période choisie</p>
               </div>
               <Switch
                 aria-labelledby="ann-active"

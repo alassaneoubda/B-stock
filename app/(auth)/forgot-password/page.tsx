@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { ArrowLeft, KeyRound, Building2, LifeBuoy, Mail, Phone } from 'lucide-react'
+import { ArrowLeft, KeyRound, LifeBuoy, Mail, Phone } from 'lucide-react'
 import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
+import { ForgotPasswordForm } from '@/components/auth/forgot-password-form'
 import { DEFAULT_SETTINGS, getSettings } from '@/lib/settings'
 
 export const metadata = {
@@ -25,7 +26,7 @@ export default async function ForgotPasswordPage() {
     return (
         <AuthSplitLayout
             headline="Retrouvez l’accès à votre espace en toute sécurité."
-            subline="Les mots de passe sont réinitialisés par une personne habilitée, jamais par un lien envoyé au hasard."
+            subline="Un lien personnel, valable 60 minutes et utilisable une seule fois, est envoyé à l’adresse de votre compte."
             footer={
                 <Link
                     href="/login"
@@ -41,53 +42,43 @@ export default async function ForgotPasswordPage() {
                 </span>
                 <div className="space-y-1.5">
                     <h1 className="text-2xl font-semibold tracking-tight text-foreground">Mot de passe oublié</h1>
-                    <p className="text-sm text-muted-foreground">Voici comment récupérer l’accès à votre compte.</p>
+                    <p className="text-sm text-muted-foreground">
+                        Saisissez l’adresse email de votre compte : nous vous enverrons un lien pour choisir un nouveau mot de passe.
+                    </p>
                 </div>
             </div>
 
-            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-                <section className="flex gap-3 p-5">
-                    <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <div className="text-sm">
-                        <h2 className="font-semibold text-foreground">Vous êtes un employé ?</h2>
-                        <p className="mt-1 leading-relaxed text-muted-foreground">
-                            Demandez au propriétaire (ou à un administrateur) de votre entreprise de
-                            réinitialiser votre mot de passe depuis{' '}
-                            <span className="font-medium text-foreground">Paramètres → Utilisateurs</span>.
-                            Il vous communiquera un mot de passe temporaire à utiliser à la prochaine connexion.
-                        </p>
-                    </div>
-                </section>
+            <ForgotPasswordForm />
 
-                <section className="flex gap-3 p-5">
-                    <LifeBuoy className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <div className="text-sm">
-                        <h2 className="font-semibold text-foreground">Vous êtes le propriétaire du compte ?</h2>
-                        <p className="mt-1 leading-relaxed text-muted-foreground">
-                            La réinitialisation en libre-service n’est pas encore disponible.
-                            Contactez le support B-Stock pour réinitialiser votre accès :
-                        </p>
-                        <div className="mt-3 space-y-1.5">
-                            {supportEmail && (
-                                <a
-                                    href={`mailto:${supportEmail}`}
-                                    className="flex items-center gap-2 font-medium text-foreground underline-offset-4 hover:underline"
-                                >
-                                    <Mail className="h-4 w-4 text-muted-foreground" aria-hidden="true" /> {supportEmail}
-                                </a>
-                            )}
-                            {supportPhone && (
-                                <a
-                                    href={`tel:${supportPhone}`}
-                                    className="tabular flex items-center gap-2 font-medium text-foreground underline-offset-4 hover:underline"
-                                >
-                                    <Phone className="h-4 w-4 text-muted-foreground" aria-hidden="true" /> {supportPhone}
-                                </a>
-                            )}
-                        </div>
+            <section className="mt-8 flex gap-3 rounded-xl border border-border bg-card p-5">
+                <LifeBuoy className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div className="text-sm">
+                    <h2 className="font-semibold text-foreground">Pas d’email reçu ?</h2>
+                    <p className="mt-1 leading-relaxed text-muted-foreground">
+                        Vérifiez vos courriers indésirables. Un employé peut aussi demander au propriétaire de son
+                        entreprise de lui envoyer un lien depuis{' '}
+                        <span className="font-medium text-foreground">Paramètres → Utilisateurs</span>. Sinon, contactez le support :
+                    </p>
+                    <div className="mt-3 space-y-1.5">
+                        {supportEmail && (
+                            <a
+                                href={`mailto:${supportEmail}`}
+                                className="flex items-center gap-2 font-medium text-foreground underline-offset-4 hover:underline"
+                            >
+                                <Mail className="h-4 w-4 text-muted-foreground" aria-hidden="true" /> {supportEmail}
+                            </a>
+                        )}
+                        {supportPhone && (
+                            <a
+                                href={`tel:${supportPhone}`}
+                                className="tabular flex items-center gap-2 font-medium text-foreground underline-offset-4 hover:underline"
+                            >
+                                <Phone className="h-4 w-4 text-muted-foreground" aria-hidden="true" /> {supportPhone}
+                            </a>
+                        )}
                     </div>
-                </section>
-            </div>
+                </div>
+            </section>
         </AuthSplitLayout>
     )
 }

@@ -19,25 +19,46 @@ import {
   Menu,
   X,
   Newspaper,
+  HeartPulse,
+  Hourglass,
+  ShieldCheck,
+  UserCog,
 } from 'lucide-react'
+import type { AdminCapability } from '@/lib/admin-auth'
+import { useAdmin } from '@/components/admin/admin-role'
+import { AdminGlobalSearch } from '@/components/admin/global-search'
+import { TwoFactorBanner } from '@/components/admin/two-factor-banner'
 import { cn } from '@/lib/utils'
 import { BrandMonogram } from '@/components/brand-mark'
 
-const nav = [
-  { href: '/admin', label: 'Tableau de bord', icon: LayoutDashboard, exact: true },
-  { href: '/admin/companies', label: 'Entreprises', icon: Building2 },
-  { href: '/admin/users', label: 'Utilisateurs', icon: Users },
-  { href: '/admin/plans', label: 'Plans', icon: Package },
-  { href: '/admin/billing', label: 'Facturation', icon: CreditCard },
-  { href: '/admin/cms', label: 'CMS landing', icon: Newspaper },
-  { href: '/admin/reports', label: 'Rapports', icon: BarChart3 },
-  { href: '/admin/announcements', label: 'Annonces', icon: Megaphone },
-  { href: '/admin/audit', label: 'Journal d’audit', icon: ScrollText },
-  { href: '/admin/webhooks', label: 'Webhooks', icon: Webhook },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; capability?: AdminCapability }
+
+// Le menu est filtré selon le rôle de l'administrateur (l'API reste l'autorité).
+const nav: NavItem[] = [
+  { href: '/admin', label: 'Tableau de bord', icon: LayoutDashboard, exact: true, capability: 'reports.read' },
+  { href: '/admin/companies', label: 'Entreprises', icon: Building2, capability: 'companies.read' },
+  { href: '/admin/trials', label: 'Essais', icon: Hourglass, capability: 'companies.read' },
+  { href: '/admin/users', label: 'Utilisateurs', icon: Users, capability: 'users.read' },
+  { href: '/admin/billing', label: 'Facturation', icon: CreditCard, capability: 'billing.read' },
+  { href: '/admin/plans', label: 'Plans', icon: Package, capability: 'plans.read' },
+  { href: '/admin/reports', label: 'Rapports', icon: BarChart3, capability: 'reports.read' },
+  { href: '/admin/announcements', label: 'Annonces', icon: Megaphone, capability: 'announcements.manage' },
+  { href: '/admin/cms', label: 'CMS landing', icon: Newspaper, capability: 'cms.manage' },
+  { href: '/admin/health', label: 'Santé plateforme', icon: HeartPulse, capability: 'health.read' },
+  { href: '/admin/audit', label: 'Journal d’audit', icon: ScrollText, capability: 'audit.read' },
+  { href: '/admin/webhooks', label: 'Webhooks', icon: Webhook, capability: 'webhooks.manage' },
+  { href: '/admin/admins', label: 'Administrateurs', icon: UserCog, capability: 'admins.manage' },
   { href: '/admin/settings', label: 'Paramètres', icon: Settings },
+  { href: '/admin/account', label: 'Mon compte', icon: ShieldCheck },
 ]
 
-function isActive(pathname: string, item: (typeof nav)[number]) {
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: 'Super-administrateur',
+  support: 'Support client',
+  finance: 'Finance',
+}
+
+function isActive(pathname: string, item: NavItem) {
   return item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/')
 }
 
@@ -60,6 +81,8 @@ export function AdminShell({
 }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const { can, role } = useAdmin()
+  const items = nav.filter((item) => !item.capability || can(item.capability))
   const current = nav.find((item) => isActive(pathname, item))
 
   return (
@@ -104,7 +127,7 @@ export function AdminShell({
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 pt-2">
-          {nav.map((item) => {
+          {items.map((item) => {
             const active = isActive(pathname, item)
             const Icon = item.icon
             return (
@@ -134,7 +157,7 @@ export function AdminShell({
             </span>
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="truncate text-sm font-medium text-foreground">{adminName}</span>
-              <span className="text-xs text-muted-foreground">Super-admin</span>
+              <span className="text-xs text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>
             </span>
           </div>
           <button
@@ -167,8 +190,10 @@ export function AdminShell({
               {current?.label ?? 'Administration'}
             </p>
           </div>
+          <AdminGlobalSearch className="shrink-0" />
         </header>
 
+        <TwoFactorBanner />
         <div className="flex min-w-0 flex-1 flex-col">{children}</div>
       </div>
     </div>

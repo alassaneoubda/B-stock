@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 import { Loader2, Check, Settings as SettingsIcon, ShieldCheck, Wrench, UserPlus } from 'lucide-react'
 import { apiFetch, errorMessage } from '@/lib/api-client'
 import { ErrorState } from '@/components/states'
+import { useAdmin } from '@/components/admin/admin-role'
 
 const fetcher = (url: string) => apiFetch(url)
 
@@ -41,7 +42,9 @@ type Settings = {
 }
 
 export default function AdminSettingsPage() {
-  const { data, error: loadError, isLoading, mutate } = useSWR<{ data: Settings }>('/api/admin/settings', fetcher, {
+  // Paramètres plateforme : super-administrateurs uniquement (l'API refuse les autres rôles)
+  const canManage = useAdmin().can('settings.manage')
+  const { data, error: loadError, isLoading, mutate } = useSWR<{ data: Settings }>(canManage ? '/api/admin/settings' : null, fetcher, {
     // Ne pas écraser une saisie en cours au retour sur l'onglet
     revalidateOnFocus: false,
   })
@@ -90,6 +93,21 @@ export default function AdminSettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (!canManage) {
+    return (
+      <PageShell className="max-w-3xl">
+        <PageIntro title="Paramètres" description="Configuration globale de la plateforme" />
+        <div role="status" className="flex items-start gap-3 rounded-xl border border-border bg-muted p-4 text-sm">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="text-muted-foreground">
+            Lecture seule : les paramètres de la plateforme ne peuvent être consultés et modifiés que par un
+            super-administrateur.
+          </p>
+        </div>
+      </PageShell>
+    )
   }
 
   if (isLoading) {

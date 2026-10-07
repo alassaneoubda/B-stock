@@ -61,7 +61,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
     const [confirmDeactivate, setConfirmDeactivate] = useState(false)
     const [confirmReset, setConfirmReset] = useState(false)
     const [isResetting, setIsResetting] = useState(false)
-    const [tempPassword, setTempPassword] = useState<string | null>(null)
+    const [resetResult, setResetResult] = useState<{ emailed: boolean; email: string; link?: string; expiresAt: string } | null>(null)
     const [copied, setCopied] = useState(false)
 
     const applyUser = (data: ManagedUser) => {
@@ -110,9 +110,12 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
         if (isResetting) return
         setIsResetting(true)
         try {
-            const data = await apiFetch<{ tempPassword: string }>(`/api/users/${id}/reset-password`, { method: 'POST' })
+            const data = await apiFetch<{ emailed: boolean; email: string; link?: string; expiresAt: string }>(
+                `/api/users/${id}/reset-password`,
+                { method: 'POST' }
+            )
             setConfirmReset(false)
-            setTempPassword(data.tempPassword)
+            setResetResult(data)
             setCopied(false)
         } catch (error) {
             setConfirmReset(false)
@@ -122,14 +125,14 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
         }
     }
 
-    const copyTempPassword = async () => {
-        if (!tempPassword) return
+    const copyResetLink = async () => {
+        if (!resetResult?.link) return
         try {
-            await navigator.clipboard.writeText(tempPassword)
+            await navigator.clipboard.writeText(resetResult.link)
             setCopied(true)
             setTimeout(() => setCopied(false), 2000)
         } catch {
-            toast.error('Copie impossible', { description: 'Sélectionnez le mot de passe et copiez-le manuellement.' })
+            toast.error('Copie impossible', { description: 'Sélectionnez le lien et copiez-le manuellement.' })
         }
     }
 
@@ -386,10 +389,10 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                     ) : (
                                         <KeyRound className="mr-2 h-4 w-4" aria-hidden="true" />
                                     )}
-                                    Réinitialiser le mot de passe
+                                    Envoyer un lien de réinitialisation
                                 </Button>
                                 <p className="text-xs text-muted-foreground">
-                                    Un mot de passe temporaire sera généré et affiché une seule fois.
+                                    L&apos;employé reçoit par email un lien (60 min, usage unique) pour choisir son mot de passe.
                                 </p>
                             </div>
                         )}
@@ -424,10 +427,11 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                 <AlertDialog open={confirmReset} onOpenChange={(o) => { if (!isResetting) setConfirmReset(o) }}>
                     <AlertDialogContent>
                         <AlertDialogHeader>
-                            <AlertDialogTitle>Réinitialiser le mot de passe ?</AlertDialogTitle>
+                            <AlertDialogTitle>Envoyer un lien de réinitialisation ?</AlertDialogTitle>
                             <AlertDialogDescription>
-                                L&apos;ancien mot de passe de {user.full_name} ne fonctionnera plus et ses sessions
-                                ouvertes seront fermées. Un mot de passe temporaire vous sera affiché une seule fois.
+                                {user.full_name} recevra à l&apos;adresse {user.email} un lien valable 60 minutes, utilisable
+                                une seule fois, pour choisir un nouveau mot de passe. Ses sessions ouvertes seront fermées
+                                à ce moment-là. Si l&apos;email ne peut pas partir, le lien vous sera affiché.
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -437,40 +441,45 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 onClick={(e) => { e.preventDefault(); onResetPassword() }}
                             >
                                 {isResetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
-                                Réinitialiser
+                                Envoyer le lien
                             </AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
 
-                {/* Mot de passe temporaire : affiché une seule fois */}
-                <Dialog open={!!tempPassword} onOpenChange={(o) => { if (!o) setTempPassword(null) }}>
+                {/* Résultat : lien envoyé, ou lien à transmettre si l'email n'a pas pu partir */}
+                <Dialog open={!!resetResult} onOpenChange={(o) => { if (!o) setResetResult(null) }}>
                     <DialogContent>
                         <DialogHeader>
-                            <DialogTitle>Mot de passe réinitialisé</DialogTitle>
+                            <DialogTitle>{resetResult?.emailed ? 'Lien envoyé' : 'Lien à transmettre'}</DialogTitle>
                             <DialogDescription>
-                                Communiquez ce mot de passe temporaire à {user.full_name} ({user.email}).
-                                L&apos;utilisateur pourra se connecter avec, puis le changer dans « Sécurité ».
+                                {resetResult?.emailed
+                                    ? `Un lien de réinitialisation a été envoyé à ${resetResult.email}. Il est valable jusqu’à ${resetResult ? formatDateTime(resetResult.expiresAt) : ''}.`
+                                    : `L’email n’a pas pu être envoyé. Transmettez ce lien à ${user.full_name} (${user.email}) : il est valable jusqu’à ${resetResult ? formatDateTime(resetResult.expiresAt) : ''} et ne sert qu’une fois.`}
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-3">
-                            <code className="flex-1 select-all break-all font-mono text-sm text-foreground">{tempPassword}</code>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                className="shrink-0"
-                                onClick={copyTempPassword}
-                                aria-label={copied ? 'Mot de passe copié' : 'Copier le mot de passe'}
-                            >
-                                {copied ? <Check className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
-                            </Button>
-                        </div>
-                        <p className="flex items-start gap-2 rounded-lg bg-warning-soft p-3 text-sm text-warning-foreground">
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                            Ce mot de passe n&apos;est affiché qu&apos;une seule fois. Notez-le ou copiez-le avant de fermer.
-                        </p>
+                        {resetResult && !resetResult.emailed && resetResult.link && (
+                            <>
+                                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-3">
+                                    <code className="flex-1 select-all break-all font-mono text-xs text-foreground">{resetResult.link}</code>
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="shrink-0"
+                                        onClick={copyResetLink}
+                                        aria-label={copied ? 'Lien copié' : 'Copier le lien'}
+                                    >
+                                        {copied ? <Check className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+                                    </Button>
+                                </div>
+                                <p className="flex items-start gap-2 rounded-lg bg-warning-soft p-3 text-sm text-warning-foreground">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                                    Ce lien n&apos;est affiché qu&apos;une seule fois. Ne le transmettez qu&apos;à l&apos;intéressé.
+                                </p>
+                            </>
+                        )}
                         <DialogFooter>
-                            <Button onClick={() => setTempPassword(null)}>J&apos;ai noté le mot de passe</Button>
+                            <Button onClick={() => setResetResult(null)}>Fermer</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

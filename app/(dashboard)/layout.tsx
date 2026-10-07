@@ -10,6 +10,7 @@ import { SubscriptionGate } from '@/components/dashboard/subscription-gate'
 import { ImpersonationBanner } from '@/components/dashboard/impersonation-banner'
 import { AnnouncementBanner } from '@/components/dashboard/announcement-banner'
 import { getSettings } from '@/lib/settings'
+import { companyHasFeature } from '@/lib/company-features'
 import { Wrench } from 'lucide-react'
 import { ForbiddenNotice } from '@/components/dashboard/forbidden-notice'
 
@@ -41,6 +42,9 @@ export default async function DashboardLayout({
     )
   }
 
+  // Fonctionnalité « Point de vente » (activable par entreprise depuis le back-office)
+  const posEnabled = await companyHasFeature(session.user.companyId!, 'pos')
+
   return (
     <AuthProvider session={session}>
       <PermissionsProvider permissions={session.access.permissions}>
@@ -48,7 +52,7 @@ export default async function DashboardLayout({
         <ImpersonationBanner companyName={session.user.companyName} />
       )}
       <SidebarProvider defaultOpen>
-        <DashboardSidebar user={session.user} permissions={session.access.permissions} />
+        <DashboardSidebar user={session.user} permissions={session.access.permissions} posEnabled={posEnabled} />
         <SidebarInset className="has-bottom-nav">
           <Suspense fallback={null}>
             <ForbiddenNotice />

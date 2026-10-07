@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { PageShell, PageIntro, StatusBadge } from '@/components/app/blocks'
 import { Search, ChevronLeft, ChevronRight, Building2 } from 'lucide-react'
 import { apiFetch, errorMessage } from '@/lib/api-client'
-import { formatDate, formatNumber } from '@/lib/format'
+import { formatDate, formatNumber, formatRelative } from '@/lib/format'
+import { HealthBadge } from '@/components/admin/health-badge'
+import type { HealthLevel } from '@/lib/admin/company-health'
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
 const fetcher = (url: string) => apiFetch(url)
@@ -22,6 +24,8 @@ type Company = {
   is_suspended: boolean
   user_count: number
   created_at: string
+  deletion_scheduled_at: string | null
+  health: { level: HealthLevel; lastActivityAt: string | null; reasons: string[] } | null
 }
 
 const statusFilters = [
@@ -91,7 +95,7 @@ export default function AdminCompaniesPage() {
       <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
           <div className="p-5">
-            <TableSkeleton columns={5} />
+            <TableSkeleton columns={7} />
           </div>
         ) : error ? (
           <ErrorState className="m-5" description={errorMessage(error)} onRetry={() => mutate()} />
@@ -109,6 +113,8 @@ export default function AdminCompaniesPage() {
                 <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Entreprise</th>
                   <th className="px-5 py-3 font-medium">Statut</th>
+                  <th className="px-5 py-3 font-medium">Santé</th>
+                  <th className="px-5 py-3 font-medium">Dernière activité</th>
                   <th className="px-5 py-3 font-medium">Plan</th>
                   <th className="px-5 py-3 text-right font-medium">Utilisateurs</th>
                   <th className="px-5 py-3 font-medium">Créée le</th>
@@ -124,7 +130,17 @@ export default function AdminCompaniesPage() {
                       {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
                     </td>
                     <td className="px-5 py-3">
-                      <CompanyStatusBadge status={c.subscription_status} suspended={c.is_suspended} />
+                      {c.deletion_scheduled_at ? (
+                        <StatusBadge label="Suppression programmée" tone="danger" />
+                      ) : (
+                        <CompanyStatusBadge status={c.subscription_status} suspended={c.is_suspended} />
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <HealthBadge level={c.health?.level} title={c.health?.reasons.join(' ')} />
+                    </td>
+                    <td className="tabular whitespace-nowrap px-5 py-3 text-muted-foreground">
+                      {c.health?.lastActivityAt ? formatRelative(c.health.lastActivityAt) : 'Jamais'}
                     </td>
                     <td className="px-5 py-3 capitalize text-foreground">
                       {c.subscription_plan_name || '—'}

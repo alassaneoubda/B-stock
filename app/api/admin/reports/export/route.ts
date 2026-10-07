@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 import { handleRouteError } from '@/lib/errors'
 // Toutes les cellules passent par toCSV -> escapeCell (RFC 4180 + neutralisation des formules)
@@ -9,7 +9,7 @@ import { toCSV, csvResponse } from '@/lib/csv'
 // GET /api/admin/reports/export?type=companies|users|payments|revenue
 export async function GET(request: NextRequest) {
   try {
-    const authz = await requireSuperAdmin()
+    const authz = await requireAdmin('reports.read')
     if (!authz.ok) return authz.response
 
     const { searchParams } = new URL(request.url)

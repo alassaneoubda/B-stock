@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
-import useSWR from 'swr'
+import { useParams } from 'next/navigation'
+import useSWR, { useSWRConfig } from 'swr'
 import { signIn } from 'next-auth/react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,6 +36,12 @@ import { ApiError, apiFetch, errorMessage, toastError } from '@/lib/api-client'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
 import { ROLE_LABELS } from '@/lib/permissions'
 import { ErrorState, TableSkeleton } from '@/components/states'
+import { useAdmin } from '@/components/admin/admin-role'
+import { AlertTriangle, Download, RotateCcw } from 'lucide-react'
+import { CompanyHealthPanel } from '@/components/admin/company/company-health-panel'
+import { CompanyFeaturesCard } from '@/components/admin/company/company-features-card'
+import { CompanyNotesPanel } from '@/components/admin/company/company-notes-panel'
+import { CompanyTimelinePanel, timelineKey } from '@/components/admin/company/company-timeline-panel'
 
 const fetcher = (url: string) => apiFetch(url)
 
@@ -61,12 +67,15 @@ type Pending = 'impersonate' | 'suspend' | 'cancel' | 'trial' | 'delete'
 
 export default function AdminCompanyDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
+  const { mutate: globalMutate } = useSWRConfig()
   const { data, error, isLoading, mutate } = useSWR<any>(`/api/admin/companies/${id}`, fetcher)
   const [busy, setBusy] = useState<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   const [suspendReason, setSuspendReason] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState('')
+  // Motif obligatoire de l'assistance (visible par l'entreprise dans son journal)
+  const [impersonateReason, setImpersonateReason] = useState('')
+  const { can } = useAdmin()
 
   const company = data?.data?.company
   const usage = data?.data?.usage
@@ -122,7 +131,9 @@ export default function AdminCompanyDetailPage() {
     try {
       const json = await apiFetch(url, init)
       toast.success(success)
-      if (init.method !== 'DELETE') await mutate()
+      await mutate()
+      // L'historique reflète chaque action (abonnement, essai, suspension…)
+      globalMutate(timelineKey(id))
       return json
     } catch (e) {
       toastError(e, errorTitle)
@@ -208,7 +219,10 @@ export default function AdminCompanyDetailPage() {
     if (busy) return
     setBusy('impersonate')
     try {
-      const json = await apiFetch<{ token: string }>(`/api/admin/companies/${id}/impersonate`, { method: 'POST' })
+      const json = await apiFetch<{ token: string }>(`/api/admin/companies/${id}/impersonate`, {
+        method: 'POST',
+        body: { reason: impersonateReason.trim() },
+      })
       await signIn('impersonate', { token: json.token, callbackUrl: '/dashboard' })
     } catch (e) {
       toastError(e, 'Connexion impossible')
@@ -217,19 +231,56 @@ export default function AdminCompanyDetailPage() {
     }
   }
 
+  /** Programme la suppression à J+30 (le compte est suspendu, la suppression reste annulable). */
   async function remove() {
-    const json = await call(
+    await call(
       `/api/admin/companies/${id}`,
       { method: 'DELETE' },
       'delete',
-      'Entreprise supprimée',
-      'Suppression impossible'
+      'Suppression programmée dans 30 jours',
+      'Programmation impossible'
     )
-    if (json) {
-      setPending(null)
-      router.push('/admin/companies')
-    } else {
-      setPending(null)
+    setPending(null)
+    setDeleteConfirm('')
+  }
+
+  async function restore() {
+    await call(
+      `/api/admin/companies/${id}/restore`,
+      { method: 'POST' },
+      'restore',
+      'Suppression annulée',
+      'Annulation impossible'
+    )
+  }
+
+  /** Télécharge l'export JSON (fichier joint renvoyé par l'API). */
+  async function exportData() {
+    if (busy) return
+    setBusy('export')
+    try {
+      const res = await fetch(`/api/admin/companies/${id}/export`)
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        throw new ApiError(payload?.error || 'Export impossible', res.status)
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || 'export-entreprise.json'
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success('Export téléchargé')
+      globalMutate(timelineKey(id))
+    } catch (e) {
+      toastError(e, 'Export impossible')
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -301,6 +352,7 @@ export default function AdminCompanyDetailPage() {
           }
           actions={
             <>
+              {can('companies.impersonate') && (
               <Button variant="outline" onClick={() => setPending('impersonate')} disabled={isBusy}>
                 {busy === 'impersonate' ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -309,7 +361,8 @@ export default function AdminCompanyDetailPage() {
                 )}
                 Se connecter en tant que
               </Button>
-              {company.is_suspended ? (
+              )}
+              {!can('companies.suspend') || company.deletion_scheduled_at ? null : company.is_suspended ? (
                 <Button onClick={() => suspend(false)} disabled={isBusy}>
                   {busy === 'reactivate' ? (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -332,6 +385,37 @@ export default function AdminCompanyDetailPage() {
           }
         />
       </div>
+
+      {company.deletion_scheduled_at && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-5 py-4"
+        >
+          <div className="flex min-w-0 items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                Suppression programmée le {formatDate(company.deletion_scheduled_at)}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Le compte est suspendu. À cette date, l’entreprise et toutes ses données seront supprimées
+                définitivement
+                {company.deletion_requested_by ? ` (demandé par ${company.deletion_requested_by})` : ''}.
+              </p>
+            </div>
+          </div>
+          {can('companies.delete') && (
+            <Button variant="outline" onClick={restore} disabled={isBusy}>
+              {busy === 'restore' ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              )}
+              Annuler la suppression
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Utilisation */}
       <section
@@ -501,6 +585,9 @@ export default function AdminCompanyDetailPage() {
               </div>
 
               <div className="flex justify-end">
+                {!can('companies.plan') ? (
+                  <p className="text-xs text-muted-foreground">Votre rôle ne permet pas de modifier l’abonnement.</p>
+                ) : (
                 <Button type="submit" variant="brand" disabled={isBusy} className="w-full sm:w-auto">
                   {busy === 'save-sub' ? (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -509,10 +596,12 @@ export default function AdminCompanyDetailPage() {
                   )}
                   Enregistrer l’abonnement
                 </Button>
+                )}
               </div>
             </form>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+              {can('companies.trial') ? (
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
@@ -527,9 +616,14 @@ export default function AdminCompanyDetailPage() {
                   <CalendarPlus className="h-4 w-4" aria-hidden="true" /> Prolonger l’essai
                 </Button>
               </div>
+              ) : (
+                <span />
+              )}
+              {can('companies.plan') && (
               <Button variant="ghost" size="sm" className="h-9 text-muted-foreground" onClick={() => setPending('cancel')} disabled={isBusy}>
                 Annuler l’abonnement
               </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -554,27 +648,46 @@ export default function AdminCompanyDetailPage() {
             </dl>
           </Panel>
 
-          <section className="rounded-xl border border-destructive/30 bg-card p-5 shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
-            <h2 className="text-[15px] font-semibold tracking-tight text-destructive">Zone sensible</h2>
-            <p className="mb-4 mt-1 text-sm text-muted-foreground">
-              La suppression est définitive. Préférez la suspension si vous comptez réactiver plus tard.
-            </p>
-            <Button
-              onClick={() => {
-                setDeleteConfirm('')
-                setPending('delete')
-              }}
-              variant="destructive"
-              disabled={isBusy}
-            >
-              {busy === 'delete' ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              )}
-              Supprimer l’entreprise
-            </Button>
-          </section>
+          <CompanyHealthPanel companyId={id} />
+
+          <CompanyFeaturesCard companyId={id} flags={company.feature_flags} onChanged={() => mutate()} />
+
+          {can('companies.delete') && (
+            <section className="rounded-xl border border-destructive/30 bg-card p-5 shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+              <h2 className="text-[15px] font-semibold tracking-tight text-destructive">Zone sensible</h2>
+              <p className="mb-4 mt-1 text-sm text-muted-foreground">
+                Exportez les données avant toute suppression. La suppression est programmée à 30 jours : le compte
+                est suspendu tout de suite et reste récupérable jusqu’à l’échéance.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={exportData} disabled={isBusy}>
+                  {busy === 'export' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Exporter les données
+                </Button>
+                {!company.deletion_scheduled_at && (
+                  <Button
+                    onClick={() => {
+                      setDeleteConfirm('')
+                      setPending('delete')
+                    }}
+                    variant="destructive"
+                    disabled={isBusy}
+                  >
+                    {busy === 'delete' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    Programmer la suppression (30 jours)
+                  </Button>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </div>
 
@@ -612,17 +725,42 @@ export default function AdminCompanyDetailPage() {
         )}
       </Panel>
 
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <CompanyTimelinePanel companyId={id} />
+        </div>
+        <CompanyNotesPanel companyId={id} />
+      </div>
+
       <AlertDialog open={pending !== null} onOpenChange={(o) => !o && !busy && setPending(null)}>
         <AlertDialogContent>
           {pending === 'impersonate' && (
-            <AlertDialogHeader>
-              <AlertDialogTitle>Se connecter en tant que {company.name} ?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Vous quitterez le back office et serez connecté au tableau de bord de l’entreprise avec le compte de
-                son propriétaire. Toutes vos actions y seront réelles et l’accès est consigné dans le journal
-                d’audit.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Se connecter en tant que {company.name} ?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Vous quitterez le back office et serez connecté au tableau de bord de l’entreprise avec le compte de
+                  son propriétaire, pour 1 heure au plus. Toutes vos actions y seront réelles. Le motif ci-dessous est
+                  consigné et visible par l’entreprise dans son journal d’audit (« Assistance B-Stock »).
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-1.5">
+                <Label htmlFor="impersonate-reason">Motif de l’assistance (obligatoire)</Label>
+                <textarea
+                  id="impersonate-reason"
+                  value={impersonateReason}
+                  onChange={(e) => setImpersonateReason(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Ex. demande du gérant : vérifier un écart de stock sur le dépôt principal"
+                  aria-describedby="impersonate-reason-help"
+                  className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <p id="impersonate-reason-help" className="text-xs text-muted-foreground">
+                  10 caractères minimum ({impersonateReason.trim().length}/10).
+                </p>
+              </div>
+            </>
           )}
           {pending === 'suspend' && (
             <>
@@ -667,11 +805,11 @@ export default function AdminCompanyDetailPage() {
           {pending === 'delete' && (
             <>
               <AlertDialogHeader>
-                <AlertDialogTitle>Supprimer définitivement {company.name} ?</AlertDialogTitle>
+                <AlertDialogTitle>Programmer la suppression de {company.name} ?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  L’entreprise sera supprimée de la plateforme. Cette action est irréversible ; elle est refusée si
-                  des données liées (ventes, stock…) existent encore. Pour confirmer, saisissez le nom de
-                  l’entreprise.
+                  Le compte sera suspendu immédiatement, puis l’entreprise et toutes ses données (ventes, stock,
+                  clients…) seront supprimées définitivement dans 30 jours. D’ici là, la suppression peut être
+                  annulée. Pensez à exporter les données. Pour confirmer, saisissez le nom de l’entreprise.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <Input
@@ -685,7 +823,11 @@ export default function AdminCompanyDetailPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isBusy}>Annuler</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isBusy || (pending === 'delete' && deleteConfirm.trim() !== String(company.name).trim())}
+              disabled={
+                isBusy ||
+                (pending === 'delete' && deleteConfirm.trim() !== String(company.name).trim()) ||
+                (pending === 'impersonate' && impersonateReason.trim().length < 10)
+              }
               className={
                 pending === 'delete' || pending === 'suspend' || pending === 'cancel'
                   ? buttonVariants({ variant: 'destructive' })
@@ -705,7 +847,7 @@ export default function AdminCompanyDetailPage() {
               {pending === 'suspend' && 'Suspendre'}
               {pending === 'cancel' && 'Annuler l’abonnement'}
               {pending === 'trial' && 'Prolonger'}
-              {pending === 'delete' && 'Supprimer définitivement'}
+              {pending === 'delete' && 'Programmer la suppression'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

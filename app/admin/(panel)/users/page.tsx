@@ -17,12 +17,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
-import { Loader2, Search, KeyRound, ChevronLeft, ChevronRight, Copy, Users } from 'lucide-react'
+import { Loader2, Search, KeyRound, ChevronLeft, ChevronRight, Copy, Users, MailCheck } from 'lucide-react'
 import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
 import { formatNumber } from '@/lib/format'
 import { PageShell, PageIntro } from '@/components/app/blocks'
 import { ROLES, ROLE_LABELS } from '@/lib/permissions'
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import { useAdmin } from '@/components/admin/admin-role'
 
 const fetcher = (url: string) => apiFetch(url)
 
@@ -40,12 +41,18 @@ type User = {
   company_name: string
 }
 
+type ResetResult = { email: string; emailed: boolean; link?: string; expiresAt: string }
+
 export default function AdminUsersPage() {
+  const { role: adminRole, can } = useAdmin()
+  // Rôle / activation : super-admin uniquement ; lien de réinitialisation : capacité users.reset
+  const canManage = adminRole === 'super_admin'
+  const canReset = can('users.reset')
   const [search, setSearch] = useState('')
   const [role, setRole] = useState('')
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState<string | null>(null)
-  const [resetInfo, setResetInfo] = useState<{ email: string; password: string } | null>(null)
+  const [resetInfo, setResetInfo] = useState<ResetResult | null>(null)
   const [toReset, setToReset] = useState<User | null>(null)
 
   const qs = new URLSearchParams({ search, role, page: String(page) }).toString()
@@ -75,12 +82,9 @@ export default function AdminUsersPage() {
     if (busy) return
     setBusy('reset-' + u.id)
     try {
-      const json = await apiFetch<{ email: string; tempPassword: string }>(
-        `/api/admin/users/${u.id}/reset-password`,
-        { method: 'POST' }
-      )
-      setResetInfo({ email: json.email, password: json.tempPassword })
-      toast.success('Mot de passe réinitialisé')
+      const json = await apiFetch<ResetResult>(`/api/admin/users/${u.id}/reset-password`, { method: 'POST' })
+      setResetInfo({ email: json.email, emailed: json.emailed, link: json.link, expiresAt: json.expiresAt })
+      toast.success(json.emailed ? `Lien envoyé à ${json.email}` : 'Lien de réinitialisation créé')
       setToReset(null)
     } catch (e) {
       setToReset(null)
@@ -90,14 +94,17 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function copyPassword(password: string) {
+  async function copyLink(link: string) {
     try {
-      await navigator.clipboard.writeText(password)
-      toast.success('Mot de passe copié')
+      await navigator.clipboard.writeText(link)
+      toast.success('Lien copié')
     } catch {
-      toast.error('Copie impossible', { description: 'Sélectionnez le mot de passe et copiez-le manuellement.' })
+      toast.error('Copie impossible', { description: 'Sélectionnez le lien et copiez-le manuellement.' })
     }
   }
+
+  const expiryLabel = (iso: string) =>
+    new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 
   return (
     <PageShell>
@@ -108,27 +115,39 @@ export default function AdminUsersPage() {
 
       {resetInfo && (
         <Card role="status" className="gap-3 border-brand/40 bg-brand-soft p-4">
-          <p className="text-sm font-medium text-brand-strong">
-            Mot de passe temporaire pour {resetInfo.email}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="rounded-lg border border-brand/40 bg-card px-3 py-1.5 font-mono text-sm text-foreground">
-              {resetInfo.password}
-            </code>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => copyPassword(resetInfo.password)}
-            >
-              <Copy className="h-4 w-4" aria-hidden="true" /> Copier
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setResetInfo(null)}>
-              Fermer
-            </Button>
-          </div>
-          <p className="text-xs text-brand-strong">
-            Communiquez-le à l&apos;utilisateur. Il ne sera plus affiché.
-          </p>
+          {resetInfo.emailed ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="flex items-center gap-2 text-sm font-medium text-brand-strong">
+                <MailCheck className="h-4 w-4" aria-hidden="true" />
+                Lien envoyé à {resetInfo.email} (valable jusqu’à {expiryLabel(resetInfo.expiresAt)}).
+              </p>
+              <Button size="sm" variant="ghost" onClick={() => setResetInfo(null)}>
+                Fermer
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-brand-strong">
+                L’email n’a pas pu être envoyé. Transmettez ce lien à {resetInfo.email} :
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="max-w-full break-all rounded-lg border border-brand/40 bg-card px-3 py-1.5 font-mono text-xs text-foreground">
+                  {resetInfo.link}
+                </code>
+                {resetInfo.link && (
+                  <Button size="sm" variant="outline" onClick={() => copyLink(resetInfo.link!)}>
+                    <Copy className="h-4 w-4" aria-hidden="true" /> Copier
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => setResetInfo(null)}>
+                  Fermer
+                </Button>
+              </div>
+              <p className="text-xs text-brand-strong">
+                Valable jusqu’à {expiryLabel(resetInfo.expiresAt)}, utilisable une seule fois. Il ne sera plus affiché.
+              </p>
+            </>
+          )}
         </Card>
       )}
 
@@ -206,6 +225,7 @@ export default function AdminUsersPage() {
                       </Link>
                     </td>
                     <td className="px-5 py-3">
+                      {canManage ? (
                       <select
                         value={u.role}
                         disabled={!!busy}
@@ -226,8 +246,12 @@ export default function AdminUsersPage() {
                           </option>
                         ))}
                       </select>
+                      ) : (
+                        <span className="text-xs text-foreground">{roleLabel(u.role)}</span>
+                      )}
                     </td>
                     <td className="px-5 py-3">
+                      {canManage ? (
                       <button
                         onClick={() =>
                           patch(
@@ -251,8 +275,12 @@ export default function AdminUsersPage() {
                           }`}
                         />
                       </button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{u.is_active ? 'Actif' : 'Désactivé'}</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-right">
+                      {canReset && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -265,8 +293,9 @@ export default function AdminUsersPage() {
                         ) : (
                           <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
                         )}
-                        Mot de passe
+                        Envoyer un lien
                       </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -305,12 +334,13 @@ export default function AdminUsersPage() {
       <AlertDialog open={!!toReset} onOpenChange={(o) => !o && !busy && setToReset(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Réinitialiser le mot de passe de {toReset?.email} ?</AlertDialogTitle>
+            <AlertDialogTitle>Envoyer un lien de réinitialisation à {toReset?.email} ?</AlertDialogTitle>
             <AlertDialogDescription>
-              Son mot de passe actuel cessera immédiatement de fonctionner et un mot de passe temporaire sera
-              affiché une seule fois, à lui transmettre.
+              L’utilisateur recevra par email un lien personnel, valable 60 minutes et utilisable une seule fois, pour
+              choisir lui-même un nouveau mot de passe. Son mot de passe actuel reste valable jusque-là. Si l’email ne
+              peut pas partir, le lien vous sera affiché pour que vous le lui transmettiez.
               {toReset?.auth_provider === 'google' &&
-                ' Ce compte utilise la connexion Google : il passera en connexion par email et mot de passe.'}
+                ' Ce compte utilise la connexion Google : il pourra ensuite aussi se connecter par email et mot de passe.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -323,7 +353,7 @@ export default function AdminUsersPage() {
               }}
             >
               {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              Réinitialiser
+              Envoyer le lien
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

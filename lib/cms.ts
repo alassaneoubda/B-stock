@@ -100,9 +100,13 @@ const EMPTY_LANDING: LandingContent = {
 
 /**
  * Charge tout le contenu public de la landing.
+ * Par défaut, seuls les éléments publiés (`is_published = true`) sont renvoyés.
+ * `includeDrafts: true` (aperçu du back-office) renvoie aussi les brouillons.
  * Tolérant : si les tables CMS n'existent pas encore, retourne un fallback minimal.
  */
-export async function getLandingContent(): Promise<LandingContent> {
+export async function getLandingContent(options: { includeDrafts?: boolean } = {}): Promise<LandingContent> {
+  // Avec includeDrafts, la condition devient « is_published = true OR true » : tout est renvoyé.
+  const drafts = options.includeDrafts === true
   try {
     const [sectionRows, featureRows, faqRows, testimonialRows, navRows, plans, settings] =
       await Promise.all([
@@ -112,26 +116,26 @@ export async function getLandingContent(): Promise<LandingContent> {
                  cta_secondary_label, cta_secondary_href,
                  image_url, meta, sort_order
           FROM cms_sections
-          WHERE is_published = true
+          WHERE (is_published = true OR ${drafts}::boolean)
           ORDER BY sort_order ASC
         `,
         sql`
           SELECT id, slug, title, description, icon, highlight, sort_order
           FROM cms_feature_modules
-          WHERE is_published = true
+          WHERE (is_published = true OR ${drafts}::boolean)
           ORDER BY sort_order ASC
         `,
         sql`
           SELECT id, question, answer, sort_order
           FROM cms_faq_items
-          WHERE is_published = true
+          WHERE (is_published = true OR ${drafts}::boolean)
           ORDER BY sort_order ASC
         `,
         sql`
           SELECT id, author_name, author_role, company_name, quote,
                  avatar_url, rating, sort_order
           FROM cms_testimonials
-          WHERE is_published = true
+          WHERE (is_published = true OR ${drafts}::boolean)
           ORDER BY sort_order ASC
         `,
         sql`

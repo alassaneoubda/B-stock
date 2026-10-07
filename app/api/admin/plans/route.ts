@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 
 const priceSchema = z.object({
@@ -32,7 +32,7 @@ const planSchema = z.object({
 
 // GET /api/admin/plans — all plans (incl. inactive) with subscriber counts
 export async function GET() {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.read')
   if (!authz.ok) return authz.response
 
   try {
@@ -51,7 +51,7 @@ export async function GET() {
 
 // POST /api/admin/plans — create a plan
 export async function POST(request: NextRequest) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.write')
   if (!authz.ok) return authz.response
 
   try {

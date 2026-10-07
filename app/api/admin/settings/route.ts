@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { getSettings, updateSettings } from '@/lib/settings'
 
 const schema = z.object({
@@ -18,7 +18,7 @@ const schema = z.object({
 
 // GET /api/admin/settings
 export async function GET() {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('settings.manage')
   if (!authz.ok) return authz.response
 
   try {
@@ -32,7 +32,7 @@ export async function GET() {
 
 // PUT /api/admin/settings
 export async function PUT(request: NextRequest) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('settings.manage')
   if (!authz.ok) return authz.response
 
   try {

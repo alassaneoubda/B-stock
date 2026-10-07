@@ -16,10 +16,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
-import { Loader2, Save, Trash2, Plus, Newspaper } from 'lucide-react'
+import { Loader2, Save, Trash2, Plus, Newspaper, Eye, Send, EyeOff } from 'lucide-react'
 import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
 import { EmptyState, ErrorState } from '@/components/states'
-import { PageShell, PageIntro } from '@/components/app/blocks'
+import { PageShell, PageIntro, StatusBadge } from '@/components/app/blocks'
 
 type Section = {
   section_key: string
@@ -59,6 +59,13 @@ type Feature = {
 }
 
 type Tab = 'sections' | 'features' | 'faq' | 'testimonials'
+type Entity = 'section' | 'feature' | 'faq' | 'testimonial'
+
+/** Le formulaire a-t-il été soumis par le bouton « … et publier » ? */
+function wantsPublish(e: React.FormEvent<HTMLFormElement>): boolean {
+  const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null
+  return submitter?.value === 'publish'
+}
 
 /** Suppression en attente de confirmation (payload envoyé tel quel à PATCH /api/admin/cms). */
 type PendingDelete = { kind: string; label: string; body: Record<string, unknown> }
@@ -116,6 +123,20 @@ export default function AdminCmsPage() {
     }
   }
 
+  async function togglePublish(entity: Entity, id: string, published: boolean) {
+    await patch({ type: 'publish', entity, id, published }, published ? 'Élément publié' : 'Élément dépublié (brouillon)')
+  }
+
+  async function publishAll() {
+    await patch({ type: 'publish_all' }, 'Tous les brouillons sont publiés')
+  }
+
+  const draftCount =
+    sections.filter((x) => !x.is_published).length +
+    features.filter((x) => !x.is_published).length +
+    faq.filter((x) => !x.is_published).length +
+    testimonials.filter((x) => !x.is_published).length
+
   async function confirmDelete() {
     if (!pendingDelete) return
     await patch(pendingDelete.body, `${pendingDelete.kind} supprimé(e)`)
@@ -155,8 +176,30 @@ export default function AdminCmsPage() {
     <PageShell className="max-w-5xl">
       <PageIntro
         title="CMS landing"
-        description="Modifiez les textes, FAQ et témoignages affichés sur la page d’accueil — sans toucher au code."
+        description="Modifiez les textes, FAQ et témoignages de la page d’accueil. Les modifications sont enregistrées en brouillon : elles ne sont visibles du public qu’une fois publiées."
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <a href="/preview/landing" target="_blank" rel="noopener noreferrer">
+                <Eye className="h-4 w-4" aria-hidden="true" />
+                Aperçu
+                <span className="sr-only"> (s’ouvre dans un nouvel onglet)</span>
+              </a>
+            </Button>
+            <Button variant="brand" onClick={publishAll} disabled={saving || draftCount === 0}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+              Tout publier{draftCount > 0 ? ` (${draftCount})` : ''}
+            </Button>
+          </>
+        }
       />
+
+      {draftCount > 0 && (
+        <p role="status" className="rounded-lg border border-warning/30 bg-warning-soft px-4 py-2.5 text-sm text-warning-foreground">
+          {draftCount === 1 ? '1 élément en brouillon, non visible' : `${draftCount} éléments en brouillon, non visibles`} sur la page
+          publique. Vérifiez l’aperçu puis publiez.
+        </p>
+      )}
 
       <div
         role="tablist"
@@ -199,13 +242,13 @@ export default function AdminCmsPage() {
                   body: String(fd.get('body') || '') || null,
                   cta_primary_label: String(fd.get('cta_primary_label') || '') || null,
                   image_url: String(fd.get('image_url') || '') || null,
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
               <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
                 <h2 className="font-mono text-sm font-semibold text-foreground">{s.section_key}</h2>
-                <PublishedToggle defaultChecked={s.is_published} />
+                <PublishControl published={s.is_published} disabled={saving} label={s.section_key} onToggle={() => togglePublish('section', s.section_key, !s.is_published)} />
               </div>
               <div className="grid gap-4 p-5 md:grid-cols-2">
                 <div className="space-y-1.5">
@@ -235,10 +278,7 @@ export default function AdminCmsPage() {
                 </div>
               </div>
               <div className="flex justify-end border-t border-border px-5 py-3">
-                <Button type="submit" disabled={saving} size="sm">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
-                  Enregistrer
-                </Button>
+                <SaveButtons saving={saving} />
               </div>
             </form>
           ))}
@@ -261,13 +301,13 @@ export default function AdminCmsPage() {
                   title: String(fd.get('title')),
                   description: String(fd.get('description') || '') || null,
                   highlight: String(fd.get('highlight') || '') || null,
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
               <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
                 <span className="font-mono text-xs text-muted-foreground">{f.slug}</span>
-                <PublishedToggle defaultChecked={f.is_published} />
+                <PublishControl published={f.is_published} disabled={saving} label={f.title} onToggle={() => togglePublish('feature', f.id, !f.is_published)} />
               </div>
               <div className="grid gap-4 p-5 md:grid-cols-2">
                 <div className="space-y-1.5">
@@ -318,7 +358,7 @@ export default function AdminCmsPage() {
                   id: item.id,
                   question: String(fd.get('question')),
                   answer: String(fd.get('answer')),
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
@@ -329,7 +369,7 @@ export default function AdminCmsPage() {
                     <Input id={`faq-${item.id}-question`} name="question" defaultValue={item.question} required />
                   </div>
                   <div className="pb-2">
-                    <PublishedToggle defaultChecked={item.is_published} />
+                    <PublishControl published={item.is_published} disabled={saving} label={item.question} onToggle={() => togglePublish('faq', item.id, !item.is_published)} />
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -374,8 +414,9 @@ export default function AdminCmsPage() {
                   type: 'faq',
                   question: String(fd.get('question')),
                   answer: String(fd.get('answer')),
+                  publish: wantsPublish(e),
                 },
-                'Question ajoutée'
+                wantsPublish(e) ? 'Question ajoutée et publiée' : 'Question ajoutée en brouillon'
               )
               if (ok) formEl.reset()
             }}
@@ -398,9 +439,7 @@ export default function AdminCmsPage() {
               />
             </div>
             <div className="flex justify-end">
-              <Button type="submit" disabled={saving} size="sm">
-                Ajouter
-              </Button>
+              <SaveButtons saving={saving} draftLabel="Ajouter en brouillon" publishLabel="Ajouter et publier" />
             </div>
           </form>
         </div>
@@ -423,13 +462,13 @@ export default function AdminCmsPage() {
                   company_name: String(fd.get('company_name') || '') || null,
                   quote: String(fd.get('quote')),
                   rating: Number(fd.get('rating') || 5),
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
               <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
                 <h2 className="text-sm font-semibold text-foreground">{t.author_name}</h2>
-                <PublishedToggle defaultChecked={t.is_published} />
+                <PublishControl published={t.is_published} disabled={saving} label={t.author_name} onToggle={() => togglePublish('testimonial', t.id, !t.is_published)} />
               </div>
               <div className="grid gap-4 p-5 md:grid-cols-3">
                 <div className="space-y-1.5">
@@ -497,8 +536,9 @@ export default function AdminCmsPage() {
                   author_role: String(fd.get('author_role') || '') || null,
                   company_name: String(fd.get('company_name') || '') || null,
                   quote: String(fd.get('quote')),
+                  publish: wantsPublish(e),
                 },
-                'Témoignage ajouté'
+                wantsPublish(e) ? 'Témoignage ajouté et publié' : 'Témoignage ajouté en brouillon'
               )
               if (ok) formEl.reset()
             }}
@@ -531,9 +571,7 @@ export default function AdminCmsPage() {
               />
             </div>
             <div className="flex justify-end">
-              <Button type="submit" disabled={saving} size="sm">
-                Ajouter
-              </Button>
+              <SaveButtons saving={saving} draftLabel="Ajouter en brouillon" publishLabel="Ajouter et publier" />
             </div>
           </form>
         </div>
@@ -547,7 +585,7 @@ export default function AdminCmsPage() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               L’élément sera retiré immédiatement de la page d’accueil publique. Cette action est irréversible :
-              pour le masquer temporairement, décochez plutôt « Publié ».
+              pour le masquer temporairement, utilisez plutôt « Dépublier ».
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -574,18 +612,57 @@ const CARD = 'overflow-hidden rounded-xl border border-border bg-card shadow-[0_
 const TEXTAREA =
   'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
-/** Case « Publié » (champ de formulaire natif `is_published`, lu via FormData). */
-function PublishedToggle({ defaultChecked }: { defaultChecked: boolean }) {
+/** Statut « Brouillon » / « Publié » + action Publier / Dépublier. */
+function PublishControl({
+  published,
+  disabled,
+  label,
+  onToggle,
+}: {
+  published: boolean
+  disabled: boolean
+  label: string
+  onToggle: () => void
+}) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
-      <input
-        type="checkbox"
-        name="is_published"
-        defaultChecked={defaultChecked}
-        className="h-4 w-4 rounded border-input accent-primary"
-      />
-      Publié
-    </label>
+    <div className="flex items-center gap-2">
+      <StatusBadge label={published ? 'Publié' : 'Brouillon'} tone={published ? 'success' : 'warning'} />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onClick={onToggle}
+        aria-label={`${published ? 'Dépublier' : 'Publier'} « ${label} »`}
+      >
+        {published ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Send className="h-3.5 w-3.5" aria-hidden="true" />}
+        {published ? 'Dépublier' : 'Publier'}
+      </Button>
+    </div>
+  )
+}
+
+/** « Enregistrer le brouillon » (par défaut) et « Enregistrer et publier ». */
+function SaveButtons({
+  saving,
+  draftLabel = 'Enregistrer le brouillon',
+  publishLabel = 'Enregistrer et publier',
+}: {
+  saving: boolean
+  draftLabel?: string
+  publishLabel?: string
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <Button type="submit" name="intent" value="draft" variant="outline" size="sm" disabled={saving}>
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+        {draftLabel}
+      </Button>
+      <Button type="submit" name="intent" value="publish" size="sm" disabled={saving}>
+        <Send className="h-4 w-4" aria-hidden="true" />
+        {publishLabel}
+      </Button>
+    </div>
   )
 }
 
@@ -611,9 +688,7 @@ function ItemFooter({
       >
         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Supprimer
       </Button>
-      <Button type="submit" disabled={saving} size="sm">
-        Enregistrer
-      </Button>
+      <SaveButtons saving={saving} />
     </div>
   )
 }

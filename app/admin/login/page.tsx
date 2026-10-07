@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { signIn } from 'next-auth/react'
 import { safeCallbackUrl } from '@/lib/safe-redirect'
@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { BrandMonogram } from '@/components/brand-mark'
-import { Loader2, ShieldCheck, ArrowRight, Eye, EyeOff } from 'lucide-react'
+import { Loader2, ShieldCheck, ArrowRight, Eye, EyeOff, KeyRound } from 'lucide-react'
+import { NETWORK_ERROR, credentialsErrorMessage } from '@/components/auth/auth-errors'
 
 export default function AdminLoginPage() {
   return (
@@ -33,28 +34,74 @@ function AdminLoginContent() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Étape 2 : code de l'application d'authentification (si la 2FA est active)
+  const [otpStep, setOtpStep] = useState(false)
+  const [otp, setOtp] = useState('')
+  const otpRef = useRef<HTMLInputElement>(null)
+  const submittingRef = useRef(false)
+
+  useEffect(() => {
+    if (otpStep) otpRef.current?.focus()
+  }, [otpStep])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submittingRef.current) return
+    const code = otp.replace(/\s/g, '')
+    if (otpStep && !/^\d{6}$/.test(code)) {
+      setError('Le code doit comporter 6 chiffres.')
+      return
+    }
+    submittingRef.current = true
     setIsLoading(true)
     setError(null)
+    let redirecting = false
     try {
       const res = await signIn('credentials', {
         email,
         password,
+        ...(otpStep ? { otp: code } : {}),
         redirect: false,
       })
       if (res?.error) {
-        setError('Identifiants invalides ou compte non autorisé')
+        if (res.code === 'otp_required') {
+          setOtpStep(true)
+          setOtp('')
+        } else if (res.code === 'otp_invalid') {
+          setOtp('')
+          setError(credentialsErrorMessage(res.error, res.code))
+          otpRef.current?.focus()
+        } else {
+          setError(
+            res.code === 'rate_limited'
+              ? credentialsErrorMessage(res.error, res.code)
+              : 'Identifiants invalides ou compte non autorisé'
+          )
+          if (otpStep) {
+            setOtpStep(false)
+            setOtp('')
+          }
+        }
       } else {
         // Navigation complète : le cookie Auth.js doit être renvoyé au middleware
+        redirecting = true
         window.location.assign(callbackUrl)
       }
     } catch {
-      setError('Une erreur est survenue. Réessayez.')
+      setError(NETWORK_ERROR)
     } finally {
-      setIsLoading(false)
+      if (!redirecting) {
+        submittingRef.current = false
+        setIsLoading(false)
+      }
     }
+  }
+
+  function backToCredentials() {
+    setOtpStep(false)
+    setOtp('')
+    setPassword('')
+    setError(null)
   }
 
   return (
@@ -79,6 +126,40 @@ function AdminLoginContent() {
               </div>
             )}
 
+            {otpStep ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 rounded-lg bg-muted p-3 text-sm">
+                  <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-muted-foreground">
+                    Double authentification activée pour <span className="font-medium text-foreground">{email}</span>.
+                    Saisissez le code à 6 chiffres affiché dans votre application d’authentification.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="otp">Code de vérification</Label>
+                  <Input
+                    ref={otpRef}
+                    id="otp"
+                    name="otp"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]*"
+                    maxLength={7}
+                    placeholder="123456"
+                    className="tabular h-11 text-center text-lg tracking-[0.3em]"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/[^\d ]/g, ''))}
+                    disabled={isLoading}
+                    aria-describedby="otp-help"
+                  />
+                  <p id="otp-help" className="text-xs text-muted-foreground">
+                    Le code change toutes les 30 secondes.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -118,6 +199,9 @@ function AdminLoginContent() {
               </div>
             </div>
 
+              </>
+            )}
+
             <Button type="submit" className="h-11 w-full" disabled={isLoading}>
               {isLoading ? (
                 <>
@@ -126,11 +210,17 @@ function AdminLoginContent() {
                 </>
               ) : (
                 <>
-                  Se connecter
+                  {otpStep ? 'Vérifier le code' : 'Se connecter'}
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </>
               )}
             </Button>
+
+            {otpStep && (
+              <Button type="button" variant="ghost" className="w-full" onClick={backToCredentials} disabled={isLoading}>
+                Utiliser un autre compte
+              </Button>
+            )}
           </form>
         </div>
 

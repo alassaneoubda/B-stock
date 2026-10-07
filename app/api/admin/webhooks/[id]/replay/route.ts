@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 import { handleEvent } from '@/lib/subscription-webhook'
 
@@ -10,7 +10,7 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('webhooks.manage')
   if (!authz.ok) return authz.response
 
   try {

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin } from '@/lib/admin-auth'
+import { requireAdmin } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/admin/audit — platform audit log (who did what)
 export async function GET(request: NextRequest) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('audit.read')
   if (!authz.ok) return authz.response
 
   try {

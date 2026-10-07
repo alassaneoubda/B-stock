@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 
 const priceSchema = z.object({
@@ -34,7 +34,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.write')
   if (!authz.ok) return authz.response
 
   try {
@@ -83,7 +83,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.write')
   if (!authz.ok) return authz.response
 
   try {

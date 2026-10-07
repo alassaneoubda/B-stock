@@ -14,6 +14,7 @@ import {
 import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { canAccessPath } from '@/lib/route-permissions'
+import { companyHasFeature } from '@/lib/company-features'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { SubscriptionBanner } from '@/components/dashboard/subscription-banner'
 import { PageIntro, PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
@@ -105,8 +106,9 @@ const LONG_DATE = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'nume
 export default async function DashboardPage() {
   const session = await requirePageSession()
   const { companyId, name } = session.user
-  const can = (path: string) => canAccessPath(path, session.access.permissions)
-  const d = await getDashboard(companyId)
+  const [d, posEnabled] = await Promise.all([getDashboard(companyId), companyHasFeature(companyId!, 'pos')])
+  // Le point de vente coupé par la plateforme disparaît aussi des raccourcis
+  const can = (path: string) => (path !== '/pos' || posEnabled) && canAccessPath(path, session.access.permissions)
 
   const firstName = (name || '').split(' ')[0]
   const hour = new Date().getHours()

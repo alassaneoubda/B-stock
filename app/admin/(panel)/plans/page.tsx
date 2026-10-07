@@ -30,6 +30,7 @@ import { Loader2, Plus, Pencil, Trash2, X, Star, Package } from 'lucide-react'
 import { apiFetch, errorMessage } from '@/lib/api-client'
 import { formatMoney, formatNumber } from '@/lib/format'
 import { EmptyState, ErrorState } from '@/components/states'
+import { useAdmin } from '@/components/admin/admin-role'
 
 const fetcher = (url: string) => apiFetch(url)
 
@@ -90,6 +91,8 @@ export default function AdminPlansPage() {
   const { data, error, isLoading, mutate } = useSWR<{ data: Plan[] }>('/api/admin/plans', fetcher)
   const [editing, setEditing] = useState<Plan | null>(null)
   const [creating, setCreating] = useState(false)
+  // Lecture pour tous les rôles ; création / modification réservées à plans.write
+  const canWrite = useAdmin().can('plans.write')
 
   const plans = data?.data || []
 
@@ -99,9 +102,11 @@ export default function AdminPlansPage() {
         title="Plans d’abonnement"
         description="Source unique : pilote les tarifs du checkout GeniusPay"
         actions={
-          <Button variant="brand" onClick={() => setCreating(true)}>
-            <Plus className="h-4 w-4" aria-hidden="true" /> Nouveau plan
-          </Button>
+          canWrite ? (
+            <Button variant="brand" onClick={() => setCreating(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" /> Nouveau plan
+            </Button>
+          ) : undefined
         }
       />
 
@@ -118,7 +123,7 @@ export default function AdminPlansPage() {
           icon={Package}
           title="Aucun plan d'abonnement"
           description="Créez un premier plan pour l'afficher sur la page tarifs et le checkout."
-          action={{ label: 'Nouveau plan', onClick: () => setCreating(true) }}
+          action={canWrite ? { label: 'Nouveau plan', onClick: () => setCreating(true) } : undefined}
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -134,6 +139,7 @@ export default function AdminPlansPage() {
                     <h2 className="truncate text-[15px] font-semibold tracking-tight text-foreground">{p.display_name || p.name}</h2>
                     <p className="font-mono text-xs text-muted-foreground">{p.name}</p>
                   </div>
+                  {canWrite && (
                   <button
                     type="button"
                     onClick={() => setEditing(p)}
@@ -142,6 +148,7 @@ export default function AdminPlansPage() {
                   >
                     <Pencil className="h-4 w-4" aria-hidden="true" />
                   </button>
+                  )}
                 </div>
 
                 <div className="mb-4 flex flex-wrap gap-1.5">

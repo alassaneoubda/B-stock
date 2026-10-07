@@ -1,26 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { hash } from 'bcryptjs'
-import { randomBytes } from 'crypto'
 import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
 import { AppError, handleRouteError, notFound } from '@/lib/errors'
-import { passwordPolicyError } from '@/lib/permissions'
+import { sendPasswordResetEmail } from '@/lib/password-reset'
 import { isUuid } from '@/lib/tenant'
 
-/** Mot de passe temporaire lisible (sans caractères ambigus), conforme à la politique. */
-function generateTempPassword(): string {
-  const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ'
-  const bytes = randomBytes(8)
-  let out = ''
-  for (const b of bytes) out += alphabet[b % alphabet.length]
-  return `${out}${100 + (randomBytes(1)[0] % 900)}`
-}
-
 // POST /api/users/[id]/reset-password
-// Réinitialise le mot de passe d'un employé et déconnecte ses sessions.
-// Le mot de passe temporaire est renvoyé une seule fois (à communiquer à l'employé).
+// Envoie à l'employé un lien de réinitialisation (60 min, usage unique).
+// Le lien n'est renvoyé que si l'email n'a pas pu partir (à transmettre en main propre).
+// Ses sessions sont fermées quand il choisit son nouveau mot de passe.
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -34,7 +24,7 @@ export async function POST(
     }
 
     const [user] = await sql`
-      SELECT id, email, role FROM users
+      SELECT id, email, full_name, role, is_active FROM users
       WHERE id = ${id} AND company_id = ${authz.companyId}
     `
     if (!user) throw notFound('Utilisateur')
@@ -45,25 +35,25 @@ export async function POST(
     if (user.role === 'manager' && authz.role !== 'owner') {
       throw new AppError(403, 'Seul le propriétaire peut réinitialiser un gérant', 'OWNER_ONLY')
     }
-
-    const body = await request.json().catch(() => ({}))
-    let tempPassword = generateTempPassword()
-    if (typeof body.password === 'string' && body.password.length > 0) {
-      const policyError = passwordPolicyError(body.password)
-      if (policyError) throw new AppError(400, policyError, 'WEAK_PASSWORD')
-      tempPassword = body.password
+    if (!user.is_active) {
+      throw new AppError(400, 'Ce compte est désactivé : réactivez-le d’abord', 'ACCOUNT_DISABLED')
     }
 
-    const passwordHash = await hash(tempPassword, 12)
+    const result = await sendPasswordResetEmail({ id: user.id, email: user.email, full_name: user.full_name })
 
     await sql`
-      UPDATE users
-      SET password_hash = ${passwordHash}, auth_provider = 'credentials',
-          session_version = session_version + 1, updated_at = NOW()
-      WHERE id = ${id} AND company_id = ${authz.companyId}
-    `
+      INSERT INTO audit_logs (company_id, user_id, action, entity_type, entity_id, details)
+      VALUES (${authz.companyId}, ${authz.userId}, 'password_reset_link', 'user', ${user.id},
+              ${JSON.stringify({ email: user.email, emailed: result.emailed })})
+    `.catch((e: unknown) => console.error('[users.reset-password] audit', e))
 
-    return NextResponse.json({ success: true, tempPassword, email: user.email })
+    return NextResponse.json({
+      success: true,
+      emailed: result.emailed,
+      email: user.email,
+      expiresAt: result.expiresAt.toISOString(),
+      ...(result.emailed ? {} : { link: result.url }),
+    })
   } catch (error) {
     return handleRouteError(error, 'users.reset-password')
   }

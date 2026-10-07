@@ -24,11 +24,13 @@ interface AuditLog {
 const actionLabels: Record<string, string> = {
   create: 'Création', update: 'Modification', delete: 'Suppression',
   login: 'Connexion', logout: 'Déconnexion', export: 'Export', print: 'Impression',
+  impersonation_started: 'Assistance B-Stock', password_reset_link: 'Lien de réinitialisation',
 }
 
 const actionTones: Record<string, 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'> = {
   create: 'success', update: 'info', delete: 'danger',
   login: 'default', logout: 'default', export: 'brand', print: 'brand',
+  impersonation_started: 'warning', password_reset_link: 'info',
 }
 
 const entityLabels: Record<string, string> = {
@@ -36,6 +38,7 @@ const entityLabels: Record<string, string> = {
   user: 'Utilisateur', cash_session: 'Session caisse', credit_note: 'Créance',
   return: 'Retour', depot_transfer: 'Transfert', inventory_session: 'Inventaire',
   breakage_record: 'Casse', price_rule: 'Règle prix', promotion: 'Promotion',
+  support: 'Assistance',
 }
 
 function formatDetailValue(value: unknown): string {
@@ -46,6 +49,16 @@ function formatDetailValue(value: unknown): string {
 
 function detailsText(log: AuditLog): string {
   if (!log.details) return '—'
+  // Connexion du support B-Stock à votre compte : qui, pourquoi, jusqu'à quand
+  if (log.action === 'impersonation_started' && typeof log.details === 'object') {
+    const d = log.details as { adminEmail?: string; reason?: string; expiresAt?: string }
+    const until = d.expiresAt ? formatDateTime(d.expiresAt) : null
+    return [
+      d.adminEmail ? `Par ${d.adminEmail}` : 'Par le support B-Stock',
+      d.reason ? `motif : ${d.reason}` : null,
+      until ? `jusqu’au ${until}` : null,
+    ].filter(Boolean).join(' · ')
+  }
   return typeof log.details === 'object'
     ? Object.entries(log.details).map(([k, v]) => `${k}: ${formatDetailValue(v)}`).join(', ')
     : String(log.details)

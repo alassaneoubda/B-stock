@@ -177,9 +177,12 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 export function DashboardSidebar({
   user: serverUser,
   permissions = [],
+  posEnabled = true,
 }: {
   /** Permissions effectives calculées côté serveur ('*' = propriétaire). */
   permissions?: string[]
+  /** Fonctionnalité « Point de vente » active pour l'entreprise (back-office). */
+  posEnabled?: boolean
   user?: {
     name?: string | null
     email?: string | null
@@ -236,7 +239,7 @@ export function DashboardSidebar({
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
               <NavLink item={{ title: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, exact: true }} active={pathname === '/dashboard'} />
-              {canSee('/pos') && (
+              {posEnabled && canSee('/pos') && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild

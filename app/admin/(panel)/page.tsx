@@ -1,6 +1,9 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
+import { useAdmin } from '@/components/admin/admin-role'
 import { PageShell, PageIntro, StatCard, Panel } from '@/components/app/blocks'
 import {
   Building2,
@@ -34,7 +37,14 @@ type Stats = {
 }
 
 export default function AdminDashboardPage() {
-  const { data, error, isLoading, mutate } = useSWR<{ data: Stats }>('/api/admin/stats', fetcher)
+  const router = useRouter()
+  const { can } = useAdmin()
+  const allowed = can('reports.read')
+  // Le support n'a pas accès aux chiffres de la plateforme : il arrive sur les entreprises
+  useEffect(() => {
+    if (!allowed) router.replace('/admin/companies')
+  }, [allowed, router])
+  const { data, error, isLoading, mutate } = useSWR<{ data: Stats }>(allowed ? '/api/admin/stats' : null, fetcher)
   const s = data?.data
 
   return (

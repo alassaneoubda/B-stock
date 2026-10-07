@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin } from '@/lib/admin-auth'
+import { requireAdmin } from '@/lib/admin-auth'
+import { handleRouteError } from '@/lib/errors'
 import { sql } from '@/lib/db'
+
+export const dynamic = 'force-dynamic'
 
 // GET /api/admin/billing — subscription payment history + revenue summary
 export async function GET(request: NextRequest) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('billing.read')
   if (!authz.ok) return authz.response
 
   try {
@@ -18,7 +21,8 @@ export async function GET(request: NextRequest) {
 
     const rows = await sql`
       SELECT sp.id, sp.reference, sp.plan_name, sp.amount, sp.currency, sp.months,
-             sp.status, sp.provider, sp.created_at,
+             sp.status, sp.provider, sp.created_at, sp.receipt_number, sp.recorded_by,
+             sp.refunded_at, sp.refund_reason, sp.metadata->>'methodLabel' AS method_label,
              c.id AS company_id, c.name AS company_name
       FROM subscription_payments sp
       LEFT JOIN companies c ON sp.company_id = c.id
@@ -61,7 +65,6 @@ export async function GET(request: NextRequest) {
       pagination: { page, limit, total: count, pages: Math.ceil(count / limit) },
     })
   } catch (e) {
-    console.error('admin billing list error:', e)
-    return NextResponse.json({ error: 'Erreur' }, { status: 500 })
+    return handleRouteError(e, 'admin billing list')
   }
 }

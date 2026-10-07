@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { reconcilePendingCheckouts } from '@/lib/subscription-checkout'
+import { runCronJob } from '@/lib/cron-runs'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
   }
   try {
-    const summary = await reconcilePendingCheckouts()
+    // Tracé dans cron_runs (page « Santé de la plateforme »)
+    const summary = await runCronJob('reconcile-payments', () => reconcilePendingCheckouts())
     return NextResponse.json({ success: true, ...summary })
   } catch (error) {
     console.error('[cron] reconcile-payments', error)

@@ -80,6 +80,7 @@ function LoginContent() {
     }
   }, [urlError])
   const registered = searchParams.get('registered') === 'true'
+  const passwordReset = searchParams.get('reset') === 'success'
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(urlError ? mapAuthError(urlError) : null)
@@ -148,6 +149,13 @@ function LoginContent() {
         <div role="status" className="mb-6 flex items-start gap-2.5 rounded-lg border border-success/20 bg-success-soft p-3 text-sm text-success">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           Compte créé. Connectez-vous pour continuer.
+        </div>
+      )}
+
+      {passwordReset && (
+        <div role="status" className="mb-6 flex items-start gap-2.5 rounded-lg border border-success/20 bg-success-soft p-3 text-sm text-success">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          Mot de passe modifié. Connectez-vous avec votre nouveau mot de passe.
         </div>
       )}
 
