@@ -7,6 +7,7 @@ import { sql, sqlRaw, transaction } from './db'
 import { ensureCompaniesSchema } from './ensure-companies-schema'
 import { ensureUsersFullNameColumn } from './ensure-users-schema'
 import { verifyImpersonationToken } from './impersonation'
+import { verifyTotp } from './totp'
 import { clientIp, isRateLimited } from './rate-limit'
 import { getSettings } from './settings'
 import type { UserRole } from './types'
@@ -16,7 +17,7 @@ import type { UserRole } from './types'
  * (jamais le message). Les codes sont traduits par components/auth/auth-errors.ts.
  */
 class LoginError extends CredentialsSignin {
-  constructor(code: 'invalid_credentials' | 'rate_limited' | 'suspended' | 'disabled' | 'invalid_token') {
+  constructor(code: 'invalid_credentials' | 'rate_limited' | 'suspended' | 'disabled' | 'invalid_token' | 'otp_required' | 'otp_invalid') {
     super()
     this.code = code
   }
@@ -222,6 +223,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        otp: { label: 'Code de vérification', type: 'text' },
       },
       async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
@@ -242,17 +244,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         // 1) Platform admin (back office /admin) — decoupled from tenants
         const admins = await sql`
-          SELECT id, email, full_name, password_hash, role
+          SELECT id, email, full_name, password_hash, role, totp_enabled, totp_secret, session_version
           FROM platform_admins
           WHERE lower(email) = ${email} AND is_active = true
         `
         const admin = admins[0] as
-          | { id: string; email: string; full_name: string; password_hash: string; role: string }
+          | { id: string; email: string; full_name: string; password_hash: string; role: string; totp_enabled: boolean; totp_secret: string | null; session_version: number }
           | undefined
 
         if (admin) {
           const ok = await compare(password, admin.password_hash)
           if (!ok) throw new LoginError('invalid_credentials')
+          // Double authentification : code de l'application d'authentification
+          if (admin.totp_enabled && admin.totp_secret) {
+            const otp = typeof credentials.otp === 'string' ? credentials.otp : ''
+            if (!otp) throw new LoginError('otp_required')
+            if (!verifyTotp(admin.totp_secret, otp)) throw new LoginError('otp_invalid')
+          }
           await sql`UPDATE platform_admins SET last_login_at = NOW() WHERE id = ${admin.id}`
           return {
             id: admin.id,
@@ -264,7 +272,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             companyName: 'Plateforme',
             companySlug: '',
             onboardingCompleted: true,
-            sessionVersion: 0,
+            sessionVersion: Number(admin.session_version ?? 0),
             isPlatformAdmin: true,
             impersonatedBy: null,
           }

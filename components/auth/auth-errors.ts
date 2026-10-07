@@ -52,6 +52,10 @@ export function httpErrorMessage(res: Response, payload: any): string {
 export function credentialsErrorMessage(error: string, code?: string | null): string {
   if (error === 'CredentialsSignin') {
     switch (code) {
+      case 'otp_required':
+        return 'Saisissez le code à 6 chiffres de votre application d’authentification.'
+      case 'otp_invalid':
+        return 'Code de vérification incorrect ou expiré. Réessayez avec le code affiché.'
       case 'invalid_token':
         return 'Lien d’assistance invalide, expiré ou déjà utilisé. Relancez-le depuis l’administration.'
       case 'rate_limited':
