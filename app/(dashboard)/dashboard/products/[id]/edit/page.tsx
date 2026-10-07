@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, ArrowLeft } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
@@ -130,97 +131,102 @@ export default function EditProductPage() {
         }
     }
 
+    const backLink = (
+        <Button variant="ghost" size="sm" asChild className="-ml-2">
+            <Link href={`/dashboard/products/${productId}`}>
+                <ArrowLeft aria-hidden="true" />
+                Fiche produit
+            </Link>
+        </Button>
+    )
+
     if (isFetching) {
         return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Modifier le produit" description="Chargement..." />
-                <main className="flex-1 p-4 lg:p-6">
-                    <div className="max-w-2xl">
-                        <TableSkeleton rows={6} columns={2} />
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Modifier le produit" description="Chargement…" />
+                <PageShell>
+                    <div className="mx-auto w-full max-w-3xl space-y-6">
+                        {backLink}
+                        <div className="rounded-xl border border-border bg-card p-6">
+                            <TableSkeleton rows={6} columns={2} />
+                        </div>
                     </div>
-                </main>
+                </PageShell>
             </div>
         )
     }
 
     if (loadError) {
         return (
-            <div className="flex flex-col min-h-screen">
+            <div className="flex min-h-screen flex-col">
                 <DashboardHeader title="Modifier le produit" />
-                <main className="flex-1 p-4 lg:p-6">
-                    <div className="max-w-2xl">
+                <PageShell>
+                    <div className="mx-auto w-full max-w-3xl space-y-6">
+                        {backLink}
                         <ErrorState
                             title="Impossible de charger le produit"
                             description={loadError}
                             onRetry={() => setReloadKey((k) => k + 1)}
                         />
                     </div>
-                </main>
+                </PageShell>
             </div>
         )
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Modifier le produit"
                 description="Mettez à jour les informations du produit"
             />
 
-            <main className="flex-1 p-4 lg:p-6">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/products/${productId}`}>
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Retour à la fiche produit
-                        </Link>
-                    </Button>
-                </div>
+            <PageShell>
+                <div className="mx-auto w-full max-w-3xl space-y-6">
+                    {backLink}
 
-                <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
-                    {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                            {error}
-                        </div>
-                    )}
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                        {error && (
+                            <div role="alert" className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                                <span>{error}</span>
+                            </div>
+                        )}
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Informations générales</CardTitle>
-                            <CardDescription>Les informations de base du produit</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid gap-4 sm:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Informations générales</CardTitle>
+                                <CardDescription>Nom, référence et classement du produit.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="name">Nom du produit *</Label>
                                     <Input
                                         id="name"
-                                        placeholder="Ex: Coca-Cola 33cl"
+                                        placeholder="Ex. : Coca-Cola 33 cl"
+                                        aria-invalid={!!errors.name}
                                         {...register('name')}
                                         disabled={isLoading}
                                     />
-                                    {errors.name && (
-                                        <p className="text-sm text-destructive">{errors.name.message}</p>
-                                    )}
+                                    {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="sku">SKU / Référence</Label>
+                                    <Label htmlFor="sku">SKU / référence</Label>
                                     <Input
                                         id="sku"
-                                        placeholder="Ex: COCA-33CL"
+                                        placeholder="Ex. : COCA-33CL"
                                         {...register('sku')}
                                         disabled={isLoading}
                                     />
+                                    <p className="text-xs text-muted-foreground">Code unique pour retrouver l’article.</p>
                                 </div>
-                            </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="brand">Marque</Label>
                                     <Input
                                         id="brand"
-                                        placeholder="Ex: Coca-Cola"
+                                        placeholder="Ex. : Coca-Cola"
                                         {...register('brand')}
                                         disabled={isLoading}
                                     />
@@ -233,7 +239,7 @@ export default function EditProductPage() {
                                         onValueChange={(value) => setValue('category', value)}
                                         disabled={isLoading}
                                     >
-                                        <SelectTrigger>
+                                        <SelectTrigger id="category" className="w-full">
                                             <SelectValue placeholder="Sélectionner une catégorie" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -245,63 +251,63 @@ export default function EditProductPage() {
                                         </SelectContent>
                                     </Select>
                                 </div>
-                            </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="description">Description</Label>
-                                <Textarea
-                                    id="description"
-                                    placeholder="Description du produit (optionnel)"
-                                    {...register('description')}
-                                    disabled={isLoading}
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="baseUnit">Unité de base *</Label>
-                                <Select
-                                    value={currentBaseUnit}
-                                    onValueChange={(value) => setValue('baseUnit', value)}
-                                    disabled={isLoading}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Sélectionner une unité" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {units.map((unit) => (
-                                            <SelectItem key={unit.value} value={unit.value}>
-                                                {unit.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                {errors.baseUnit && (
-                                    <p className="text-sm text-destructive">{errors.baseUnit.message}</p>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Prix</CardTitle>
-                            <CardDescription>Prix d&apos;achat et de vente</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="purchasePrice">Prix d&apos;achat (FCFA) *</Label>
+                                    <Label htmlFor="baseUnit">Unité de base *</Label>
+                                    <Select
+                                        value={currentBaseUnit}
+                                        onValueChange={(value) => setValue('baseUnit', value)}
+                                        disabled={isLoading}
+                                    >
+                                        <SelectTrigger id="baseUnit" className="w-full" aria-invalid={!!errors.baseUnit}>
+                                            <SelectValue placeholder="Sélectionner une unité" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {units.map((unit) => (
+                                                <SelectItem key={unit.value} value={unit.value}>
+                                                    {unit.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {errors.baseUnit ? (
+                                        <p className="text-xs text-destructive">{errors.baseUnit.message}</p>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground">Unité dans laquelle le stock est compté.</p>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label htmlFor="description">Description</Label>
+                                    <Textarea
+                                        id="description"
+                                        placeholder="Description du produit (facultatif)"
+                                        {...register('description')}
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Prix</CardTitle>
+                                <CardDescription>Prix d’achat et de vente par défaut.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-2">
+                                    <Label htmlFor="purchasePrice">Prix d’achat (FCFA) *</Label>
                                     <Input
                                         id="purchasePrice"
                                         type="number"
                                         min="0"
                                         placeholder="0"
+                                        className="tabular"
+                                        aria-invalid={!!errors.purchasePrice}
                                         {...register('purchasePrice', { valueAsNumber: true })}
                                         disabled={isLoading}
                                     />
-                                    {errors.purchasePrice && (
-                                        <p className="text-sm text-destructive">{errors.purchasePrice.message}</p>
-                                    )}
+                                    {errors.purchasePrice && <p className="text-xs text-destructive">{errors.purchasePrice.message}</p>}
                                 </div>
 
                                 <div className="space-y-2">
@@ -311,56 +317,51 @@ export default function EditProductPage() {
                                         type="number"
                                         min="0"
                                         placeholder="0"
+                                        className="tabular"
+                                        aria-invalid={!!errors.sellingPrice}
                                         {...register('sellingPrice', { valueAsNumber: true })}
                                         disabled={isLoading}
                                     />
-                                    {errors.sellingPrice && (
-                                        <p className="text-sm text-destructive">{errors.sellingPrice.message}</p>
-                                    )}
+                                    {errors.sellingPrice && <p className="text-xs text-destructive">{errors.sellingPrice.message}</p>}
                                 </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Statut</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <Label htmlFor="isActive">Produit actif</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Les produits inactifs ne seront pas disponibles à la vente
-                                    </p>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Disponibilité</CardTitle>
+                                <CardDescription>Indiquez si le produit peut être vendu.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="isActive">Produit actif</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Les produits inactifs ne sont pas proposés à la vente.
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        id="isActive"
+                                        checked={isActive}
+                                        onCheckedChange={(checked) => setValue('isActive', checked)}
+                                        disabled={isLoading}
+                                    />
                                 </div>
-                                <Switch
-                                    id="isActive"
-                                    checked={isActive}
-                                    onCheckedChange={(checked) => setValue('isActive', checked)}
-                                    disabled={isLoading}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <div className="flex justify-end gap-4">
-                        <Button type="button" variant="outline" asChild disabled={isLoading}>
-                            <Link href={`/dashboard/products/${productId}`}>Annuler</Link>
-                        </Button>
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Enregistrement...
-                                </>
-                            ) : (
-                                'Enregistrer les modifications'
-                            )}
-                        </Button>
-                    </div>
-                </form>
-            </main>
+                        <div className="flex justify-end gap-3">
+                            <Button type="button" variant="outline" asChild disabled={isLoading}>
+                                <Link href={`/dashboard/products/${productId}`}>Annuler</Link>
+                            </Button>
+                            <Button type="submit" disabled={isLoading}>
+                                {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                                {isLoading ? 'Enregistrement…' : 'Enregistrer les modifications'}
+                            </Button>
+                        </div>
+                    </form>
+                </div>
+            </PageShell>
         </div>
     )
 }

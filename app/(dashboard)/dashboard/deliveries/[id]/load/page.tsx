@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -12,9 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import {
-    ArrowLeft, Loader2, Package, Plus, Navigation, PackageOpen, Info, Lock, Truck,
+    ArrowLeft, Loader2, Package, Plus, Navigation, Info, Lock, Truck,
 } from 'lucide-react'
 import Link from 'next/link'
 import { ApiError, apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
@@ -205,9 +205,15 @@ export default function LoadTourPage() {
 
     if (loadError || !tour) {
         return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Chargement du véhicule" description="" />
-                <main className="flex-1 p-6">
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Chargement du véhicule" />
+                <PageShell>
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 w-fit">
+                        <Link href="/dashboard/deliveries">
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Livraisons
+                        </Link>
+                    </Button>
                     {loadError?.notFound ? (
                         <EmptyState
                             icon={Truck}
@@ -222,7 +228,7 @@ export default function LoadTourPage() {
                             onRetry={fetchAll}
                         />
                     )}
-                </main>
+                </PageShell>
             </div>
         )
     }
@@ -230,39 +236,48 @@ export default function LoadTourPage() {
     const productItems = inventory.filter(i => i.inventory_type === 'product')
     const packagingItems = inventory.filter(i => i.inventory_type === 'packaging')
     const formDisabled = saving || isClosed
+    const productTotal = productItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0)
+    const packagingTotal = packagingItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0)
 
     return (
-        <div className="flex flex-col min-h-screen bg-muted/30">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Chargement du véhicule"
-                description={`Tournée du ${formatDate(tour.tour_date)} — ${tour.driver_name || 'Chauffeur non assigné'}`}
+                description={`Tournée du ${formatDate(tour.tour_date)} · ${tour.driver_name || 'Chauffeur non assigné'}`}
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-border">
+            <PageShell>
+                <div className="space-y-4">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
                         <Link href={`/dashboard/deliveries/${tourId}`}>
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour à la tournée
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Tournée
                         </Link>
                     </Button>
-                    {inventory.length > 0 && canStartDelivery && (
-                        <Button
-                            onClick={handleStartDelivery}
-                            disabled={starting || saving}
-                            className="rounded-xl bg-primary hover:bg-primary font-bold h-10 px-6 shadow-lg shadow-blue-500/20"
-                        >
-                            {starting ? (
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                                <Navigation className="h-4 w-4 mr-2" />
-                            )}
-                            Démarrer la livraison
-                        </Button>
-                    )}
+
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 space-y-1">
+                            <h2 className="text-2xl font-semibold tracking-tight text-foreground">Chargement du véhicule</h2>
+                            <p className="text-sm text-muted-foreground">
+                                Tournée du {formatDate(tour.tour_date)}
+                                {tour.depot_name ? ` · départ ${tour.depot_name}` : ''}
+                            </p>
+                        </div>
+                        {inventory.length > 0 && canStartDelivery && (
+                            <Button variant="brand" onClick={handleStartDelivery} disabled={starting || saving}>
+                                {starting ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                ) : (
+                                    <Navigation className="h-4 w-4" aria-hidden="true" />
+                                )}
+                                Démarrer la livraison
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-brand/40 bg-brand-soft p-4 text-sm text-brand-strong">
-                    <Info className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                <div className="flex items-start gap-3 rounded-xl border border-info/20 bg-info-soft p-4 text-sm text-info">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                     <p>
                         Le chargement n&apos;est pas encore déduit du stock du dépôt.
                         Les quantités saisies ici servent uniquement au suivi de la tournée.
@@ -270,30 +285,30 @@ export default function LoadTourPage() {
                 </div>
 
                 {isClosed && (
-                    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                        <Lock className="h-4 w-4 text-muted-foreground/70 shrink-0" aria-hidden="true" />
+                    <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/50 p-4 text-sm text-muted-foreground">
+                        <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
                         Cette tournée est {tour.status === 'cancelled' ? 'annulée' : 'terminée'} : le chargement n&apos;est plus modifiable.
                     </div>
                 )}
 
                 {error && (
-                    <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                    <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
                         {error}
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Add item form */}
-                    <Card className="rounded-lg border-border shadow-sm">
-                        <CardHeader className="px-8 py-6 border-b border-border">
-                            <CardTitle className="text-lg font-semibold text-foreground">Ajouter un article</CardTitle>
-                            <CardDescription>Chargez des produits ou emballages dans le véhicule</CardDescription>
+                <div className="grid gap-6 lg:grid-cols-3">
+                    {/* Formulaire d'ajout */}
+                    <Card className="h-fit">
+                        <CardHeader>
+                            <CardTitle>Ajouter un article</CardTitle>
+                            <CardDescription>Produits ou emballages vides chargés dans le véhicule.</CardDescription>
                         </CardHeader>
-                        <CardContent className="p-8 space-y-5">
+                        <CardContent className="space-y-4">
                             <div className="space-y-2">
-                                <Label>Type</Label>
+                                <Label htmlFor="inventoryType">Type</Label>
                                 <Select value={inventoryType} onValueChange={(v) => setInventoryType(v as 'product' | 'packaging')} disabled={formDisabled}>
-                                    <SelectTrigger className="rounded-xl">
+                                    <SelectTrigger id="inventoryType" className="w-full">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -305,10 +320,10 @@ export default function LoadTourPage() {
 
                             {inventoryType === 'product' ? (
                                 <div className="space-y-2">
-                                    <Label>Variante produit</Label>
+                                    <Label htmlFor="variant">Variante produit</Label>
                                     <Select value={selectedVariant} onValueChange={setSelectedVariant} disabled={formDisabled || variants.length === 0}>
-                                        <SelectTrigger className="rounded-xl">
-                                            <SelectValue placeholder={variants.length === 0 ? 'Aucun produit en stock' : 'Choisir...'} />
+                                        <SelectTrigger id="variant" className="w-full">
+                                            <SelectValue placeholder={variants.length === 0 ? 'Aucun produit en stock' : 'Choisir…'} />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {variants.map(v => (
@@ -321,10 +336,10 @@ export default function LoadTourPage() {
                                 </div>
                             ) : (
                                 <div className="space-y-2">
-                                    <Label>Type d&apos;emballage</Label>
+                                    <Label htmlFor="packaging">Type d&apos;emballage</Label>
                                     <Select value={selectedPackaging} onValueChange={setSelectedPackaging} disabled={formDisabled || packagingTypes.length === 0}>
-                                        <SelectTrigger className="rounded-xl">
-                                            <SelectValue placeholder={packagingTypes.length === 0 ? "Aucun type d'emballage" : 'Choisir...'} />
+                                        <SelectTrigger id="packaging" className="w-full">
+                                            <SelectValue placeholder={packagingTypes.length === 0 ? "Aucun type d'emballage" : 'Choisir…'} />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {packagingTypes.map(pt => (
@@ -338,108 +353,93 @@ export default function LoadTourPage() {
                             )}
 
                             <div className="space-y-2">
-                                <Label>Quantité à charger</Label>
+                                <Label htmlFor="quantity">Quantité à charger</Label>
                                 <Input
+                                    id="quantity"
                                     type="number"
                                     min="1"
+                                    inputMode="numeric"
                                     value={quantity}
                                     onChange={(e) => setQuantity(e.target.value)}
-                                    placeholder="Ex: 50"
-                                    className="rounded-xl"
+                                    placeholder="Ex. 50"
+                                    className="tabular"
                                     disabled={formDisabled}
                                 />
+                                <p className="text-xs text-muted-foreground">Nombre entier d&apos;unités.</p>
                             </div>
 
-                            <Button
-                                onClick={handleAddItem}
-                                disabled={formDisabled || !quantity}
-                                className="w-full rounded-xl"
-                            >
+                            <Button onClick={handleAddItem} disabled={formDisabled || !quantity} className="w-full">
                                 {saving ? (
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                                 ) : (
-                                    <Plus className="h-4 w-4 mr-2" />
+                                    <Plus className="h-4 w-4" aria-hidden="true" />
                                 )}
                                 Charger
                             </Button>
                         </CardContent>
                     </Card>
 
-                    {/* Loaded inventory */}
-                    <div className="lg:col-span-2 space-y-6">
+                    {/* Inventaire chargé */}
+                    <div className="space-y-6 lg:col-span-2">
                         {productItems.length > 0 && (
-                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-5 border-b border-border">
-                                    <div className="flex items-center gap-3">
-                                        <Package className="h-5 w-5 text-brand-strong" />
-                                        <CardTitle className="text-lg font-semibold text-foreground">Produits chargés</CardTitle>
-                                        <Badge className="bg-brand-soft text-brand-strong border-none font-semibold text-xs">
-                                            {formatNumber(productItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))} unités
-                                        </Badge>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="p-0">
-                                    <Table>
-                                        <TableHeader className="bg-muted/30">
-                                            <TableRow className="border-none">
-                                                <TableHead className="py-3 pl-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Produit</TableHead>
-                                                <TableHead className="py-3 text-right pr-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Quantité</TableHead>
+                            <Panel
+                                title="Produits chargés"
+                                description={`${productItems.length} article${productItems.length > 1 ? 's' : ''}`}
+                                action={<span className="tabular text-sm font-medium text-foreground">{formatNumber(productTotal)} unités</span>}
+                            >
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Produit</TableHead>
+                                            <TableHead className="pr-5 text-right">Quantité</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {productItems.map(item => (
+                                            <TableRow key={item.id}>
+                                                <TableCell className="pl-5">
+                                                    <span className="font-medium text-foreground">{item.product_name}</span>
+                                                    {item.packaging_name && (
+                                                        <span className="ml-2 text-xs text-muted-foreground">{item.packaging_name}</span>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="tabular pr-5 text-right font-medium text-foreground">
+                                                    {formatNumber(item.loaded_quantity)}
+                                                </TableCell>
                                             </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {productItems.map(item => (
-                                                <TableRow key={item.id} className="border-b border-border">
-                                                    <TableCell className="py-4 pl-8">
-                                                        <span className="font-semibold text-foreground">{item.product_name}</span>
-                                                        {item.packaging_name && (
-                                                            <span className="ml-2 text-xs text-muted-foreground/70">({item.packaging_name})</span>
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell className="py-4 text-right pr-8 font-semibold text-brand-strong text-lg">
-                                                        {formatNumber(item.loaded_quantity)}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </CardContent>
-                            </Card>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </Panel>
                         )}
 
                         {packagingItems.length > 0 && (
-                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-5 border-b border-border">
-                                    <div className="flex items-center gap-3">
-                                        <PackageOpen className="h-5 w-5 text-warning-foreground" />
-                                        <CardTitle className="text-lg font-semibold text-foreground">Emballages vides chargés</CardTitle>
-                                        <Badge className="bg-warning-soft text-warning-foreground border-none font-semibold text-xs">
-                                            {formatNumber(packagingItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))} unités
-                                        </Badge>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="p-0">
-                                    <Table>
-                                        <TableHeader className="bg-muted/30">
-                                            <TableRow className="border-none">
-                                                <TableHead className="py-3 pl-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Emballage</TableHead>
-                                                <TableHead className="py-3 text-right pr-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Quantité</TableHead>
+                            <Panel
+                                title="Emballages vides chargés"
+                                description={`${packagingItems.length} article${packagingItems.length > 1 ? 's' : ''}`}
+                                action={<span className="tabular text-sm font-medium text-foreground">{formatNumber(packagingTotal)} unités</span>}
+                            >
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Emballage</TableHead>
+                                            <TableHead className="pr-5 text-right">Quantité</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {packagingItems.map(item => (
+                                            <TableRow key={item.id}>
+                                                <TableCell className="pl-5 font-medium text-foreground">
+                                                    {item.packaging_name || '—'}
+                                                </TableCell>
+                                                <TableCell className="tabular pr-5 text-right font-medium text-foreground">
+                                                    {formatNumber(item.loaded_quantity)}
+                                                </TableCell>
                                             </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {packagingItems.map(item => (
-                                                <TableRow key={item.id} className="border-b border-border">
-                                                    <TableCell className="py-4 pl-8 font-semibold text-foreground">
-                                                        {item.packaging_name || '—'}
-                                                    </TableCell>
-                                                    <TableCell className="py-4 text-right pr-8 font-semibold text-warning-foreground text-lg">
-                                                        {formatNumber(item.loaded_quantity)}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
-                                </CardContent>
-                            </Card>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </Panel>
                         )}
 
                         {inventory.length === 0 && (
@@ -454,7 +454,7 @@ export default function LoadTourPage() {
                         )}
                     </div>
                 </div>
-            </main>
+            </PageShell>
         </div>
     )
 }

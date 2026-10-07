@@ -9,6 +9,7 @@ import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
@@ -17,6 +18,7 @@ import { Banknote, Smartphone, Loader2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiFetch, errorMessage, toastWarnings } from '@/lib/api-client'
 import { formatMoney } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 interface CollectDebtDialogProps {
     clientId: string
@@ -78,154 +80,165 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
     return (
         <Dialog open={open} onOpenChange={(v) => { if (loading) return; setOpen(v); if (v) { setAmount(0); setError(null) } }}>
             <DialogTrigger asChild>
-                <Button className="bg-success hover:bg-success text-white font-bold">
-                    <Banknote className="h-4 w-4 mr-2" />
-                    Encaisser une dette
+                <Button variant="brand">
+                    <Banknote className="h-4 w-4" aria-hidden="true" />
+                    Encaisser la créance
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle className="text-xl font-black">Encaisser une dette</DialogTitle>
+                    <DialogTitle>Encaisser la créance</DialogTitle>
                     <DialogDescription>
-                        Enregistrer un paiement pour {clientName}
+                        Enregistrer un paiement pour {clientName}.
                     </DialogDescription>
                 </DialogHeader>
 
-                    <div className="space-y-5 pt-2">
-                        {/* Current debts summary */}
-                        <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-muted/50 border border-border">
-                            <div>
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Produits</p>
-                                <p className="text-lg font-black text-destructive">{formatCurrency(productDebt)}</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Emballages</p>
-                                <p className="text-lg font-black text-warning-foreground">{formatCurrency(packagingDebt)}</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Total</p>
-                                <p className="text-lg font-black text-foreground">{formatCurrency(totalDebt)}</p>
-                            </div>
+                <div className="space-y-5">
+                    {/* Dettes en cours */}
+                    <dl className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-muted/40">
+                        <div className="px-3 py-2.5">
+                            <dt className="text-xs text-muted-foreground">Produits</dt>
+                            <dd className="tabular text-sm font-semibold text-destructive">{formatCurrency(productDebt)}</dd>
                         </div>
+                        <div className="px-3 py-2.5">
+                            <dt className="text-xs text-muted-foreground">Emballages</dt>
+                            <dd className="tabular text-sm font-semibold text-warning-foreground">{formatCurrency(packagingDebt)}</dd>
+                        </div>
+                        <div className="px-3 py-2.5">
+                            <dt className="text-xs text-muted-foreground">Total dû</dt>
+                            <dd className="tabular text-sm font-semibold text-foreground">{formatCurrency(totalDebt)}</dd>
+                        </div>
+                    </dl>
 
-                        {/* Payment method */}
-                        <div className="space-y-2">
-                            <Label className="text-sm font-bold">Mode de paiement</Label>
-                            <div className="grid grid-cols-2 gap-2">
-                                {methods.map(({ value, label, icon: Icon }) => (
+                    {/* Mode de paiement */}
+                    <fieldset className="space-y-2">
+                        <legend className="text-sm font-medium text-foreground">Mode de paiement</legend>
+                        <div className="grid grid-cols-2 gap-2">
+                            {methods.map(({ value, label, icon: Icon }) => {
+                                const selected = paymentMethod === value
+                                return (
                                     <button
                                         key={value}
                                         type="button"
+                                        aria-pressed={selected}
                                         onClick={() => setPaymentMethod(value)}
-                                        className={`flex items-center gap-2 p-3 rounded-lg border-2 text-sm font-medium transition-all ${paymentMethod === value
-                                            ? 'border-success/30 bg-success-soft text-success'
-                                            : 'border-border hover:border-border'
-                                            }`}
+                                        className={cn(
+                                            'flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                            selected
+                                                ? 'border-primary bg-primary text-primary-foreground'
+                                                : 'border-border bg-card text-foreground hover:bg-muted'
+                                        )}
                                     >
-                                        <Icon className="h-4 w-4" />
+                                        <Icon className="h-4 w-4" aria-hidden="true" />
                                         {label}
                                     </button>
-                                ))}
-                            </div>
+                                )
+                            })}
                         </div>
+                    </fieldset>
 
-                        {/* Amount */}
-                        <div className="space-y-2">
-                            <Label className="text-sm font-bold">Montant (FCFA)</Label>
-                            <Input
-                                type="number"
-                                min={0}
-                                max={totalDebt}
-                                value={amount || ''}
-                                onChange={e => setAmount(Number(e.target.value))}
-                                placeholder="0"
-                                className="text-lg font-bold"
-                            />
-                            <div className="flex gap-2">
-                                {productDebt > 0 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setAmount(productDebt)}
-                                        className="text-xs px-3 py-1 rounded-full bg-destructive/10 text-destructive font-bold hover:bg-destructive/10 transition-colors"
-                                    >
-                                        Solder produits ({formatCurrency(productDebt)})
-                                    </button>
-                                )}
+                    {/* Montant */}
+                    <div className="space-y-2">
+                        <Label htmlFor="collect-amount">Montant (FCFA)</Label>
+                        <Input
+                            id="collect-amount"
+                            type="number"
+                            min={0}
+                            max={totalDebt}
+                            value={amount || ''}
+                            onChange={e => setAmount(Number(e.target.value))}
+                            placeholder="0"
+                            className="tabular h-11 text-lg font-semibold"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                            {productDebt > 0 && (
                                 <button
                                     type="button"
-                                    onClick={() => setAmount(totalDebt)}
-                                    className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground font-bold hover:bg-muted transition-colors"
+                                    onClick={() => setAmount(productDebt)}
+                                    className="tabular rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
-                                    Tout solder ({formatCurrency(totalDebt)})
+                                    Solder les produits ({formatCurrency(productDebt)})
                                 </button>
-                            </div>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setAmount(totalDebt)}
+                                className="tabular rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                                Tout solder ({formatCurrency(totalDebt)})
+                            </button>
                         </div>
-
-                        {/* Allocation preview */}
-                        {amount > 0 && (
-                            <div className="p-4 rounded-xl bg-brand-soft border border-brand/40 space-y-2">
-                                <p className="text-xs font-bold text-brand-strong uppercase tracking-widest">Répartition du paiement</p>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Produits</span>
-                                    <span className="font-bold text-foreground">{formatCurrency(previewProducts)}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-muted-foreground">Emballages</span>
-                                    <span className="font-bold text-foreground">{formatCurrency(previewPackaging)}</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Reference */}
-                        {paymentMethod !== 'cash' && (
-                            <div className="space-y-2">
-                                <Label className="text-sm font-bold">Référence transaction</Label>
-                                <Input
-                                    value={reference}
-                                    onChange={e => setReference(e.target.value)}
-                                    placeholder="Numéro de transaction..."
-                                />
-                            </div>
-                        )}
-
-                        {/* Notes */}
-                        <div className="space-y-2">
-                            <Label className="text-sm font-bold">Notes (optionnel)</Label>
-                            <Textarea
-                                value={notes}
-                                onChange={e => setNotes(e.target.value)}
-                                rows={2}
-                                placeholder="Remarques..."
-                            />
-                        </div>
-
                         {amount > totalDebt && (
-                            <p className="text-sm text-destructive">
+                            <p className="text-xs text-destructive">
                                 Le montant dépasse la dette totale ({formatCurrency(totalDebt)}).
                             </p>
                         )}
-
-                        {error && (
-                            <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
-                                <span>{error}</span>
-                            </div>
-                        )}
-
-                        {/* Submit */}
-                        <Button
-                            onClick={handleSubmit}
-                            disabled={loading || amount <= 0 || amount > totalDebt}
-                            className="w-full h-12 bg-success hover:bg-success font-bold text-base"
-                        >
-                            {loading ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                                <Banknote className="h-4 w-4 mr-2" />
-                            )}
-                            Enregistrer le paiement de {formatCurrency(amount)}
-                        </Button>
                     </div>
+
+                    {/* Répartition */}
+                    {amount > 0 && (
+                        <div className="space-y-1.5 rounded-lg border border-border bg-muted/40 p-3">
+                            <p className="text-xs font-medium text-muted-foreground">Répartition du paiement</p>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Produits</span>
+                                <span className="tabular font-medium text-foreground">{formatCurrency(previewProducts)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Emballages</span>
+                                <span className="tabular font-medium text-foreground">{formatCurrency(previewPackaging)}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Référence */}
+                    {paymentMethod !== 'cash' && (
+                        <div className="space-y-2">
+                            <Label htmlFor="collect-reference">Référence de transaction</Label>
+                            <Input
+                                id="collect-reference"
+                                value={reference}
+                                onChange={e => setReference(e.target.value)}
+                                placeholder="Numéro de transaction…"
+                            />
+                        </div>
+                    )}
+
+                    {/* Notes */}
+                    <div className="space-y-2">
+                        <Label htmlFor="collect-notes">Notes (facultatif)</Label>
+                        <Textarea
+                            id="collect-notes"
+                            value={notes}
+                            onChange={e => setNotes(e.target.value)}
+                            rows={2}
+                            placeholder="Remarques…"
+                        />
+                    </div>
+
+                    {error && (
+                        <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span>{error}</span>
+                        </div>
+                    )}
+                </div>
+
+                <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+                        Annuler
+                    </Button>
+                    <Button
+                        onClick={handleSubmit}
+                        disabled={loading || amount <= 0 || amount > totalDebt}
+                    >
+                        {loading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                            <Banknote className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        Enregistrer <span className="tabular">{formatCurrency(amount)}</span>
+                    </Button>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     )

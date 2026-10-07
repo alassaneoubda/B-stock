@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, Plus, Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
 import { formatMoney, formatNumber } from '@/lib/format'
 import { ErrorState, PageSkeleton } from '@/components/states'
+import { PageShell } from '@/components/app/blocks'
 
 interface ReturnItem {
   id: string; item_type: string; product_variant_id?: string; packaging_type_id?: string
@@ -173,51 +174,64 @@ export default function NewReturnPage() {
 
   if (loading) return <PageSkeleton />
 
+  const backButton = (
+    <Button variant="ghost" size="sm" onClick={() => router.back()} className="-ml-2 w-fit text-muted-foreground">
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Retours
+    </Button>
+  )
+
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Nouveau Retour" />
-        <main className="flex-1 p-4 lg:p-6">
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Nouveau retour" />
+        <PageShell className="max-w-3xl">
+          {backButton}
           <ErrorState title="Impossible de charger le formulaire" onRetry={loadData} />
-        </main>
+        </PageShell>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
-      <DashboardHeader title="Nouveau Retour" />
-      <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1000px] mx-auto w-full">
-        <Button variant="ghost" onClick={() => router.back()} className="w-fit">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-        </Button>
+    <div className="flex min-h-screen flex-col">
+      <DashboardHeader
+        title="Nouveau retour"
+        description="Produits ou emballages rendus par un client, ou renvoyés à un fournisseur"
+      />
+      <PageShell className="max-w-3xl">
+        {backButton}
 
         <Card>
-          <CardHeader><CardTitle>Informations du retour</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Informations du retour</CardTitle>
+            <CardDescription>Qui retourne la marchandise et dans quel dépôt elle est reprise.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Type de retour</Label>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="return-type">Type de retour</Label>
                 <Select value={returnType} onValueChange={(v) => { setReturnType(v); setOrderId('') }}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="return-type" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="client">Retour client</SelectItem>
                     <SelectItem value="supplier">Retour fournisseur</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Dépôt</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="return-depot">Dépôt</Label>
                 <Select value={depotId} onValueChange={setDepotId}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                  <SelectTrigger id="return-depot" className="w-full"><SelectValue placeholder="Choisir un dépôt" /></SelectTrigger>
                   <SelectContent>
                     {depots.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">Le stock retourné sera mis à jour dans ce dépôt.</p>
               </div>
               {returnType === 'client' && (
-                <div>
-                  <Label>Client</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="return-client">Client</Label>
                   <Select
                     value={clientId}
                     onValueChange={(v) => {
@@ -226,7 +240,7 @@ export default function NewReturnPage() {
                       if (orderId && !orders.some((o: any) => o.id === orderId && o.client_id === v)) setOrderId('')
                     }}
                   >
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                    <SelectTrigger id="return-client" className="w-full"><SelectValue placeholder="Choisir un client" /></SelectTrigger>
                     <SelectContent>
                       {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
@@ -234,10 +248,10 @@ export default function NewReturnPage() {
                 </div>
               )}
               {returnType === 'supplier' && (
-                <div>
-                  <Label>Fournisseur</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="return-supplier">Fournisseur</Label>
                   <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                    <SelectTrigger id="return-supplier" className="w-full"><SelectValue placeholder="Choisir un fournisseur" /></SelectTrigger>
                     <SelectContent>
                       {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
@@ -245,10 +259,10 @@ export default function NewReturnPage() {
                 </div>
               )}
               {returnType === 'client' && (
-                <div>
-                  <Label>Vente d&apos;origine (optionnel)</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="return-order">Vente d&apos;origine <span className="font-normal text-muted-foreground">(facultatif)</span></Label>
                   <Select value={orderId || NO_ORDER} onValueChange={(v) => setOrderId(v === NO_ORDER ? '' : v)}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                    <SelectTrigger id="return-order" className="w-full"><SelectValue placeholder="Choisir une vente" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NO_ORDER}>Aucune</SelectItem>
                       {orderOptions.map(o => (
@@ -258,37 +272,40 @@ export default function NewReturnPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Avec une vente d&apos;origine, le prix de cette vente est appliqué et la quantité est limitée à ce qui a été vendu.
+                  <p className="text-xs text-muted-foreground">
+                    Le prix de cette vente est appliqué et la quantité est limitée à ce qui a été vendu.
                   </p>
                 </div>
               )}
             </div>
-            <div>
-              <Label>Raison générale</Label>
-              <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Raison du retour..." className="mt-1" />
+            <div className="space-y-1.5">
+              <Label htmlFor="return-reason">Motif général</Label>
+              <Textarea id="return-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex. : casse à la livraison, produits périmés…" />
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Articles retournés</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Articles retournés</CardTitle>
+            <CardDescription>Ajoutez chaque produit ou emballage avec sa quantité.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <div>
-                <Label>Type</Label>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="item-type">Type d&apos;article</Label>
                 <Select value={newItemType} onValueChange={(v) => { setNewItemType(v); setNewItemId('') }}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="item-type" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="product">Produit</SelectItem>
                     <SelectItem value="packaging">Emballage</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Article</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="item-id">Article</Label>
                 <Select value={newItemId} onValueChange={setNewItemId}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                  <SelectTrigger id="item-id" className="w-full"><SelectValue placeholder="Choisir un article" /></SelectTrigger>
                   <SelectContent>
                     {newItemType === 'product'
                       ? variantOptions.map(v => <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>)
@@ -296,64 +313,81 @@ export default function NewReturnPage() {
                   </SelectContent>
                 </Select>
                 {newItemId && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Prix indicatif : {formatMoney(indicativePrice(newItemType, newItemId))}
+                  <p className="text-xs text-muted-foreground">
+                    Prix indicatif : <span className="tabular">{formatMoney(indicativePrice(newItemType, newItemId))}</span>
                   </p>
                 )}
               </div>
-              <div>
-                <Label>Quantité</Label>
-                <Input type="number" min={1} step={1} value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="mt-1" />
+              <div className="space-y-1.5">
+                <Label htmlFor="item-qty">Quantité</Label>
+                <Input id="item-qty" type="number" inputMode="numeric" min={1} step={1} value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="tabular" />
               </div>
-              <div>
-                <Label>Raison</Label>
-                <Input value={newItemReason} onChange={(e) => setNewItemReason(e.target.value)} placeholder="Pourquoi?" className="mt-1" />
-              </div>
-              <div className="flex items-end">
-                <Button onClick={addItem} disabled={!newItemId || !newItemQty} className="w-full">
-                  <Plus className="h-4 w-4 mr-2" /> Ajouter
-                </Button>
+              <div className="space-y-1.5">
+                <Label htmlFor="item-reason">Motif <span className="font-normal text-muted-foreground">(facultatif)</span></Label>
+                <Input id="item-reason" value={newItemReason} onChange={(e) => setNewItemReason(e.target.value)} placeholder="Ex. : bouteille cassée" />
               </div>
             </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={addItem} disabled={!newItemId || !newItemQty}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Ajouter l&apos;article
+              </Button>
+            </div>
 
-            {items.length > 0 && (
-              <div className="space-y-2">
-                {items.map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">{item.product_name || item.packaging_name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        Qté : {formatNumber(item.quantity)} • Prix indicatif : {formatMoney(item.unit_price)}
-                        {item.reason ? ` • ${item.reason}` : ''}
+            {items.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                Aucun article ajouté pour le moment.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <ul className="divide-y divide-border">
+                  {items.map(item => (
+                    <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{item.product_name || item.packaging_name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.item_type === 'product' ? 'Produit' : 'Emballage'}
+                          {item.reason ? ` · ${item.reason}` : ''}
+                        </p>
                       </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeItem(item.id)}
-                      aria-label={`Retirer ${item.product_name || item.packaging_name}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                      <div className="flex shrink-0 items-center gap-3">
+                        <div className="text-right">
+                          <p className="tabular text-sm font-medium text-foreground">× {formatNumber(item.quantity)}</p>
+                          <p className="tabular text-xs text-muted-foreground">{formatMoney(item.unit_price)} / u</p>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeItem(item.id)}
+                          aria-label={`Retirer ${item.product_name || item.packaging_name}`}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/40 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Total estimé</p>
+                    <p className="text-xs text-muted-foreground">Le montant final est calculé par le serveur.</p>
                   </div>
-                ))}
-                <div className="flex justify-between text-sm pt-2">
-                  <span className="text-muted-foreground">Total estimé (le montant final est calculé par le serveur)</span>
-                  <span className="font-semibold">{formatMoney(estimatedTotal)}</span>
+                  <p className="tabular text-base font-semibold text-foreground">{formatMoney(estimatedTotal)}</p>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => router.back()}>Annuler</Button>
-          <Button onClick={handleSubmit} disabled={!depotId || items.length === 0 || submitting}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
-            Créer le retour
+          <Button variant="brand" onClick={handleSubmit} disabled={!depotId || items.length === 0 || submitting}>
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="h-4 w-4" aria-hidden="true" />}
+            {submitting ? 'Enregistrement…' : 'Créer le retour'}
           </Button>
         </div>
-      </main>
+      </PageShell>
     </div>
   )
 }

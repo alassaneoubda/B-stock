@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, ArrowRight } from 'lucide-react'
+import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react'
 import { NETWORK_ERROR, httpErrorMessage, readJson } from '@/components/auth/auth-errors'
 
 const sectors = [
@@ -80,21 +80,21 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-4">
       {error && (
-        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium">
+        <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           {error}
         </div>
       )}
 
-      <div className="space-y-1.5">
-        <Label htmlFor="companyName" className="text-sm font-medium text-zinc-700">
-          Nom de l&apos;entreprise
-        </Label>
+      <div className="space-y-2">
+        <Label htmlFor="companyName">Nom de l’entreprise</Label>
         <Input
           id="companyName"
           placeholder="Ets. Boissons"
-          className="h-10"
+          autoComplete="organization"
+          className="h-11"
           value={companyName}
           onChange={(e) => setCompanyName(e.target.value)}
           disabled={isLoading}
@@ -102,16 +102,16 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
         />
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="sector" className="text-sm font-medium text-zinc-700">
-          Secteur <span className="text-zinc-400 font-normal">(optionnel)</span>
+      <div className="space-y-2">
+        <Label htmlFor="sector">
+          Secteur <span className="font-normal text-muted-foreground">(facultatif)</span>
         </Label>
         <select
           id="sector"
           value={sector}
           onChange={(e) => setSector(e.target.value)}
           disabled={isLoading}
-          className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-950/10"
+          className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="">Sélectionner…</option>
           {sectors.map((s) => (
@@ -122,33 +122,31 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
         </select>
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="phone" className="text-sm font-medium text-zinc-700">
-          Téléphone <span className="text-zinc-400 font-normal">(optionnel)</span>
+      <div className="space-y-2">
+        <Label htmlFor="phone">
+          Téléphone <span className="font-normal text-muted-foreground">(facultatif)</span>
         </Label>
         <Input
           id="phone"
-          placeholder="+225 07..."
-          className="h-10"
+          type="tel"
+          autoComplete="tel"
+          placeholder="+225 07…"
+          className="h-11"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           disabled={isLoading}
         />
       </div>
 
-      <Button
-        type="submit"
-        className="w-full h-10 bg-zinc-950 hover:bg-zinc-800 text-white text-sm font-semibold"
-        disabled={isLoading}
-      >
+      <Button type="submit" className="mt-2 h-11 w-full" disabled={isLoading}>
         {isLoading ? (
-          <span className="flex items-center justify-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" /> Enregistrement…
-          </span>
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Enregistrement…
+          </>
         ) : (
-          <span className="flex items-center justify-center gap-2">
-            Continuer <ArrowRight className="h-4 w-4" />
-          </span>
+          <>
+            Continuer <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </>
         )}
       </Button>
     </form>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
 import { Printer, ArrowLeft } from 'lucide-react'
 import { apiFetch, errorMessage } from '@/lib/api-client'
@@ -48,30 +49,45 @@ export default function StockExportPage() {
     fetchData()
   }, [fetchData])
 
+
+  const backLink = (
+    <Button variant="ghost" size="sm" asChild className="-ml-2">
+      <Link href="/dashboard/stock">
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Stock
+      </Link>
+    </Button>
+  )
+
   if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Export Stock" />
-        <main className="flex-1 p-4 lg:p-6">
-          <div className="max-w-4xl mx-auto">
-            <TableSkeleton rows={8} columns={5} />
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="État du stock" description="Chargement…" />
+        <PageShell>
+          <div className="mx-auto w-full max-w-4xl space-y-6">
+            {backLink}
+            <div className="rounded-xl border border-border bg-card p-5">
+              <TableSkeleton rows={8} columns={5} />
+            </div>
           </div>
-        </main>
+        </PageShell>
       </div>
     )
   }
 
   if (error || !data) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Export Stock" />
-        <main className="flex-1 p-4 lg:p-6">
-          <ErrorState
-            className="max-w-4xl mx-auto"
-            description={error ?? "L'état du stock n'a pas pu être chargé."}
-            onRetry={fetchData}
-          />
-        </main>
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="État du stock" />
+        <PageShell>
+          <div className="mx-auto w-full max-w-4xl space-y-6">
+            {backLink}
+            <ErrorState
+              description={error ?? "L'état du stock n'a pas pu être chargé."}
+              onRetry={fetchData}
+            />
+          </div>
+        </PageShell>
       </div>
     )
   }
@@ -81,77 +97,71 @@ export default function StockExportPage() {
   const lowStock = data.products.filter(p => Number(p.stock_quantity) <= Number(p.min_stock_level))
 
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
+    <div className="flex min-h-screen flex-col">
       <div className="no-print">
         <DashboardHeader
-          title="Export du stock"
+          title="État du stock"
+          description="Document imprimable ou exportable en PDF"
           actions={
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                <Link href="/dashboard/stock">
-                  <ArrowLeft className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
-                  Retour
-                </Link>
-              </Button>
-              <Button size="sm" className="h-8 text-xs" onClick={() => window.print()}>
-                <Printer className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden sm:inline">Imprimer / PDF</span>
-                <span className="sm:hidden">PDF</span>
-              </Button>
-            </div>
+            <Button size="sm" className="h-9" onClick={() => window.print()} aria-label="Imprimer ou enregistrer en PDF">
+              <Printer className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Imprimer / PDF</span>
+            </Button>
           }
         />
       </div>
 
-      <main className="flex-1 p-4 lg:p-6">
-        <div className="bg-card rounded-lg border border-border max-w-4xl mx-auto print:border-none print:shadow-none print:max-w-none">
-          {/* Header */}
-          <div className="p-6 sm:p-8 border-b border-border print:p-8">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <PageShell className="print:max-w-none print:space-y-0">
+        <div className="no-print mx-auto w-full max-w-4xl">{backLink}</div>
+
+        <article className="mx-auto w-full max-w-4xl overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)] print:max-w-none print:rounded-none print:border-none print:shadow-none">
+          {/* En-tête du document */}
+          <div className="border-b border-border p-6 sm:p-8 print:p-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-                    <span className="text-white text-lg font-bold">B</span>
+                <div className="mb-2 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary" aria-hidden="true">
+                    <span className="text-lg font-semibold text-primary-foreground">B</span>
                   </div>
-                  <h1 className="text-lg font-bold text-foreground">{data.company.name || 'B-Stock'}</h1>
+                  <p className="text-lg font-semibold text-foreground">{data.company.name || 'B-Stock'}</p>
                 </div>
                 {data.company.address && <p className="text-xs text-muted-foreground">{data.company.address}</p>}
-                {data.company.phone && <p className="text-xs text-muted-foreground">Tél: {data.company.phone}</p>}
+                {data.company.phone && <p className="text-xs text-muted-foreground">Tél. : {data.company.phone}</p>}
               </div>
               <div className="text-left sm:text-right">
-                <h2 className="text-xl font-bold text-foreground tracking-tight">ÉTAT DU STOCK</h2>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {formatDateTime(data.exportDate)}
-                </p>
+                <h2 className="text-xl font-semibold tracking-tight text-foreground">État du stock</h2>
+                <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(data.exportDate)}</p>
               </div>
             </div>
           </div>
 
-          {/* Summary */}
-          <div className="p-6 sm:p-8 border-b border-border print:p-8">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Références</p>
-                <p className="text-lg font-bold text-foreground">{formatNumber(data.products.length)}</p>
+          {/* Synthèse */}
+          <div className="border-b border-border p-6 sm:p-8 print:p-8">
+            <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="space-y-1">
+                <dt className="text-xs text-muted-foreground">Références</dt>
+                <dd className="tabular text-lg font-semibold text-foreground">{formatNumber(data.products.length)}</dd>
               </div>
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Quantité totale</p>
-                <p className="text-lg font-bold text-foreground">{formatNumber(totalItems)}</p>
+              <div className="space-y-1">
+                <dt className="text-xs text-muted-foreground">Quantité totale</dt>
+                <dd className="tabular text-lg font-semibold text-foreground">{formatNumber(totalItems)}</dd>
               </div>
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Valeur totale</p>
-                <p className="text-lg font-bold text-foreground">{formatMoney(totalValue)}</p>
+              <div className="space-y-1">
+                <dt className="text-xs text-muted-foreground">Valeur totale</dt>
+                <dd className="tabular text-lg font-semibold text-foreground">{formatMoney(totalValue)}</dd>
               </div>
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Stock bas</p>
-                <p className={`text-lg font-bold ${lowStock.length > 0 ? 'text-destructive' : 'text-success'}`}>{lowStock.length}</p>
+              <div className="space-y-1">
+                <dt className="text-xs text-muted-foreground">Stock bas</dt>
+                <dd className={`tabular text-lg font-semibold ${lowStock.length > 0 ? 'text-destructive' : 'text-success'}`}>
+                  {formatNumber(lowStock.length)}
+                </dd>
               </div>
-            </div>
+            </dl>
           </div>
 
-          {/* Products Table */}
+          {/* Détail des produits */}
           <div className="p-6 sm:p-8 print:p-8">
-            <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Détail des produits</h3>
+            <h3 className="mb-3 text-sm font-semibold text-foreground">Détail des produits</h3>
             {data.products.length === 0 ? (
               <EmptyState
                 title="Aucun produit en stock"
@@ -159,46 +169,46 @@ export default function StockExportPage() {
                 action={{ label: 'Retour au stock', href: '/dashboard/stock' }}
               />
             ) : (
-            <div className="border border-border rounded-lg overflow-hidden">
+            <div className="overflow-hidden rounded-lg border border-border">
               <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-muted/50 border-b border-border">
-                    <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Produit</th>
-                    <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-3 py-2 hidden sm:table-cell">SKU</th>
-                    <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-3 py-2 hidden sm:table-cell">Catégorie</th>
-                    <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Qté</th>
-                    <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Prix</th>
-                    <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Valeur</th>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Produit</th>
+                    <th className="hidden px-3 py-2 text-left text-xs font-medium text-muted-foreground sm:table-cell">SKU</th>
+                    <th className="hidden px-3 py-2 text-left text-xs font-medium text-muted-foreground sm:table-cell">Catégorie</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Qté</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Prix</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Valeur</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {data.products.map((p, i) => {
                     const isLow = Number(p.stock_quantity) <= Number(p.min_stock_level)
                     return (
-                      <tr key={i} className={isLow ? 'bg-destructive/10' : ''}>
-                        <td className="px-3 py-2 text-sm text-foreground font-medium">
+                      <tr key={i} className={isLow ? 'bg-destructive/5' : ''}>
+                        <td className="px-3 py-2 text-sm font-medium text-foreground">
                           {p.name}
-                          {isLow && <span className="text-[10px] text-destructive ml-1 font-normal">(bas)</span>}
+                          {isLow && <span className="ml-1.5 text-xs font-normal text-destructive">(stock bas)</span>}
                         </td>
-                        <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden sm:table-cell">{p.sku}</td>
-                        <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{p.category || '—'}</td>
-                        <td className={`px-3 py-2 text-sm text-right font-medium ${isLow ? 'text-destructive' : 'text-foreground'}`}>
+                        <td className="hidden px-3 py-2 font-mono text-xs text-muted-foreground sm:table-cell">{p.sku}</td>
+                        <td className="hidden px-3 py-2 text-xs text-muted-foreground sm:table-cell">{p.category || '—'}</td>
+                        <td className={`tabular px-3 py-2 text-right text-sm font-medium ${isLow ? 'text-destructive' : 'text-foreground'}`}>
                           {formatNumber(p.stock_quantity)}
                         </td>
-                        <td className="px-3 py-2 text-sm text-right text-muted-foreground">{formatMoney(p.selling_price)}</td>
-                        <td className="px-3 py-2 text-sm text-right font-medium text-foreground">{formatMoney(Number(p.stock_quantity) * Number(p.selling_price))}</td>
+                        <td className="tabular px-3 py-2 text-right text-sm text-muted-foreground">{formatMoney(p.selling_price)}</td>
+                        <td className="tabular px-3 py-2 text-right text-sm font-medium text-foreground">{formatMoney(Number(p.stock_quantity) * Number(p.selling_price))}</td>
                       </tr>
                     )
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-muted/50 border-t border-border">
-                    <td colSpan={3} className="px-3 py-2 text-sm font-semibold text-foreground hidden sm:table-cell">Total</td>
+                  <tr className="border-t border-border bg-muted/50">
+                    <td colSpan={3} className="hidden px-3 py-2 text-sm font-semibold text-foreground sm:table-cell">Total</td>
                     <td className="px-3 py-2 text-sm font-semibold text-foreground sm:hidden">Total</td>
-                    <td className="px-3 py-2 text-sm text-right font-bold text-foreground">{formatNumber(totalItems)}</td>
-                    <td className="px-3 py-2 text-sm text-right text-muted-foreground">—</td>
-                    <td className="px-3 py-2 text-sm text-right font-bold text-foreground">{formatMoney(totalValue)}</td>
+                    <td className="tabular px-3 py-2 text-right text-sm font-semibold text-foreground">{formatNumber(totalItems)}</td>
+                    <td className="px-3 py-2 text-right text-sm text-muted-foreground">—</td>
+                    <td className="tabular px-3 py-2 text-right text-sm font-semibold text-foreground">{formatMoney(totalValue)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -206,15 +216,15 @@ export default function StockExportPage() {
             </div>
             )}
 
-            {/* Footer */}
-            <div className="mt-8 pt-4 border-t border-border text-center">
-              <p className="text-[10px] text-muted-foreground/70">
+            {/* Pied du document */}
+            <div className="mt-8 border-t border-border pt-4 text-center">
+              <p className="text-xs text-muted-foreground">
                 Document généré le {formatDate(new Date())} — {data.company.name || 'B-Stock'}
               </p>
             </div>
           </div>
-        </div>
-      </main>
+        </article>
+      </PageShell>
     </div>
   )
 }

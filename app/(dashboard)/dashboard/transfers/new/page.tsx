@@ -6,13 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Plus, Trash2, Loader2, ArrowLeftRight } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ArrowLeft, Plus, Trash2, Loader2, ArrowLeftRight, RotateCw } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { apiFetch, toastError } from '@/lib/api-client'
 import { formatNumber } from '@/lib/format'
 import { ErrorState, PageSkeleton } from '@/components/states'
+import { PageShell } from '@/components/app/blocks'
+import { cn } from '@/lib/utils'
 
 interface TransferItem {
   id: string; item_type: string; product_variant_id?: string; packaging_type_id?: string
@@ -184,37 +187,54 @@ export default function NewTransferPage() {
     }
   }
 
+  const header = (
+    <DashboardHeader title="Nouveau transfert" description="Déplacer du stock d'un dépôt à un autre" />
+  )
+
+  const backLink = (
+    <Button variant="ghost" size="sm" className="-ml-2 w-fit text-muted-foreground" asChild>
+      <Link href="/dashboard/transfers">
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Transferts
+      </Link>
+    </Button>
+  )
+
   if (refsLoading) {
     return <PageSkeleton />
   }
 
   if (refsError) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Nouveau Transfert" />
-        <main className="flex-1 p-4 lg:p-6 max-w-[1000px] mx-auto w-full">
+      <div className="flex min-h-screen flex-col">
+        {header}
+        <PageShell className="max-w-3xl">
+          {backLink}
           <ErrorState description="Les dépôts et articles n'ont pas pu être chargés." onRetry={loadReferences} />
-        </main>
+        </PageShell>
       </div>
     )
   }
 
+  const totalUnits = items.reduce((sum, i) => sum + i.quantity, 0)
+
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
-      <DashboardHeader title="Nouveau Transfert" />
-      <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1000px] mx-auto w-full">
-        <Button variant="ghost" onClick={() => router.back()} className="w-fit">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-        </Button>
+    <div className="flex min-h-screen flex-col">
+      {header}
+      <PageShell className="max-w-3xl">
+        {backLink}
 
         <Card>
-          <CardHeader><CardTitle>Informations du transfert</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Trajet</CardTitle>
+            <CardDescription>Le stock est débité du dépôt source et crédité au dépôt destination à la réception.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="source-depot">Dépôt source</Label>
                 <Select value={sourceDepotId} onValueChange={setSourceDepotId}>
-                  <SelectTrigger id="source-depot" className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                  <SelectTrigger id="source-depot" className="h-10 w-full"><SelectValue placeholder="Choisir…" /></SelectTrigger>
                   <SelectContent>
                     {depots.map(d => (
                       <SelectItem key={d.id} value={d.id} disabled={d.id === destDepotId}>{d.name}</SelectItem>
@@ -222,10 +242,10 @@ export default function NewTransferPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className="space-y-1.5">
                 <Label htmlFor="dest-depot">Dépôt destination</Label>
                 <Select value={destDepotId} onValueChange={setDestDepotId}>
-                  <SelectTrigger id="dest-depot" className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                  <SelectTrigger id="dest-depot" className="h-10 w-full"><SelectValue placeholder="Choisir…" /></SelectTrigger>
                   <SelectContent>
                     {depots.map(d => (
                       <SelectItem key={d.id} value={d.id} disabled={d.id === sourceDepotId}>{d.name}</SelectItem>
@@ -235,32 +255,38 @@ export default function NewTransferPage() {
               </div>
             </div>
             {stockError && (
-              <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                 <span>Le stock du dépôt source n&apos;a pas pu être chargé.</span>
-                <Button size="sm" variant="outline" onClick={() => setStockReloadKey((k) => k + 1)}>Réessayer</Button>
+                <Button size="sm" variant="outline" onClick={() => setStockReloadKey((k) => k + 1)}>
+                  <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
+                  Réessayer
+                </Button>
               </div>
             )}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Articles à transférer</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Articles à transférer</CardTitle>
+            <CardDescription>Ajoutez les produits et emballages un par un, dans la limite du stock disponible.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <Label>Type</Label>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="new-item-type">Type</Label>
                 <Select value={newItemType} onValueChange={(v) => { setNewItemType(v); setNewItemId(''); setItemError(null) }}>
-                  <SelectTrigger className="mt-1" aria-label="Type d'article"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="new-item-type" className="h-10 w-full" aria-label="Type d'article"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="product">Produit</SelectItem>
                     <SelectItem value="packaging">Emballage</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Article</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-item-id">Article</Label>
                 <Select value={newItemId} onValueChange={(v) => { setNewItemId(v); setItemError(null) }}>
-                  <SelectTrigger className="mt-1" aria-label="Article"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                  <SelectTrigger id="new-item-id" className="h-10 w-full" aria-label="Article"><SelectValue placeholder="Choisir…" /></SelectTrigger>
                   <SelectContent>
                     {(newItemType === 'product' ? products : packagings).map(item => (
                       <SelectItem key={item.id} value={item.id}>
@@ -273,7 +299,7 @@ export default function NewTransferPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className="space-y-1.5">
                 <Label htmlFor="new-item-qty">Quantité</Label>
                 <Input
                   id="new-item-qty"
@@ -283,63 +309,90 @@ export default function NewTransferPage() {
                   inputMode="numeric"
                   value={newItemQty}
                   onChange={(e) => { setNewItemQty(e.target.value); setItemError(null) }}
-                  className="mt-1"
+                  className="tabular h-10"
                 />
+                {!sourceDepotId && (
+                  <p className="text-xs text-muted-foreground">Choisissez d&apos;abord le dépôt source pour voir le stock disponible.</p>
+                )}
               </div>
               <div className="flex items-end">
-                <Button onClick={addItem} disabled={!sourceDepotId || stockLoading || stockError || !newItemId || !newItemQty} className="w-full">
-                  {stockLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />} Ajouter
+                <Button
+                  variant="outline"
+                  onClick={addItem}
+                  disabled={!sourceDepotId || stockLoading || stockError || !newItemId || !newItemQty}
+                  className="h-10 w-full"
+                >
+                  {stockLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+                  Ajouter la ligne
                 </Button>
               </div>
             </div>
 
-            {!sourceDepotId && (
-              <p className="text-sm text-muted-foreground">Choisissez d&apos;abord le dépôt source pour voir le stock disponible.</p>
-            )}
             {itemError && <p role="alert" className="text-sm text-destructive">{itemError}</p>}
             {overStock && (
-              <p role="alert" className="text-sm text-destructive">
+              <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                 Certaines lignes dépassent le stock disponible du dépôt source : ajustez-les avant de créer le transfert.
               </p>
             )}
 
-            {items.length > 0 && (
-              <div className="space-y-2">
-                {items.map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">{item.product_name || item.packaging_name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        Qté : {formatNumber(item.quantity)} • Disponible :{' '}
-                        {stockLoading ? '…' : formatNumber(availableFor(item.item_type, itemRefId(item)))}
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Retirer ${item.product_name || item.packaging_name || "l'article"}`}
-                      onClick={() => removeItem(item.id)}
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    </Button>
-                  </div>
-                ))}
+            {items.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                Aucun article ajouté pour l&apos;instant.
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <ul className="divide-y divide-border">
+                  {items.map(item => {
+                    const available = availableFor(item.item_type, itemRefId(item))
+                    const over = !stockLoading && addedFor(item.item_type, itemRefId(item)) > available
+                    return (
+                      <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">{item.product_name || item.packaging_name}</p>
+                          <p className={cn('tabular text-xs', over ? 'text-destructive' : 'text-muted-foreground')}>
+                            {item.item_type === 'product' ? 'Produit' : 'Emballage'} · disponible{' '}
+                            {stockLoading ? '…' : formatNumber(available)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="tabular text-sm font-semibold text-foreground">{formatNumber(item.quantity)}</span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            aria-label={`Retirer ${item.product_name || item.packaging_name || "l'article"}`}
+                            onClick={() => removeItem(item.id)}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <div className="flex justify-between border-t border-border bg-muted/40 px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground">
+                    {formatNumber(items.length)} ligne{items.length > 1 ? 's' : ''}
+                  </span>
+                  <span className="tabular font-medium text-foreground">{formatNumber(totalUnits)} unité{totalUnits > 1 ? 's' : ''}</span>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => router.back()} disabled={submitting}>Annuler</Button>
           <Button
+            variant="brand"
             onClick={handleSubmit}
             disabled={!sourceDepotId || !destDepotId || items.length === 0 || submitting || stockLoading || overStock}
           >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowLeftRight className="h-4 w-4 mr-2" />}
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />}
             Créer le transfert
           </Button>
         </div>
-      </main>
+      </PageShell>
     </div>
   )
 }

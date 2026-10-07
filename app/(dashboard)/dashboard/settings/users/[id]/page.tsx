@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -23,7 +25,7 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ErrorState } from '@/components/states'
-import { ArrowLeft, Loader2, Save, ShieldCheck, KeyRound, Copy, Check, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Loader2, Save, Lock, KeyRound, Copy, Check, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
@@ -166,33 +168,45 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
         save()
     }
 
+    const backLink = (
+        <div>
+            <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
+                <Link href="/dashboard/settings/users">
+                    <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                    Utilisateurs
+                </Link>
+            </Button>
+        </div>
+    )
+
     if (isLoading) {
         return (
-            <div className="flex flex-col min-h-screen">
+            <div className="flex min-h-screen flex-col">
                 <DashboardHeader title="Modifier l'utilisateur" />
-                <main className="flex-1 p-4 lg:p-6">
-                    <div className="max-w-4xl grid gap-8 md:grid-cols-3" aria-busy="true" aria-label="Chargement">
-                        <Skeleton className="h-72 rounded-lg" />
-                        <Skeleton className="h-72 rounded-lg md:col-span-2" />
+                <PageShell>
+                    {backLink}
+                    <div className="grid gap-6 lg:grid-cols-3" aria-busy="true" aria-label="Chargement">
+                        <div className="space-y-6 lg:col-span-2">
+                            <Skeleton className="h-44 rounded-xl" />
+                            <Skeleton className="h-72 rounded-xl" />
+                        </div>
+                        <Skeleton className="h-72 rounded-xl" />
                     </div>
-                </main>
+                </PageShell>
             </div>
         )
     }
 
     if (loadError || !user) {
         return (
-            <div className="flex flex-col min-h-screen">
+            <div className="flex min-h-screen flex-col">
                 <DashboardHeader title="Modifier l'utilisateur" />
-                <main className="flex-1 p-4 lg:p-6 max-w-2xl space-y-4">
-                    <ErrorState description={loadError ?? undefined} onRetry={fetchUser} />
-                    <Button variant="ghost" size="sm" asChild>
-                        <Link href="/dashboard/settings/users">
-                            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
-                            Retour à la liste
-                        </Link>
-                    </Button>
-                </main>
+                <PageShell>
+                    {backLink}
+                    <div className="max-w-3xl">
+                        <ErrorState description={loadError ?? undefined} onRetry={fetchUser} />
+                    </div>
+                </PageShell>
             </div>
         )
     }
@@ -205,45 +219,38 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                 ? 'Vous ne pouvez pas modifier votre propre rôle ni désactiver votre compte.'
                 : null
 
+    const initials = user.full_name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || '?'
+
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title={`Modifier l'utilisateur : ${user.full_name}`}
+                title={user.full_name}
                 description="Gérez le rôle et l'accès de cet utilisateur"
             />
-            <main className="flex-1 p-4 lg:p-6 ">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
-                        <Link href="/dashboard/settings/users">
-                            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
-                            Retour à la liste
-                        </Link>
-                    </Button>
-                </div>
+            <PageShell>
+                {backLink}
 
-                <div className="max-w-4xl space-y-8">
-                    {lockedReason && (
-                        <p className="rounded-md bg-warning-soft px-4 py-3 text-sm text-warning-foreground">{lockedReason}</p>
-                    )}
-                    <div className="grid gap-8 md:grid-cols-3">
-                        <Card className="md:col-span-1 rounded-lg border-border shadow-sm overflow-hidden h-fit">
-                            <CardHeader className="px-8 py-8 border-b border-border">
-                                <CardTitle className="text-lg font-semibold text-foreground">Infos utilisateur</CardTitle>
+                {lockedReason && (
+                    <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground">
+                        <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <p>{lockedReason}</p>
+                    </div>
+                )}
+
+                <div className="grid items-start gap-6 lg:grid-cols-3">
+                    {/* Contenu principal (2/3) */}
+                    <div className="space-y-6 lg:col-span-2">
+                        <Card>
+                            <CardHeader className="border-b border-border">
+                                <CardTitle className="text-[15px]">Rôle et statut</CardTitle>
+                                <CardDescription>Le rôle détermine les pages et actions réellement autorisées.</CardDescription>
                             </CardHeader>
-                            <CardContent className="p-8 space-y-4">
-                                <div>
-                                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Email</p>
-                                    <p className="font-bold text-foreground break-all">{user.email}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Dernière connexion</p>
-                                    <p className="text-sm text-foreground/80">{user.last_login_at ? formatDateTime(user.last_login_at) : 'Jamais'}</p>
-                                </div>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="user-role" className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Rôle</Label>
+                                    <Label htmlFor="user-role">Rôle</Label>
                                     {canEditAccess ? (
                                         <Select value={role} onValueChange={(value) => setRole(value as AssignableRole)} disabled={isSaving}>
-                                            <SelectTrigger id="user-role">
+                                            <SelectTrigger id="user-role" className="h-10 w-full">
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -253,78 +260,51 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                             </SelectContent>
                                         </Select>
                                     ) : (
-                                        <p id="user-role" className="font-bold text-foreground">{ROLE_LABELS[user.role] ?? user.role}</p>
+                                        <p id="user-role" className="flex h-10 items-center rounded-lg bg-muted px-3 text-sm font-medium text-foreground">
+                                            {ROLE_LABELS[user.role] ?? user.role}
+                                        </p>
                                     )}
-                                    <p className="text-xs text-muted-foreground">Le rôle détermine les pages et actions réellement autorisées.</p>
                                 </div>
                                 {canEditAccess && (
-                                    <div className="flex items-center justify-between gap-3 pt-2">
-                                        <div>
-                                            <Label htmlFor="user-active" className="text-sm font-semibold text-foreground">Compte actif</Label>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="user-active">Compte actif</Label>
+                                        <div className="flex h-10 items-center justify-between gap-3 rounded-lg border border-border px-3">
                                             <p className="text-xs text-muted-foreground">Un compte désactivé ne peut plus se connecter.</p>
+                                            <Switch id="user-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSaving} />
                                         </div>
-                                        <Switch id="user-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSaving} />
-                                    </div>
-                                )}
-                                {canResetPassword && (
-                                    <div className="pt-4 border-t border-border">
-                                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Sécurité</p>
-                                        <Button
-                                            variant="outline"
-                                            className="w-full mt-2 rounded-md"
-                                            onClick={() => setConfirmReset(true)}
-                                            disabled={isResetting}
-                                        >
-                                            {isResetting ? (
-                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-                                            ) : (
-                                                <KeyRound className="h-4 w-4 mr-2" aria-hidden="true" />
-                                            )}
-                                            Réinitialiser le mot de passe
-                                        </Button>
-                                        <p className="text-xs text-muted-foreground mt-2">
-                                            Un mot de passe temporaire sera généré et affiché une seule fois.
-                                        </p>
                                     </div>
                                 )}
                             </CardContent>
                         </Card>
 
-                        <Card className="md:col-span-2 rounded-lg border-border shadow-sm overflow-hidden">
-                            <CardHeader className="px-8 py-8 border-b border-border">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div>
-                                        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
-                                            <ShieldCheck className="h-5 w-5 text-brand-strong" aria-hidden="true" />
-                                            Rubriques du menu
-                                        </CardTitle>
-                                        <CardDescription className="mt-1">
-                                            Les accès réels dépendent du rôle. {MODULES_HELP_TEXT}
-                                        </CardDescription>
-                                    </div>
-                                    {canEditModules && (
-                                        <div className="flex gap-2 shrink-0">
-                                            <Button variant="outline" size="sm" onClick={selectAll} disabled={isSaving} className="text-[10px] font-semibold uppercase tracking-wider h-8 px-3 rounded-lg">Tout</Button>
-                                            <Button variant="outline" size="sm" onClick={selectNone} disabled={isSaving} className="text-[10px] font-semibold uppercase tracking-wider h-8 px-3 rounded-lg">Aucun</Button>
-                                        </div>
-                                    )}
-                                </div>
+                        <Card>
+                            <CardHeader className="border-b border-border">
+                                <CardTitle className="text-[15px]">Rubriques du menu</CardTitle>
+                                <CardDescription>
+                                    Les accès réels dépendent du rôle. {MODULES_HELP_TEXT}
+                                </CardDescription>
+                                {canEditModules && (
+                                    <CardAction className="flex gap-2">
+                                        <Button variant="outline" size="sm" onClick={selectAll} disabled={isSaving} className="h-8">Tout</Button>
+                                        <Button variant="outline" size="sm" onClick={selectNone} disabled={isSaving} className="h-8">Aucun</Button>
+                                    </CardAction>
+                                )}
                             </CardHeader>
                             {isOwnerAccount ? (
-                                <CardContent className="p-8 text-sm text-muted-foreground">
+                                <CardContent className="text-sm text-muted-foreground">
                                     Le propriétaire voit toutes les rubriques.
                                 </CardContent>
                             ) : (
-                                <CardContent className="p-8 grid gap-4 grid-cols-1 sm:grid-cols-2">
+                                <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                     {MODULE_OPTIONS.map((module) => {
                                         const checked = permissions.includes(module.id)
                                         return (
                                             <label
                                                 key={module.id}
                                                 htmlFor={`module-${module.id}`}
-                                                className={`flex items-center space-x-3 p-4 rounded-md border transition-colors ${canEditModules ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} ${checked
-                                                    ? 'bg-brand-soft border-brand/40'
-                                                    : 'bg-muted/50 border-border hover:border-border'
+                                                className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${canEditModules ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} ${checked
+                                                    ? 'border-brand/40 bg-brand-soft'
+                                                    : 'border-border hover:bg-muted/50'
                                                     }`}
                                             >
                                                 <Checkbox
@@ -332,9 +312,8 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                                     checked={checked}
                                                     disabled={!canEditModules || isSaving}
                                                     onCheckedChange={() => togglePermission(module.id)}
-                                                    className="h-5 w-5 rounded-lg data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                                                 />
-                                                <span className="font-bold text-foreground/80 flex-1 text-sm">
+                                                <span className="flex-1 text-sm font-medium text-foreground">
                                                     {module.label}
                                                 </span>
                                             </label>
@@ -342,27 +321,79 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                     })}
                                 </CardContent>
                             )}
-                            {(canEditModules || canEditAccess) && (
-                                <CardFooter className="px-8 py-6 border-t border-border bg-muted/30 flex flex-wrap items-center justify-between gap-3">
-                                    <p className="text-xs text-muted-foreground">
-                                        Après un changement de rôle ou de rubriques, l&apos;utilisateur est déconnecté.
-                                    </p>
-                                    <Button
-                                        onClick={onSave}
-                                        className="rounded-md h-12 px-8 bg-primary hover:bg-primary font-semibold shadow-lg shadow-blue-500/20"
-                                        disabled={isSaving}
-                                    >
+                        </Card>
+
+                        {(canEditModules || canEditAccess) && (
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="text-xs text-muted-foreground">
+                                    Après un changement de rôle ou de rubriques, l&apos;utilisateur est déconnecté.
+                                </p>
+                                <div className="flex flex-wrap items-center justify-end gap-2">
+                                    <Button variant="outline" asChild>
+                                        <Link href="/dashboard/settings/users">Annuler</Link>
+                                    </Button>
+                                    <Button onClick={onSave} disabled={isSaving}>
                                         {isSaving ? (
-                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                                         ) : (
-                                            <Save className="h-4 w-4 mr-2" aria-hidden="true" />
+                                            <Save className="mr-2 h-4 w-4" aria-hidden="true" />
                                         )}
                                         Enregistrer
                                     </Button>
-                                </CardFooter>
-                            )}
-                        </Card>
+                                </div>
+                            </div>
+                        )}
                     </div>
+
+                    {/* Résumé (1/3) */}
+                    <Panel title="Résumé" className="lg:sticky lg:top-24">
+                        <div className="flex items-center gap-3 px-5 py-4">
+                            <span
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground"
+                                aria-hidden="true"
+                            >
+                                {initials}
+                            </span>
+                            <div className="min-w-0 space-y-1">
+                                <p className="truncate text-sm font-semibold text-foreground">{user.full_name}</p>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    <Badge variant="muted">{ROLE_LABELS[user.role] ?? user.role}</Badge>
+                                    <StatusBadge label={user.is_active ? 'Actif' : 'Inactif'} tone={user.is_active ? 'success' : 'default'} />
+                                </div>
+                            </div>
+                        </div>
+                        <dl className="divide-y divide-border border-t border-border">
+                            <div className="space-y-0.5 px-5 py-3">
+                                <dt className="text-xs text-muted-foreground">E-mail</dt>
+                                <dd className="break-all text-sm font-medium text-foreground">{user.email}</dd>
+                            </div>
+                            <div className="space-y-0.5 px-5 py-3">
+                                <dt className="text-xs text-muted-foreground">Dernière connexion</dt>
+                                <dd className="tabular text-sm text-foreground">{user.last_login_at ? formatDateTime(user.last_login_at) : 'Jamais'}</dd>
+                            </div>
+                        </dl>
+                        {canResetPassword && (
+                            <div className="space-y-2 border-t border-border px-5 py-4">
+                                <p className="text-sm font-medium text-foreground">Sécurité</p>
+                                <Button
+                                    variant="outline"
+                                    className="w-full"
+                                    onClick={() => setConfirmReset(true)}
+                                    disabled={isResetting}
+                                >
+                                    {isResetting ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                                    ) : (
+                                        <KeyRound className="mr-2 h-4 w-4" aria-hidden="true" />
+                                    )}
+                                    Réinitialiser le mot de passe
+                                </Button>
+                                <p className="text-xs text-muted-foreground">
+                                    Un mot de passe temporaire sera généré et affiché une seule fois.
+                                </p>
+                            </div>
+                        )}
+                    </Panel>
                 </div>
 
                 {/* Confirmation : désactivation du compte */}
@@ -379,10 +410,10 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                             <AlertDialogCancel disabled={isSaving}>Annuler</AlertDialogCancel>
                             <AlertDialogAction
                                 disabled={isSaving}
-                                className="bg-destructive hover:bg-destructive"
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 onClick={(e) => { e.preventDefault(); save() }}
                             >
-                                {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+                                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
                                 Désactiver
                             </AlertDialogAction>
                         </AlertDialogFooter>
@@ -405,7 +436,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 disabled={isResetting}
                                 onClick={(e) => { e.preventDefault(); onResetPassword() }}
                             >
-                                {isResetting && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
+                                {isResetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
                                 Réinitialiser
                             </AlertDialogAction>
                         </AlertDialogFooter>
@@ -422,8 +453,8 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 L&apos;utilisateur pourra se connecter avec, puis le changer dans « Sécurité ».
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-3">
-                            <code className="flex-1 font-mono text-sm break-all select-all">{tempPassword}</code>
+                        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-3">
+                            <code className="flex-1 select-all break-all font-mono text-sm text-foreground">{tempPassword}</code>
                             <Button
                                 variant="outline"
                                 size="icon"
@@ -434,8 +465,8 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 {copied ? <Check className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
                             </Button>
                         </div>
-                        <p className="flex items-start gap-2 rounded-md bg-warning-soft p-3 text-sm text-warning-foreground">
-                            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+                        <p className="flex items-start gap-2 rounded-lg bg-warning-soft p-3 text-sm text-warning-foreground">
+                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                             Ce mot de passe n&apos;est affiché qu&apos;une seule fois. Notez-le ou copiez-le avant de fermer.
                         </p>
                         <DialogFooter>
@@ -443,7 +474,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
-            </main>
+            </PageShell>
         </div>
     )
 }

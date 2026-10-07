@@ -2,11 +2,13 @@ import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Bell, AlertTriangle, CheckCircle, Package, CreditCard, ArchiveRestore, X, Info, ShieldAlert, History } from 'lucide-react'
+import { Bell, CheckCircle, Package, CreditCard, ArchiveRestore, ShieldAlert, History, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import { GenerateAlertsButton, MarkAllReadButton, MarkAlertReadButton } from '@/components/dashboard/alerts-actions'
+import { PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
+import { EmptyState } from '@/components/states'
 import { formatDateTime, formatNumber, formatRelative } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 interface Alert {
     id: string
@@ -56,20 +58,22 @@ function alertEntityHref(alert: Alert): string | null {
     }
 }
 
-const alertTypeConfig: Record<string, { label: string; icon: any; bg: string; text: string }> = {
-    low_stock: { label: 'Stock critique', icon: Package, bg: 'bg-destructive/10', text: 'text-destructive' },
-    expiry: { label: 'Péremption', icon: History, bg: 'bg-warning-soft', text: 'text-warning-foreground' },
-    credit_limit: { label: 'Limite Crédit', icon: CreditCard, bg: 'bg-info-soft', text: 'text-info' },
-    packaging_debt: { label: 'Dette Emballage', icon: ArchiveRestore, bg: 'bg-orange-50', text: 'text-orange-600' },
-    payment_overdue: { label: 'Retard Paiement', icon: CreditCard, bg: 'bg-destructive/10', text: 'text-destructive' },
-    low_packaging: { label: 'Emballages', icon: Package, bg: 'bg-muted/50', text: 'text-muted-foreground' },
+type Tone = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
+
+const alertTypeConfig: Record<string, { label: string; icon: LucideIcon }> = {
+    low_stock: { label: 'Stock bas', icon: Package },
+    expiry: { label: 'Péremption', icon: History },
+    credit_limit: { label: 'Limite de crédit', icon: CreditCard },
+    packaging_debt: { label: 'Dette d’emballages', icon: ArchiveRestore },
+    payment_overdue: { label: 'Retard de paiement', icon: CreditCard },
+    low_packaging: { label: 'Emballages', icon: Package },
 }
 
-const severityConfig: Record<string, { label: string; bg: string; text: string; ring: string }> = {
-    low: { label: 'Mineur', bg: 'bg-muted', text: 'text-muted-foreground', ring: 'ring-border' },
-    medium: { label: 'Modéré', bg: 'bg-brand-soft', text: 'text-brand-strong', ring: 'ring-brand/40' },
-    high: { label: 'Élevé', bg: 'bg-orange-100', text: 'text-orange-600', ring: 'ring-orange-200' },
-    critical: { label: 'Urgent', bg: 'bg-destructive/10', text: 'text-destructive', ring: 'ring-destructive/30' },
+const severityConfig: Record<string, { label: string; tone: Tone; icon: string }> = {
+    low: { label: 'Mineure', tone: 'default', icon: 'bg-muted text-muted-foreground' },
+    medium: { label: 'Modérée', tone: 'info', icon: 'bg-info-soft text-info' },
+    high: { label: 'Élevée', tone: 'warning', icon: 'bg-warning-soft text-warning-foreground' },
+    critical: { label: 'Urgente', tone: 'danger', icon: 'bg-destructive/10 text-destructive' },
 }
 
 export default async function AlertsPage() {
@@ -81,182 +85,134 @@ export default async function AlertsPage() {
     const criticalCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length
     const resolvedCount = alerts.filter(a => a.is_resolved).length
 
-    const statsCards = [
-        {
-            title: "Actions Requises",
-            value: unreadCount,
-            description: "Notifications non lues",
-            icon: Bell,
-            color: "text-destructive",
-            bg: "bg-destructive/10"
-        },
-        {
-            title: "Niveau Critique",
-            value: criticalCount,
-            description: "Priorité absolue",
-            icon: ShieldAlert,
-            color: "text-orange-600",
-            bg: "bg-orange-600/10"
-        },
-        {
-            title: "Résolutions",
-            value: resolvedCount,
-            description: "Alertes traitées",
-            icon: CheckCircle,
-            color: "text-success",
-            bg: "bg-success/10"
-        }
-    ]
-
     return (
-        <div className="flex flex-col min-h-screen bg-muted/30">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Centre de Surveillance"
-                description="Suivi intelligent des points de vigilance opérationnels"
+                title="Alertes"
+                description="Points de vigilance : stock, crédits, emballages et paiements"
                 actions={<GenerateAlertsButton />}
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                {/* Stats Grid */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {statsCards.map((stat) => (
-                        <div
-                            key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-card p-8 shadow-sm border border-border hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
-                        >
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.bg} ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <stat.icon className="h-7 w-7" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-foreground tracking-tight">{formatNumber(stat.value)}</div>
-                                    <p className="text-sm font-bold text-muted-foreground/70 mt-2">{stat.description}</p>
-                                </div>
-                            </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-muted/50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
-                        </div>
-                    ))}
+            <PageShell>
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <StatCard
+                        label="Non lues"
+                        value={formatNumber(unreadCount)}
+                        hint="À examiner"
+                        icon={Bell}
+                        tone={unreadCount > 0 ? 'brand' : 'default'}
+                    />
+                    <StatCard
+                        label="Priorité élevée"
+                        value={formatNumber(criticalCount)}
+                        hint="Urgentes ou élevées"
+                        icon={ShieldAlert}
+                        tone={criticalCount > 0 ? 'danger' : 'default'}
+                    />
+                    <StatCard
+                        label="Résolues"
+                        value={formatNumber(resolvedCount)}
+                        hint="Traitées automatiquement ou manuellement"
+                        icon={CheckCircle}
+                        tone="success"
+                    />
                 </div>
 
-                {/* Alerts List */}
-                <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden">
-                    <div className="px-8 py-8 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div>
-                            <h3 className="text-2xl font-semibold text-foreground tracking-tight">Flux d&apos;Alertes</h3>
-                            <p className="text-sm font-medium text-muted-foreground/70 mt-1">Intelligence opérationnelle et diagnostics</p>
-                        </div>
-                        <MarkAllReadButton hasUnread={unreadCount > 0} />
-                    </div>
+                {alerts.length === 0 ? (
+                    <EmptyState
+                        icon={CheckCircle}
+                        title="Aucune alerte"
+                        description="Aucune anomalie détectée. Lancez une analyse pour vérifier à nouveau votre activité."
+                    />
+                ) : (
+                    <Panel
+                        title="Toutes les alertes"
+                        description={`${formatNumber(alerts.length)} alerte${alerts.length > 1 ? 's' : ''}, les plus urgentes en premier`}
+                        action={<MarkAllReadButton hasUnread={unreadCount > 0} />}
+                    >
+                        <ul className="divide-y divide-border">
+                            {alerts.map((alert) => {
+                                const typeInfo = alertTypeConfig[alert.alert_type] || { label: alert.alert_type, icon: Bell }
+                                const severityInfo = severityConfig[alert.severity] || {
+                                    label: alert.severity,
+                                    tone: 'default' as Tone,
+                                    icon: 'bg-muted text-muted-foreground',
+                                }
+                                const AlertIcon = typeInfo.icon
+                                const entityHref = alertEntityHref(alert)
+                                const muted = alert.is_read || alert.is_resolved
 
-                    <div className="p-8 space-y-4">
-                        {alerts.length === 0 ? (
-                            <div className="text-center py-24 flex flex-col items-center">
-                                <div className="h-24 w-24 rounded-full bg-success-soft flex items-center justify-center mb-6">
-                                    <CheckCircle className="h-10 w-10 text-success" />
-                                </div>
-                                <h3 className="text-xl font-semibold text-foreground">Système opérationnel</h3>
-                                <p className="mt-2 text-muted-foreground/70 font-medium max-w-xs mx-auto">
-                                    Bravo ! Aucune anomalie n&apos;a été détectée dans votre flux de gestion actuel.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-4">
-                                {alerts.map((alert) => {
-                                    const typeInfo = alertTypeConfig[alert.alert_type] || {
-                                        label: alert.alert_type,
-                                        icon: Bell,
-                                        bg: 'bg-muted/50',
-                                        text: 'text-muted-foreground/70'
-                                    }
-                                    const severityInfo = severityConfig[alert.severity] || {
-                                        label: alert.severity,
-                                        bg: 'bg-muted',
-                                        text: 'text-muted-foreground',
-                                        ring: 'ring-border'
-                                    }
-                                    const AlertIcon = typeInfo.icon
-                                    const entityHref = alertEntityHref(alert)
-
-                                    return (
-                                        <div
-                                            key={alert.id}
-                                            className={`group relative flex items-start gap-6 p-6 rounded-lg border transition-all duration-300 ${!alert.is_read
-                                                    ? 'bg-card border-border shadow-md hover:shadow-md hover:border-brand/40'
-                                                    : 'bg-muted/30 border-transparent opacity-75 grayscale-[0.5]'
-                                                } ${alert.is_resolved ? 'opacity-40 grayscale' : ''}`}
+                                return (
+                                    <li
+                                        key={alert.id}
+                                        className={cn(
+                                            'flex items-start gap-3 px-4 py-4 transition-colors sm:gap-4 sm:px-5',
+                                            !alert.is_read && 'bg-brand-soft/30',
+                                        )}
+                                    >
+                                        <span
+                                            className={cn(
+                                                'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                                                muted ? 'bg-muted text-muted-foreground' : severityInfo.icon,
+                                            )}
                                         >
-                                            <div className={`mt-0.5 shrink-0 h-14 w-14 rounded-md flex items-center justify-center transition-transform group-hover:scale-105 ${typeInfo.bg} ${typeInfo.text} shadow-sm border border-white/50`}>
-                                                <AlertIcon className="h-7 w-7" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                                                    <div>
-                                                        <div className="flex items-center gap-3 mb-1.5">
-                                                            <h4 className="text-lg font-semibold text-foreground tracking-tight leading-tight">
-                                                                {alert.title}
-                                                            </h4>
-                                                            <Badge className={`rounded-full px-3 py-0.5 font-semibold uppercase text-[9px] tracking-wider border-none ring-1 ${severityInfo.ring} ${severityInfo.bg} ${severityInfo.text}`}>
-                                                                {severityInfo.label}
-                                                            </Badge>
-                                                        </div>
-                                                        {alert.message && (
-                                                            <p className="text-sm font-medium text-muted-foreground leading-relaxed max-w-2xl">{alert.message}</p>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between gap-3 shrink-0">
-                                                        <div className="flex items-center gap-2">
-                                                            {!alert.is_read && (
-                                                                <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                                                            )}
-                                                            <span className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
-                                                                <time dateTime={new Date(alert.created_at).toISOString()} title={formatDateTime(alert.created_at)}>
-                                                                    {formatRelative(alert.created_at)}
-                                                                </time>
-                                                            </span>
-                                                        </div>
-                                                        {alert.is_resolved && (
-                                                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-success-soft border border-success/30 text-success">
-                                                                <CheckCircle className="h-3 w-3" />
-                                                                <span className="text-[10px] font-semibold uppercase tracking-wider">Résolu</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
+                                            <AlertIcon className="h-4 w-4" aria-hidden="true" />
+                                        </span>
 
-                                                <div className="mt-6 flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <Badge variant="outline" className="rounded-lg bg-card border-border text-[10px] font-semibold uppercase text-muted-foreground/70 tracking-wider h-7 px-3 flex items-center gap-2 shadow-sm">
-                                                            <Info className="h-3 w-3" />
-                                                            {typeInfo.label}
-                                                        </Badge>
-                                                        {entityHref && (
-                                                            <Link
-                                                                href={entityHref}
-                                                                className="text-[10px] font-semibold text-brand-strong uppercase tracking-wider hover:underline hover:text-brand-strong transition-colors"
-                                                            >
-                                                                Voir l&apos;entité associée
-                                                            </Link>
+                                        <div className="min-w-0 flex-1 space-y-1.5">
+                                            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                    {!alert.is_read && (
+                                                        <span className="h-2 w-2 shrink-0 rounded-full bg-brand" aria-hidden="true" />
+                                                    )}
+                                                    <h4
+                                                        className={cn(
+                                                            'text-sm leading-snug',
+                                                            muted ? 'font-medium text-muted-foreground' : 'font-semibold text-foreground',
                                                         )}
-                                                    </div>
-                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                                                        {!alert.is_read && <MarkAlertReadButton alertId={alert.id} />}
-                                                        {!alert.is_resolved && entityHref && (
-                                                            <Button asChild size="sm" className="h-8 rounded-xl bg-primary text-white font-semibold text-[10px] uppercase tracking-wider px-4 shadow-lg active:scale-95 transition-all">
-                                                                <Link href={entityHref}>Traiter</Link>
-                                                            </Button>
-                                                        )}
-                                                    </div>
+                                                    >
+                                                        {!alert.is_read && <span className="sr-only">Non lue : </span>}
+                                                        {alert.title}
+                                                    </h4>
+                                                    <StatusBadge label={severityInfo.label} tone={alert.is_resolved ? 'default' : severityInfo.tone} />
+                                                    {alert.is_resolved && <StatusBadge label="Résolue" tone="success" />}
+                                                </div>
+                                                <time
+                                                    dateTime={new Date(alert.created_at).toISOString()}
+                                                    title={formatDateTime(alert.created_at)}
+                                                    className="tabular shrink-0 text-xs text-muted-foreground"
+                                                >
+                                                    {formatRelative(alert.created_at)}
+                                                </time>
+                                            </div>
+
+                                            {alert.message && (
+                                                <p className="max-w-3xl text-sm text-muted-foreground">{alert.message}</p>
+                                            )}
+
+                                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                                <span className="text-xs text-muted-foreground">{typeInfo.label}</span>
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    {!alert.is_read && <MarkAlertReadButton alertId={alert.id} />}
+                                                    {entityHref && (alert.is_resolved ? (
+                                                        <Button asChild variant="ghost" size="sm" className="h-8">
+                                                            <Link href={entityHref}>Voir</Link>
+                                                        </Button>
+                                                    ) : (
+                                                        <Button asChild variant="outline" size="sm" className="h-8">
+                                                            <Link href={entityHref}>Traiter</Link>
+                                                        </Button>
+                                                    ))}
                                                 </div>
                                             </div>
                                         </div>
-                                    )
-                                })}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </main>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    </Panel>
+                )}
+            </PageShell>
         </div>
     )
 }

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import useSWR from 'swr'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { PageShell, PageIntro, StatusBadge } from '@/components/app/blocks'
 import { Search, ChevronLeft, ChevronRight, Building2 } from 'lucide-react'
 import { apiFetch, errorMessage } from '@/lib/api-client'
 import { formatDate, formatNumber } from '@/lib/format'
@@ -46,20 +46,19 @@ export default function AdminCompaniesPage() {
   const pagination = data?.pagination
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Entreprises</h1>
-        <p className="text-sm text-muted-foreground">
-          {pagination ? `${formatNumber(pagination.total)} entreprise(s)` : 'Gestion des tenants'}
-        </p>
-      </header>
+    <PageShell>
+      <PageIntro
+        title="Entreprises"
+        description={pagination ? `${formatNumber(pagination.total)} entreprise(s)` : 'Gestion des tenants'}
+      />
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
             placeholder="Rechercher par nom ou email…"
-            className="pl-9 h-10"
+            className="h-10 pl-9"
+            aria-label="Rechercher"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -67,18 +66,20 @@ export default function AdminCompaniesPage() {
             }}
           />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer par statut">
           {statusFilters.map((f) => (
             <button
               key={f.value}
+              type="button"
+              aria-pressed={status === f.value}
               onClick={() => {
                 setStatus(f.value)
                 setPage(1)
               }}
-              className={`px-3 h-10 rounded-lg text-sm font-medium transition-colors ${
+              className={`h-10 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 status === f.value
-                  ? 'bg-primary text-white'
-                  : 'bg-card text-muted-foreground hover:bg-muted border border-border'
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               {f.label}
@@ -87,7 +88,7 @@ export default function AdminCompaniesPage() {
         </div>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
           <div className="p-5">
             <TableSkeleton columns={5} />
@@ -105,31 +106,31 @@ export default function AdminCompaniesPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
+                <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Entreprise</th>
                   <th className="px-5 py-3 font-medium">Statut</th>
                   <th className="px-5 py-3 font-medium">Plan</th>
-                  <th className="px-5 py-3 font-medium">Utilisateurs</th>
+                  <th className="px-5 py-3 text-right font-medium">Utilisateurs</th>
                   <th className="px-5 py-3 font-medium">Créée le</th>
                 </tr>
               </thead>
               <tbody>
                 {companies.map((c) => (
-                  <tr key={c.id} className="border-b border-border hover:bg-muted/50 transition-colors">
+                  <tr key={c.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
                     <td className="px-5 py-3">
                       <Link href={`/admin/companies/${c.id}`} className="font-medium text-foreground hover:underline">
                         {c.name}
                       </Link>
-                      {c.email && <p className="text-xs text-muted-foreground/70">{c.email}</p>}
+                      {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
                     </td>
                     <td className="px-5 py-3">
-                      <StatusBadge status={c.subscription_status} suspended={c.is_suspended} />
+                      <CompanyStatusBadge status={c.subscription_status} suspended={c.is_suspended} />
                     </td>
-                    <td className="px-5 py-3 capitalize text-foreground/80">
+                    <td className="px-5 py-3 capitalize text-foreground">
                       {c.subscription_plan_name || '—'}
                     </td>
-                    <td className="px-5 py-3 text-foreground/80">{formatNumber(c.user_count)}</td>
-                    <td className="px-5 py-3 text-muted-foreground">
+                    <td className="tabular px-5 py-3 text-right text-foreground">{formatNumber(c.user_count)}</td>
+                    <td className="tabular whitespace-nowrap px-5 py-3 text-muted-foreground">
                       {formatDate(c.created_at)}
                     </td>
                   </tr>
@@ -141,7 +142,7 @@ export default function AdminCompaniesPage() {
       </Card>
 
       {pagination && pagination.pages > 1 && (
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             Page {pagination.page} / {pagination.pages}
           </p>
@@ -150,33 +151,33 @@ export default function AdminCompaniesPage() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
               aria-label="Page précédente"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
               aria-label="Page suivante"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }
 
-function StatusBadge({ status, suspended }: { status: string; suspended: boolean }) {
-  if (suspended) return <Badge className="bg-destructive/10 text-destructive hover:bg-destructive/10">Suspendue</Badge>
-  const map: Record<string, { label: string; cls: string }> = {
-    active: { label: 'Active', cls: 'bg-success-soft text-success hover:bg-success-soft' },
-    trialing: { label: 'Essai', cls: 'bg-warning-soft text-warning-foreground hover:bg-warning-soft' },
-    past_due: { label: 'Impayé', cls: 'bg-orange-100 text-orange-700 hover:bg-orange-100' },
-    canceled: { label: 'Annulé', cls: 'bg-muted text-muted-foreground hover:bg-muted' },
+function CompanyStatusBadge({ status, suspended }: { status: string; suspended: boolean }) {
+  if (suspended) return <StatusBadge label="Suspendue" tone="danger" />
+  const map: Record<string, { label: string; tone: 'success' | 'warning' | 'danger' | 'default' }> = {
+    active: { label: 'Active', tone: 'success' },
+    trialing: { label: 'Essai', tone: 'warning' },
+    past_due: { label: 'Impayé', tone: 'danger' },
+    canceled: { label: 'Annulé', tone: 'default' },
   }
-  const s = map[status] || { label: status, cls: 'bg-muted text-muted-foreground' }
-  return <Badge className={s.cls}>{s.label}</Badge>
+  const s = map[status] || { label: status, tone: 'default' as const }
+  return <StatusBadge label={s.label} tone={s.tone} />
 }

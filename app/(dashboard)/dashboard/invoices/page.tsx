@@ -4,7 +4,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select'
 import {
     Table,
     TableBody,
@@ -31,10 +37,12 @@ import {
     CheckCircle2,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { apiFetch, toastError } from '@/lib/api-client'
 import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import { PageShell, StatCard, StatusBadge } from '@/components/app/blocks'
 
 type Invoice = {
     id: string
@@ -49,15 +57,22 @@ type Invoice = {
     created_at: string
 }
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-    paid: { label: 'Payée', color: 'bg-success-soft text-success' },
-    partial: { label: 'Partielle', color: 'bg-warning-soft text-warning-foreground' },
-    draft: { label: 'Brouillon', color: 'bg-muted text-muted-foreground' },
-    sent: { label: 'Envoyée', color: 'bg-brand-soft text-brand-strong' },
-    cancelled: { label: 'Annulée', color: 'bg-destructive/10 text-destructive' },
+type Tone = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
+
+const statusConfig: Record<string, { label: string; tone: Tone }> = {
+    paid: { label: 'Payée', tone: 'success' },
+    partial: { label: 'Partielle', tone: 'warning' },
+    draft: { label: 'Brouillon', tone: 'default' },
+    sent: { label: 'Envoyée', tone: 'info' },
+    cancelled: { label: 'Annulée', tone: 'danger' },
+}
+
+function getStatus(status: string): { label: string; tone: Tone } {
+    return statusConfig[status] || { label: status, tone: 'default' }
 }
 
 export default function InvoicesPage() {
+    const router = useRouter()
     const [invoices, setInvoices] = useState<Invoice[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -100,230 +115,238 @@ export default function InvoicesPage() {
     const totalRemaining = invoices.reduce((s, i) => s + Number(i.remaining_amount), 0)
     const paidCount = invoices.filter(i => i.status === 'paid').length
 
-    const statsData = [
-        { title: 'Total factures', value: formatNumber(invoices.length), icon: Receipt, color: 'bg-primary/10 text-brand-strong', desc: 'factures générées' },
-        { title: 'Montant total', value: formatCurrency(totalAmount), icon: Banknote, color: 'bg-success/10 text-success', desc: 'chiffre d\'affaires' },
-        { title: 'Encours impayé', value: formatCurrency(totalRemaining), icon: Clock, color: 'bg-warning/10 text-warning-foreground', desc: 'à recouvrer' },
-        { title: 'Factures soldées', value: formatNumber(paidCount), icon: CheckCircle2, color: 'bg-success/10 text-success', desc: `sur ${invoices.length}` },
-    ]
+    const resetFilters = () => { setSearchTerm(''); setFilterType('all'); setFilterStatus('all') }
 
     return (
-        <div className="flex flex-col min-h-screen bg-muted/30">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Factures"
-                description="Gestion des factures clients et fournisseurs"
+                description="Factures clients et fournisseurs, paiements et encours"
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-4 lg:space-y-6">
-                {/* Stats */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    {statsData.map((stat) => (
-                        <div key={stat.title} className="bg-card rounded-lg border border-border p-4">
-                            <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-medium text-muted-foreground">{stat.title}</span>
-                                <stat.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
-                            </div>
-                            <p className="text-lg sm:text-xl font-bold text-foreground tracking-tight truncate">{stat.value}</p>
-                            <p className="text-xs text-muted-foreground mt-1">{stat.desc}</p>
-                        </div>
-                    ))}
-                </div>
-
-                {/* Filters + Search */}
-                <div className="bg-card rounded-lg border border-border overflow-hidden">
-                    <div className="px-4 py-3 border-b border-border flex flex-col sm:flex-row sm:items-center gap-3">
-                        <div className="relative flex-1 max-w-sm">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
-                            <Input
-                                placeholder="Rechercher..."
-                                aria-label="Rechercher une facture"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9 h-9 text-sm"
-                            />
-                        </div>
-                        <div className="flex items-center gap-2 overflow-x-auto">
-                            <select
-                                value={filterType}
-                                onChange={(e) => setFilterType(e.target.value)}
-                                aria-label="Filtrer par type"
-                                className="h-9 rounded-md border border-border bg-card px-3 text-xs font-medium text-muted-foreground"
-                            >
-                                <option value="all">Tous types</option>
-                                <option value="client">Client</option>
-                                <option value="supplier">Fournisseur</option>
-                            </select>
-                            <select
-                                value={filterStatus}
-                                onChange={(e) => setFilterStatus(e.target.value)}
-                                aria-label="Filtrer par statut"
-                                className="h-9 rounded-md border border-border bg-card px-3 text-xs font-medium text-muted-foreground"
-                            >
-                                <option value="all">Tous statuts</option>
-                                <option value="paid">Payée</option>
-                                <option value="partial">Partielle</option>
-                                <option value="draft">Brouillon</option>
-                                <option value="sent">Envoyée</option>
-                                <option value="cancelled">Annulée</option>
-                            </select>
-                        </div>
+            <PageShell>
+                {!isLoading && !loadError && invoices.length > 0 && (
+                    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                        <StatCard
+                            label="Encours à recouvrer"
+                            value={formatCurrency(totalRemaining)}
+                            hint="Reste à payer sur les factures affichées"
+                            icon={Clock}
+                            emphasis
+                        />
+                        <StatCard
+                            label="Montant facturé"
+                            value={formatCurrency(totalAmount)}
+                            hint={`Dont ${formatCurrency(totalPaid)} encaissés`}
+                            icon={Banknote}
+                        />
+                        <StatCard
+                            label="Factures"
+                            value={formatNumber(invoices.length)}
+                            hint="Selon les filtres actifs"
+                            icon={Receipt}
+                        />
+                        <StatCard
+                            label="Factures soldées"
+                            value={formatNumber(paidCount)}
+                            hint={`sur ${formatNumber(invoices.length)}`}
+                            icon={CheckCircle2}
+                            tone="success"
+                        />
                     </div>
+                )}
 
-                    {isLoading ? (
-                        <div className="p-4">
-                            <TableSkeleton rows={6} columns={5} />
-                        </div>
-                    ) : loadError ? (
-                        <ErrorState className="m-4" title="Impossible de charger les factures" onRetry={() => fetchInvoices()} />
-                    ) : invoices.length === 0 ? (
-                        hasFilters ? (
-                            <EmptyState
-                                icon={Search}
-                                className="m-4"
-                                title="Aucune facture ne correspond"
-                                description="Modifiez la recherche ou les filtres."
-                                action={{ label: 'Réinitialiser les filtres', onClick: () => { setSearchTerm(''); setFilterType('all'); setFilterStatus('all') } }}
-                            />
-                        ) : (
-                            <EmptyState
-                                icon={FileText}
-                                className="m-4"
-                                title="Aucune facture"
-                                description="Les factures sont générées automatiquement lors de la création de ventes."
-                                action={{ label: 'Nouvelle vente', href: '/dashboard/sales/new' }}
-                            />
-                        )
-                    ) : (
-                        <>
-                            {/* Desktop table */}
-                            <div className="hidden md:block overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow className="hover:bg-transparent">
-                                            <TableHead className="text-xs font-medium text-muted-foreground pl-4">N° Facture</TableHead>
-                                            <TableHead className="text-xs font-medium text-muted-foreground">Type</TableHead>
-                                            <TableHead className="text-xs font-medium text-muted-foreground">Client / Fournisseur</TableHead>
-                                            <TableHead className="text-xs font-medium text-muted-foreground">Date</TableHead>
-                                            <TableHead className="text-xs font-medium text-muted-foreground text-right">Montant</TableHead>
-                                            <TableHead className="text-xs font-medium text-muted-foreground text-right">Reste</TableHead>
-                                            <TableHead className="text-xs font-medium text-muted-foreground">Statut</TableHead>
-                                            <TableHead className="pr-4"></TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {invoices.map((inv) => {
-                                            const status = statusConfig[inv.status] || { label: inv.status, color: 'bg-muted text-muted-foreground' }
-                                            return (
-                                                <TableRow key={inv.id} className="group">
-                                                    <TableCell className="pl-4">
-                                                        <span className="text-sm font-medium text-foreground font-mono">{inv.invoice_number}</span>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${inv.type === 'client' ? 'bg-brand-soft text-brand-strong' : 'bg-info-soft text-info'}`}>
-                                                            {inv.type === 'client' ? 'Client' : 'Fournisseur'}
-                                                        </span>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <span className="text-sm text-foreground/80">
-                                                            {inv.client_name || inv.supplier_name || '—'}
-                                                        </span>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {formatDateShort(inv.created_at)}
-                                                        </span>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        <span className="text-sm font-semibold text-foreground">
-                                                            {formatCurrency(Number(inv.total_amount))}
-                                                        </span>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        {Number(inv.remaining_amount) > 0 ? (
-                                                            <span className="text-sm font-medium text-destructive">
-                                                                {formatCurrency(Number(inv.remaining_amount))}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-xs font-medium text-success">Soldé</span>
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge className={`text-[10px] font-medium ${status.color} border-none`}>
-                                                            {status.label}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="pr-4 text-right">
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour la facture ${inv.invoice_number}`}>
-                                                                    <MoreHorizontal className="h-4 w-4 text-muted-foreground/70" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-48">
-                                                                <DropdownMenuItem asChild className="cursor-pointer">
-                                                                    <Link href={`/dashboard/invoices/${inv.id}`} className="flex items-center gap-2">
-                                                                        <Eye className="h-4 w-4 text-muted-foreground" />
-                                                                        <span className="text-sm">Voir la facture</span>
-                                                                    </Link>
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem asChild className="cursor-pointer">
-                                                                    <Link href={`/dashboard/invoices/${inv.id}?print=1`} className="flex items-center gap-2">
-                                                                        <Printer className="h-4 w-4 text-muted-foreground" />
-                                                                        <span className="text-sm">Imprimer / PDF</span>
-                                                                    </Link>
-                                                                </DropdownMenuItem>
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
-                                                    </TableCell>
-                                                </TableRow>
-                                            )
-                                        })}
-                                    </TableBody>
-                                </Table>
-                            </div>
-
-                            {/* Mobile cards */}
-                            <div className="md:hidden divide-y divide-border">
-                                {invoices.map((inv) => {
-                                    const status = statusConfig[inv.status] || { label: inv.status, color: 'bg-muted text-muted-foreground' }
-                                    return (
-                                        <Link
-                                            key={inv.id}
-                                            href={`/dashboard/invoices/${inv.id}`}
-                                            className="block p-4 active:bg-muted/50 transition-colors"
-                                        >
-                                            <div className="flex items-start justify-between mb-2">
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-semibold text-foreground truncate">
-                                                        {inv.client_name || inv.supplier_name || 'Sans nom'}
-                                                    </p>
-                                                    <p className="text-xs text-muted-foreground/70 font-mono">
-                                                        {inv.invoice_number} · {formatDateShort(inv.created_at)}
-                                                    </p>
-                                                </div>
-                                                <Badge className={`text-[10px] font-medium ml-2 shrink-0 ${status.color} border-none`}>
-                                                    {status.label}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${inv.type === 'client' ? 'bg-brand-soft text-brand-strong' : 'bg-info-soft text-info'}`}>
-                                                    {inv.type === 'client' ? 'Client' : 'Fournisseur'}
-                                                </span>
-                                                <div className="text-right">
-                                                    <p className="text-sm font-bold text-foreground">{formatCurrency(Number(inv.total_amount))}</p>
-                                                    {Number(inv.remaining_amount) > 0 && (
-                                                        <p className="text-xs font-medium text-destructive">Reste: {formatCurrency(Number(inv.remaining_amount))}</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </Link>
-                                    )
-                                })}
-                            </div>
-                        </>
+                {/* Barre d'outils */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="relative w-full sm:max-w-sm">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                        <Input
+                            placeholder="N° de facture, client, fournisseur…"
+                            aria-label="Rechercher une facture"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="h-10 pl-9"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Select value={filterType} onValueChange={setFilterType}>
+                            <SelectTrigger className="h-10 w-full sm:w-[160px]" aria-label="Filtrer par type">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Tous les types</SelectItem>
+                                <SelectItem value="client">Client</SelectItem>
+                                <SelectItem value="supplier">Fournisseur</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Select value={filterStatus} onValueChange={setFilterStatus}>
+                            <SelectTrigger className="h-10 w-full sm:w-[160px]" aria-label="Filtrer par statut">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Tous les statuts</SelectItem>
+                                <SelectItem value="paid">Payée</SelectItem>
+                                <SelectItem value="partial">Partielle</SelectItem>
+                                <SelectItem value="draft">Brouillon</SelectItem>
+                                <SelectItem value="sent">Envoyée</SelectItem>
+                                <SelectItem value="cancelled">Annulée</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {hasFilters && (
+                        <Button variant="ghost" size="sm" onClick={resetFilters} className="self-start sm:self-auto">
+                            Réinitialiser
+                        </Button>
                     )}
                 </div>
-            </main>
+
+                {isLoading ? (
+                    <div className="rounded-xl border border-border bg-card p-4">
+                        <TableSkeleton rows={6} columns={5} />
+                    </div>
+                ) : loadError ? (
+                    <ErrorState title="Impossible de charger les factures" onRetry={() => fetchInvoices()} />
+                ) : invoices.length === 0 ? (
+                    hasFilters ? (
+                        <EmptyState
+                            icon={Search}
+                            title="Aucune facture ne correspond"
+                            description="Modifiez la recherche ou les filtres."
+                            action={{ label: 'Réinitialiser les filtres', onClick: resetFilters }}
+                        />
+                    ) : (
+                        <EmptyState
+                            icon={FileText}
+                            title="Aucune facture"
+                            description="Les factures sont générées automatiquement lors de la création de ventes."
+                            action={{ label: 'Nouvelle vente', href: '/dashboard/sales/new' }}
+                        />
+                    )
+                ) : (
+                    <div className="overflow-hidden rounded-xl border border-border bg-card">
+                        {/* Tableau (desktop) */}
+                        <div className="hidden overflow-x-auto md:block">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="pl-5">N° facture</TableHead>
+                                        <TableHead>Client / fournisseur</TableHead>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead>Date</TableHead>
+                                        <TableHead className="text-right">Montant</TableHead>
+                                        <TableHead className="text-right">Reste</TableHead>
+                                        <TableHead>Statut</TableHead>
+                                        <TableHead className="w-12 pr-5"><span className="sr-only">Actions</span></TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {invoices.map((inv) => {
+                                        const status = getStatus(inv.status)
+                                        return (
+                                            <TableRow
+                                                key={inv.id}
+                                                className="cursor-pointer"
+                                                onClick={() => router.push(`/dashboard/invoices/${inv.id}`)}
+                                            >
+                                                <TableCell className="pl-5">
+                                                    <Link
+                                                        href={`/dashboard/invoices/${inv.id}`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="rounded-sm font-mono text-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                    >
+                                                        {inv.invoice_number}
+                                                    </Link>
+                                                </TableCell>
+                                                <TableCell className="text-sm text-foreground">
+                                                    {inv.client_name || inv.supplier_name || '—'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <StatusBadge
+                                                        label={inv.type === 'client' ? 'Client' : 'Fournisseur'}
+                                                        tone={inv.type === 'client' ? 'brand' : 'info'}
+                                                    />
+                                                </TableCell>
+                                                <TableCell className="text-sm text-muted-foreground">
+                                                    {formatDateShort(inv.created_at)}
+                                                </TableCell>
+                                                <TableCell className="tabular text-right text-sm font-medium text-foreground">
+                                                    {formatCurrency(Number(inv.total_amount))}
+                                                </TableCell>
+                                                <TableCell className="tabular text-right text-sm">
+                                                    {Number(inv.remaining_amount) > 0 ? (
+                                                        <span className="font-medium text-destructive">
+                                                            {formatCurrency(Number(inv.remaining_amount))}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground">Soldé</span>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <StatusBadge label={status.label} tone={status.tone} />
+                                                </TableCell>
+                                                <TableCell className="pr-5 text-right" onClick={(e) => e.stopPropagation()}>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions pour la facture ${inv.invoice_number}`}>
+                                                                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end" className="w-48">
+                                                            <DropdownMenuItem asChild className="cursor-pointer">
+                                                                <Link href={`/dashboard/invoices/${inv.id}`} className="flex items-center gap-2">
+                                                                    <Eye className="h-4 w-4 text-muted-foreground" />
+                                                                    <span className="text-sm">Voir la facture</span>
+                                                                </Link>
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem asChild className="cursor-pointer">
+                                                                <Link href={`/dashboard/invoices/${inv.id}?print=1`} className="flex items-center gap-2">
+                                                                    <Printer className="h-4 w-4 text-muted-foreground" />
+                                                                    <span className="text-sm">Imprimer / PDF</span>
+                                                                </Link>
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </TableCell>
+                                            </TableRow>
+                                        )
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </div>
+
+                        {/* Cartes (mobile) */}
+                        <ul className="divide-y divide-border md:hidden">
+                            {invoices.map((inv) => {
+                                const status = getStatus(inv.status)
+                                return (
+                                    <li key={inv.id}>
+                                        <Link
+                                            href={`/dashboard/invoices/${inv.id}`}
+                                            className="flex items-start justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                                        >
+                                            <div className="min-w-0 space-y-1">
+                                                <p className="truncate text-sm font-medium text-foreground">
+                                                    {inv.client_name || inv.supplier_name || 'Sans nom'}
+                                                </p>
+                                                <p className="truncate text-xs text-muted-foreground">
+                                                    <span className="font-mono">{inv.invoice_number}</span> · {formatDateShort(inv.created_at)} · {inv.type === 'client' ? 'Client' : 'Fournisseur'}
+                                                </p>
+                                                <StatusBadge label={status.label} tone={status.tone} />
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <p className="tabular text-sm font-semibold text-foreground">{formatCurrency(Number(inv.total_amount))}</p>
+                                                {Number(inv.remaining_amount) > 0 && (
+                                                    <p className="tabular text-xs text-destructive">Reste {formatCurrency(Number(inv.remaining_amount))}</p>
+                                                )}
+                                            </div>
+                                        </Link>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    </div>
+                )}
+            </PageShell>
         </div>
     )
 }

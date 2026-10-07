@@ -7,14 +7,15 @@ import { safeCallbackUrl } from '@/lib/safe-redirect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { BrandMonogram } from '@/components/brand-mark'
 import { Loader2, ShieldCheck, ArrowRight, Eye, EyeOff } from 'lucide-react'
 
 export default function AdminLoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-primary">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Chargement" />
         </div>
       }
     >
@@ -57,84 +58,86 @@ function AdminLoginContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-primary px-6 py-12">
-      <div className="w-full max-w-[400px]">
-        <div className="flex items-center gap-2.5 mb-8">
-          <div className="h-10 w-10 rounded-lg bg-card/10 border border-white/20 flex items-center justify-center">
-            <ShieldCheck className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <p className="text-white font-bold leading-tight">B-Stock</p>
-            <p className="text-xs text-muted-foreground leading-tight">Back office</p>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+      <div className="w-full max-w-[400px] space-y-6">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <BrandMonogram size={44} />
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Administration B-Stock</h1>
+            <p className="text-sm text-muted-foreground">Accès réservé aux opérateurs de la plateforme</p>
           </div>
         </div>
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white mb-1">Administration</h1>
-          <p className="text-sm text-muted-foreground">Accès réservé aux opérateurs plateforme</p>
-        </div>
-
-        <form onSubmit={onSubmit} className="space-y-5">
-          {error && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive font-medium">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-sm font-medium text-muted-foreground/70">
-              Email
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="ops@bstock.ci"
-              className="h-10 bg-primary border-border text-white placeholder:text-muted-foreground"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
-              autoFocus
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-sm font-medium text-muted-foreground/70">
-              Mot de passe
-            </Label>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
-                className="h-10 pr-10 bg-primary border-border text-white placeholder:text-muted-foreground"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground/70"
+        <div className="rounded-xl border border-border bg-card p-6 shadow-[0_1px_2px_0_rgb(15_23_42/0.04)] sm:p-8">
+          <form onSubmit={onSubmit} className="space-y-5">
+            {error && (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm font-medium text-destructive"
               >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full h-10 bg-card hover:bg-muted text-foreground text-sm font-semibold"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <span className="flex items-center justify-center gap-2">
-                Se connecter <ArrowRight className="h-4 w-4" />
-              </span>
+                {error}
+              </div>
             )}
-          </Button>
-        </form>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                placeholder="ops@bstock.ci"
+                className="h-11"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Mot de passe</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  className="h-11 pr-11"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                </button>
+              </div>
+            </div>
+
+            <Button type="submit" className="h-11 w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Connexion…
+                </>
+              ) : (
+                <>
+                  Se connecter
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </>
+              )}
+            </Button>
+          </form>
+        </div>
+
+        <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+          Connexion sécurisée, actions journalisées
+        </p>
       </div>
     </div>
   )

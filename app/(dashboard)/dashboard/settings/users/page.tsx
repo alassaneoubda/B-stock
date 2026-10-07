@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
     Table,
     TableBody,
@@ -13,7 +13,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Users, UserPlus, Shield } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Users, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { apiFetch, errorMessage } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format'
@@ -32,11 +32,17 @@ interface User {
 
 const roleLabels: Record<string, string> = ROLE_LABELS
 
-const roleColors: Record<string, string> = {
-    owner: 'bg-info-soft text-info',
-    manager: 'bg-brand-soft text-brand-strong',
-    cashier: 'bg-success-soft text-success',
-    warehouse_keeper: 'bg-warning-soft text-warning-foreground',
+type RoleVariant = 'info' | 'brand' | 'success' | 'warning' | 'muted'
+
+const roleVariants: Record<string, RoleVariant> = {
+    owner: 'info',
+    manager: 'brand',
+    cashier: 'success',
+    warehouse_keeper: 'warning',
+}
+
+function initials(name: string): string {
+    return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || '?'
 }
 
 export default function UsersSettingsPage() {
@@ -59,80 +65,127 @@ export default function UsersSettingsPage() {
 
     useEffect(() => { fetchUsers() }, [fetchUsers])
 
+    const showBodyPadding = loading || !!loadError || users.length === 0
+
     return (
-        <div className="flex flex-col min-h-screen bg-muted/30">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Gestion des utilisateurs"
+                title="Utilisateurs"
                 description="Gérez les accès et rôles de votre équipe"
                 actions={
-                    <Button className="rounded-md h-11 px-6 bg-primary hover:bg-primary font-bold" asChild>
+                    <Button size="sm" className="h-9 rounded-lg" asChild>
                         <Link href="/dashboard/settings/users/new">
-                            <UserPlus className="h-5 w-5 mr-2" aria-hidden="true" /> Ajouter un utilisateur
+                            <UserPlus className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+                            <span className="hidden sm:inline">Ajouter un utilisateur</span>
+                            <span className="sr-only sm:hidden">Ajouter un utilisateur</span>
                         </Link>
                     </Button>
                 }
             />
-            <main className="flex-1 p-4 lg:p-6 ">
-                <Card className="rounded-lg border-border shadow-sm overflow-hidden">
-                    <CardHeader className="px-8 py-8 border-b border-border">
-                        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-3">
-                            <Users className="h-5 w-5 text-brand-strong" aria-hidden="true" /> Membres de l&apos;équipe{!loading && !loadError ? ` (${users.length})` : ''}
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className={loading || loadError || users.length === 0 ? 'p-6' : 'p-0'}>
-                        {loading ? (
-                            <TableSkeleton rows={4} columns={5} />
-                        ) : loadError ? (
-                            <ErrorState description={loadError} onRetry={fetchUsers} />
-                        ) : users.length === 0 ? (
-                            <EmptyState
-                                icon={Users}
-                                title="Aucun membre"
-                                description="Ajoutez vos caissiers, magasiniers et gérants pour qu'ils aient leur propre accès."
-                                action={{ label: 'Ajouter un utilisateur', href: '/dashboard/settings/users/new' }}
-                            />
-                        ) : (
-                            <Table>
-                                <TableHeader className="bg-muted/30">
-                                    <TableRow className="border-none hover:bg-transparent">
-                                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-8">Nom</TableHead>
-                                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Email</TableHead>
-                                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Rôle</TableHead>
-                                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Dernière connexion</TableHead>
-                                        <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pr-8">Statut</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {users.map((user) => (
-                                        <TableRow key={user.id} className="border-b border-border hover:bg-muted/30">
-                                            <TableCell className="py-5 pl-8">
-                                                <Link href={`/dashboard/settings/users/${user.id}`} className="font-semibold text-foreground hover:text-brand-strong transition-colors">
-                                                    {user.full_name}
-                                                </Link>
-                                            </TableCell>
-                                            <TableCell className="py-5 font-medium text-muted-foreground">{user.email}</TableCell>
-                                            <TableCell className="py-5">
-                                                <Badge className={`rounded-xl px-4 py-1 font-semibold text-[10px] uppercase tracking-wider border-none ${roleColors[user.role] || 'bg-muted text-muted-foreground'}`}>
-                                                    <Shield className="h-3 w-3 mr-1" aria-hidden="true" />
-                                                    {roleLabels[user.role] || user.role}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-sm text-muted-foreground">
-                                                {user.last_login_at ? formatDateTime(user.last_login_at) : 'Jamais'}
-                                            </TableCell>
-                                            <TableCell className="py-5 pr-8">
-                                                <Badge className={`rounded-xl px-4 py-1 font-semibold text-[10px] uppercase tracking-wider border-none ${user.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'}`}>
-                                                    {user.is_active ? 'Actif' : 'Inactif'}
-                                                </Badge>
-                                            </TableCell>
+            <PageShell>
+                <div>
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
+                        <Link href="/dashboard/settings">
+                            <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                            Paramètres
+                        </Link>
+                    </Button>
+                </div>
+
+                <Panel
+                    title="Membres de l'équipe"
+                    description={!loading && !loadError ? `${users.length} membre${users.length > 1 ? 's' : ''}` : undefined}
+                    bodyClassName={showBodyPadding ? 'p-5' : undefined}
+                >
+                    {loading ? (
+                        <TableSkeleton rows={4} columns={5} />
+                    ) : loadError ? (
+                        <ErrorState description={loadError} onRetry={fetchUsers} />
+                    ) : users.length === 0 ? (
+                        <EmptyState
+                            icon={Users}
+                            title="Aucun membre"
+                            description="Ajoutez vos caissiers, magasiniers et gérants pour qu'ils aient leur propre accès."
+                            action={{ label: 'Ajouter un utilisateur', href: '/dashboard/settings/users/new' }}
+                        />
+                    ) : (
+                        <>
+                            {/* Mobile : liste de cartes */}
+                            <ul className="divide-y divide-border md:hidden">
+                                {users.map((user) => (
+                                    <li key={user.id}>
+                                        <Link
+                                            href={`/dashboard/settings/users/${user.id}`}
+                                            className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                                        >
+                                            <span
+                                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground"
+                                                aria-hidden="true"
+                                            >
+                                                {initials(user.full_name)}
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium text-foreground">{user.full_name}</p>
+                                                <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                                    <Badge variant={roleVariants[user.role] ?? 'muted'}>{roleLabels[user.role] || user.role}</Badge>
+                                                    <StatusBadge label={user.is_active ? 'Actif' : 'Inactif'} tone={user.is_active ? 'success' : 'default'} />
+                                                </div>
+                                            </div>
+                                            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+
+                            {/* Bureau : tableau */}
+                            <div className="hidden md:block">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="pl-5">Nom</TableHead>
+                                            <TableHead>E-mail</TableHead>
+                                            <TableHead>Rôle</TableHead>
+                                            <TableHead>Dernière connexion</TableHead>
+                                            <TableHead className="pr-5">Statut</TableHead>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </CardContent>
-                </Card>
-            </main>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {users.map((user) => (
+                                            <TableRow key={user.id}>
+                                                <TableCell className="pl-5">
+                                                    <Link
+                                                        href={`/dashboard/settings/users/${user.id}`}
+                                                        className="flex items-center gap-2.5 rounded-md font-medium text-foreground transition-colors hover:text-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                    >
+                                                        <span
+                                                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground"
+                                                            aria-hidden="true"
+                                                        >
+                                                            {initials(user.full_name)}
+                                                        </span>
+                                                        {user.full_name}
+                                                    </Link>
+                                                </TableCell>
+                                                <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                                                <TableCell>
+                                                    <Badge variant={roleVariants[user.role] ?? 'muted'}>{roleLabels[user.role] || user.role}</Badge>
+                                                </TableCell>
+                                                <TableCell className="tabular text-sm text-muted-foreground">
+                                                    {user.last_login_at ? formatDateTime(user.last_login_at) : 'Jamais'}
+                                                </TableCell>
+                                                <TableCell className="pr-5">
+                                                    <StatusBadge label={user.is_active ? 'Actif' : 'Inactif'} tone={user.is_active ? 'success' : 'default'} />
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </>
+                    )}
+                </Panel>
+            </PageShell>
         </div>
     )
 }

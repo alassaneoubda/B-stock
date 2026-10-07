@@ -16,11 +16,12 @@ type Announcement = {
   dismissible: boolean
 }
 
-const styles: Record<string, { bg: string; icon: React.ElementType }> = {
-  info: { bg: 'bg-primary text-white', icon: Info },
-  success: { bg: 'bg-success text-white', icon: CheckCircle2 },
-  warning: { bg: 'bg-warning text-warning-foreground', icon: AlertTriangle },
-  critical: { bg: 'bg-destructive text-white', icon: AlertOctagon },
+// Bandeaux calmes : fond doux + icône colorée, texte encre (jamais la couleur seule : icône + titre)
+const styles: Record<string, { bg: string; icon: React.ElementType; iconClass: string }> = {
+  info: { bg: 'bg-info-soft text-foreground', icon: Info, iconClass: 'text-info' },
+  success: { bg: 'bg-success-soft text-foreground', icon: CheckCircle2, iconClass: 'text-success' },
+  warning: { bg: 'bg-warning-soft text-warning-foreground', icon: AlertTriangle, iconClass: 'text-warning-foreground' },
+  critical: { bg: 'bg-destructive/10 text-foreground', icon: AlertOctagon, iconClass: 'text-destructive' },
 }
 
 export function AnnouncementBanner() {
@@ -54,18 +55,18 @@ export function AnnouncementBanner() {
           <div
             key={a.id}
             role={a.level === 'critical' || a.level === 'warning' ? 'alert' : 'status'}
-            className={`${s.bg} px-4 py-2.5 flex items-start gap-3 text-sm`}
+            className={`${s.bg} flex items-start gap-3 border-b border-border px-4 py-2.5 text-sm lg:px-8`}
           >
-            <Icon className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
-            <div className="flex-1 min-w-0">
+            <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${s.iconClass}`} aria-hidden="true" />
+            <div className="min-w-0 flex-1">
               <span className="font-semibold">{a.title}</span>
-              <span className="opacity-90"> — {a.body}</span>
+              <span className="text-muted-foreground"> — {a.body}</span>
             </div>
             {a.dismissible && (
               <button
                 type="button"
                 onClick={() => dismiss(a)}
-                className="shrink-0 rounded p-0.5 hover:bg-black/10 transition-colors"
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={`Masquer l'annonce « ${a.title} »`}
               >
                 <X className="h-4 w-4" aria-hidden="true" />

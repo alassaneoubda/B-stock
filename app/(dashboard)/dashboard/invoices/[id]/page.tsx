@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -21,7 +21,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { apiFetch, ApiError, toastError } from '@/lib/api-client'
 import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
-import { ErrorState, PageSkeleton } from '@/components/states'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 type InvoiceItem = {
   id: string
@@ -58,12 +58,18 @@ type InvoiceDetail = {
   items: InvoiceItem[]
 }
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  paid: { label: 'Payée', color: 'bg-success-soft text-success' },
-  partial: { label: 'Partielle', color: 'bg-warning-soft text-warning-foreground' },
-  draft: { label: 'Brouillon', color: 'bg-muted text-muted-foreground' },
-  sent: { label: 'Envoyée', color: 'bg-brand-soft text-brand-strong' },
-  cancelled: { label: 'Annulée', color: 'bg-destructive/10 text-destructive' },
+type Tone = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
+
+const statusConfig: Record<string, { label: string; tone: Tone }> = {
+  paid: { label: 'Payée', tone: 'success' },
+  partial: { label: 'Partielle', tone: 'warning' },
+  draft: { label: 'Brouillon', tone: 'default' },
+  sent: { label: 'Envoyée', tone: 'info' },
+  cancelled: { label: 'Annulée', tone: 'danger' },
+}
+
+function getStatus(status: string): { label: string; tone: Tone } {
+  return statusConfig[status] || { label: status, tone: 'default' }
 }
 
 const formatCurrency = formatMoney
@@ -178,14 +184,14 @@ export default function InvoiceDetailPage() {
 
   if (isGenerating) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
+      <div className="flex min-h-screen flex-col">
         <DashboardHeader title="Facture" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/70 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Génération de la facture...</p>
+        <PageShell className="flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-center" role="status">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm text-muted-foreground">Génération de la facture…</p>
           </div>
-        </div>
+        </PageShell>
       </div>
     )
   }
@@ -196,34 +202,34 @@ export default function InvoiceDetailPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
+      <div className="flex min-h-screen flex-col">
         <DashboardHeader title="Facture" />
-        <main className="flex-1 p-4 lg:p-6">
+        <PageShell>
+          <BackLink />
           <ErrorState title="Impossible de charger la facture" description={loadError} onRetry={fetchInvoice} />
-        </main>
+        </PageShell>
       </div>
     )
   }
 
   if (!invoice) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
+      <div className="flex min-h-screen flex-col">
         <DashboardHeader title="Facture" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <FileText className="h-12 w-12 text-muted-foreground/70 mx-auto mb-3" />
-            <h3 className="text-sm font-semibold text-foreground mb-1">Facture non trouvée</h3>
-            <p className="text-sm text-muted-foreground mb-4">La facture demandée n&apos;existe pas.</p>
-            <Button size="sm" asChild>
-              <Link href="/dashboard/invoices">Retour aux factures</Link>
-            </Button>
-          </div>
-        </div>
+        <PageShell>
+          <BackLink />
+          <EmptyState
+            icon={FileText}
+            title="Facture non trouvée"
+            description="La facture demandée n'existe pas ou a été supprimée."
+            action={{ label: 'Retour aux factures', href: '/dashboard/invoices' }}
+          />
+        </PageShell>
       </div>
     )
   }
 
-  const status = statusConfig[invoice.status] || { label: invoice.status, color: 'bg-muted text-muted-foreground' }
+  const status = getStatus(invoice.status)
   const partyName = invoice.type === 'client' ? invoice.client_name : invoice.supplier_name
   const partyPhone = invoice.type === 'client' ? invoice.client_phone : invoice.supplier_phone
   const partyAddress = invoice.type === 'client' ? invoice.client_address : invoice.supplier_address
@@ -233,238 +239,241 @@ export default function InvoiceDetailPage() {
   const canAct = invoice.status !== 'cancelled'
   const productItems = invoice.items?.filter(i => i.item_type === 'product') || []
   const packagingItems = invoice.items?.filter(i => i.item_type === 'packaging') || []
+  const remaining = Number(invoice.remaining_amount)
+
+  const itemSections = [
+    { key: 'product', title: 'Produits', fallback: 'Produit', items: productItems },
+    { key: 'packaging', title: 'Emballages', fallback: 'Emballage', items: packagingItems },
+  ].filter((s) => s.items.length > 0)
 
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
-      {/* Header - hidden on print */}
+    <div className="flex min-h-screen flex-col">
+      {/* En-tête — masqué à l'impression */}
       <div className="no-print">
         <DashboardHeader
           title={`Facture ${invoice.invoice_number}`}
-          actions={
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                <Link href="/dashboard/invoices">
-                  <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-                  Retour
-                </Link>
-              </Button>
+          description={invoice.type === 'client' ? 'Facture client' : 'Facture fournisseur'}
+        />
+      </div>
+
+      <PageShell>
+        {/* Retour, titre, statut, actions — masqués à l'impression */}
+        <div className="no-print space-y-3">
+          <BackLink />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <h2 className="truncate font-mono text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                {invoice.invoice_number}
+              </h2>
+              <StatusBadge label={status.label} tone={status.tone} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               {canAct && (
                 isPaidOrPartial ? (
-                  <Button variant="outline" size="sm" className="h-8 text-xs text-destructive" onClick={() => setConfirmAction('cancel')}>
-                    <Ban className="h-3.5 w-3.5 mr-1" />
+                  <Button variant="outline" onClick={() => setConfirmAction('cancel')} className="text-destructive hover:text-destructive">
+                    <Ban className="h-4 w-4" aria-hidden="true" />
                     <span className="hidden sm:inline">Annuler la facture</span>
                     <span className="sm:hidden">Annuler</span>
                   </Button>
                 ) : (
-                  <Button variant="outline" size="sm" className="h-8 text-xs text-destructive" onClick={() => setConfirmAction('delete')}>
-                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  <Button variant="outline" onClick={() => setConfirmAction('delete')} className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                     Supprimer
                   </Button>
                 )
               )}
-              <Button size="sm" className="h-8 text-xs" onClick={handlePrint}>
-                <Printer className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden sm:inline">Imprimer / PDF</span>
-                <span className="sm:hidden">PDF</span>
+              <Button variant="brand" onClick={handlePrint}>
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Imprimer / PDF
               </Button>
-            </div>
-          }
-        />
-      </div>
-
-      <main className="flex-1 p-4 lg:p-6">
-        {/* Invoice Document */}
-        <div
-          ref={printRef}
-          className="bg-card rounded-lg border border-border max-w-3xl mx-auto print:border-none print:shadow-none print:max-w-none"
-        >
-          {/* Invoice Header */}
-          <div className="p-6 sm:p-8 border-b border-border print:p-8">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-                    <span className="text-white text-lg font-bold">B</span>
-                  </div>
-                  <div>
-                    <h1 className="text-lg font-bold text-foreground">
-                      {invoice.company_name || 'B-Stock'}
-                    </h1>
-                    {invoice.company_address && (
-                      <p className="text-xs text-muted-foreground">{invoice.company_address}</p>
-                    )}
-                  </div>
-                </div>
-                {invoice.company_phone && (
-                  <p className="text-xs text-muted-foreground">Tél: {invoice.company_phone}</p>
-                )}
-                {invoice.company_email && (
-                  <p className="text-xs text-muted-foreground">Email: {invoice.company_email}</p>
-                )}
-              </div>
-
-              <div className="text-left sm:text-right">
-                <h2 className="text-2xl font-bold text-foreground tracking-tight">FACTURE</h2>
-                <p className="text-sm font-mono font-medium text-brand-strong mt-1">
-                  {invoice.invoice_number}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Date: {formatDateShort(invoice.created_at)}
-                </p>
-                <Badge className={`mt-2 text-xs font-medium ${status.color} border-none no-print`}>
-                  {status.label}
-                </Badge>
-              </div>
-            </div>
-          </div>
-
-          {/* Client/Supplier Info */}
-          <div className="p-6 sm:p-8 border-b border-border print:p-8">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-2">
-                  {invoice.type === 'client' ? 'Facturé à' : 'Fournisseur'}
-                </p>
-                <p className="text-sm font-semibold text-foreground">{partyName || '—'}</p>
-                {partyPhone && <p className="text-xs text-muted-foreground mt-0.5">Tél: {partyPhone}</p>}
-                {partyAddress && <p className="text-xs text-muted-foreground mt-0.5">{partyAddress}</p>}
-                {partyEmail && <p className="text-xs text-muted-foreground mt-0.5">{partyEmail}</p>}
-              </div>
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-2">
-                  Détails
-                </p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Type</span>
-                    <span className="font-medium text-foreground/80">
-                      {invoice.type === 'client' ? 'Facture client' : 'Facture fournisseur'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Statut</span>
-                    <span className="font-medium text-foreground/80">{status.label}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Items Table */}
-          <div className="p-6 sm:p-8 print:p-8">
-            {productItems.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Produits</h3>
-                <div className="border border-border rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-muted/50 border-b border-border">
-                        <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Description</th>
-                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Qté</th>
-                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
-                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {productItems.map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-4 py-2.5 text-sm text-foreground">
-                            {item.product_name || item.description || 'Produit'}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right">{formatNumber(item.quantity)}</td>
-                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right hidden sm:table-cell">
-                            {formatCurrency(Number(item.unit_price))}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
-                            {formatCurrency(Number(item.total_price))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {packagingItems.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Emballages</h3>
-                <div className="border border-border rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-muted/50 border-b border-border">
-                        <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Description</th>
-                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Qté</th>
-                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
-                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {packagingItems.map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-4 py-2.5 text-sm text-foreground">
-                            {item.product_name || item.description || 'Emballage'}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right">{formatNumber(item.quantity)}</td>
-                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right hidden sm:table-cell">
-                            {formatCurrency(Number(item.unit_price))}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
-                            {formatCurrency(Number(item.total_price))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Totals */}
-            <div className="flex justify-end">
-              <div className="w-full sm:w-72 space-y-2 pt-4 border-t border-border">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total HT</span>
-                  <span className="font-medium text-foreground">{formatCurrency(Number(invoice.total_amount))}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total TTC</span>
-                  <span className="font-semibold text-foreground">{formatCurrency(Number(invoice.total_amount))}</span>
-                </div>
-                <div className="flex justify-between text-sm pt-2 border-t border-border">
-                  <span className="text-muted-foreground">Montant payé</span>
-                  <span className="font-medium text-success">{formatCurrency(Number(invoice.amount_paid))}</span>
-                </div>
-                {Number(invoice.remaining_amount) > 0 && (
-                  <div className="flex justify-between text-sm font-bold pt-2 border-t border-border">
-                    <span className="text-destructive">Reste à payer</span>
-                    <span className="text-destructive">{formatCurrency(Number(invoice.remaining_amount))}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Notes */}
-            {invoice.notes && (
-              <div className="mt-8 pt-4 border-t border-border">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-1">Notes</p>
-                <p className="text-xs text-muted-foreground">{invoice.notes}</p>
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="mt-8 pt-4 border-t border-border text-center">
-              <p className="text-[10px] text-muted-foreground/70">
-                Merci pour votre confiance — {invoice.company_name || 'B-Stock'}
-              </p>
             </div>
           </div>
         </div>
-      </main>
+
+        <div className="grid gap-4 lg:grid-cols-3 print:block">
+          {/* Document imprimable */}
+          <div
+            ref={printRef}
+            className="overflow-hidden rounded-xl border border-border bg-card lg:col-span-2 print:rounded-none print:border-none print:bg-white print:text-black print:shadow-none"
+          >
+            {/* Émetteur / numéro */}
+            <div className="border-b border-border p-6 sm:p-8 print:p-8">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <div className="mb-2 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary print:border print:border-black print:bg-white">
+                      <span className="text-lg font-semibold text-primary-foreground print:text-black">B</span>
+                    </div>
+                    <div>
+                      <p className="text-base font-semibold text-foreground print:text-black">
+                        {invoice.company_name || 'B-Stock'}
+                      </p>
+                      {invoice.company_address && (
+                        <p className="text-xs text-muted-foreground">{invoice.company_address}</p>
+                      )}
+                    </div>
+                  </div>
+                  {invoice.company_phone && (
+                    <p className="text-xs text-muted-foreground">Tél. {invoice.company_phone}</p>
+                  )}
+                  {invoice.company_email && (
+                    <p className="text-xs text-muted-foreground">{invoice.company_email}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-left sm:text-right">
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground print:text-black">Facture</h1>
+                  <p className="font-mono text-sm font-medium text-foreground print:text-black">
+                    {invoice.invoice_number}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Émise le {formatDateShort(invoice.created_at)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tiers / détails */}
+            <div className="border-b border-border p-6 sm:p-8 print:p-8">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    {invoice.type === 'client' ? 'Facturé à' : 'Fournisseur'}
+                  </p>
+                  <p className="text-sm font-semibold text-foreground print:text-black">{partyName || '—'}</p>
+                  {partyPhone && <p className="mt-0.5 text-xs text-muted-foreground">Tél. {partyPhone}</p>}
+                  {partyAddress && <p className="mt-0.5 text-xs text-muted-foreground">{partyAddress}</p>}
+                  {partyEmail && <p className="mt-0.5 text-xs text-muted-foreground">{partyEmail}</p>}
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Détails</p>
+                  <dl className="space-y-1 text-xs">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">Type</dt>
+                      <dd className="font-medium text-foreground print:text-black">
+                        {invoice.type === 'client' ? 'Facture client' : 'Facture fournisseur'}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">Statut</dt>
+                      <dd className="font-medium text-foreground print:text-black">{status.label}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            </div>
+
+            {/* Lignes */}
+            <div className="space-y-6 p-6 sm:p-8 print:p-8">
+              {itemSections.map((section) => (
+                <div key={section.key}>
+                  <h3 className="mb-3 text-sm font-semibold text-foreground print:text-black">{section.title}</h3>
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border bg-muted/50 print:bg-white">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Désignation</th>
+                            <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Qté</th>
+                            <th className="hidden px-4 py-2 text-right text-xs font-medium text-muted-foreground sm:table-cell print:table-cell">Prix unitaire</th>
+                            <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {section.items.map((item) => (
+                            <tr key={item.id}>
+                              <td className="px-4 py-2.5 text-sm text-foreground print:text-black">
+                                {item.product_name || item.description || section.fallback}
+                              </td>
+                              <td className="tabular px-4 py-2.5 text-right text-sm text-muted-foreground">{formatNumber(item.quantity)}</td>
+                              <td className="tabular hidden px-4 py-2.5 text-right text-sm text-muted-foreground sm:table-cell print:table-cell">
+                                {formatCurrency(Number(item.unit_price))}
+                              </td>
+                              <td className="tabular px-4 py-2.5 text-right text-sm font-medium text-foreground print:text-black">
+                                {formatCurrency(Number(item.total_price))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Totaux */}
+              <div className="flex justify-end">
+                <dl className="w-full space-y-2 border-t border-border pt-4 text-sm sm:w-72">
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Total HT</dt>
+                    <dd className="tabular font-medium text-foreground print:text-black">{formatCurrency(Number(invoice.total_amount))}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Total TTC</dt>
+                    <dd className="tabular font-semibold text-foreground print:text-black">{formatCurrency(Number(invoice.total_amount))}</dd>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-2">
+                    <dt className="text-muted-foreground">Montant payé</dt>
+                    <dd className="tabular font-medium text-success print:text-black">{formatCurrency(Number(invoice.amount_paid))}</dd>
+                  </div>
+                  {remaining > 0 && (
+                    <div className="flex justify-between border-t border-border pt-2 font-semibold">
+                      <dt className="text-destructive print:text-black">Reste à payer</dt>
+                      <dd className="tabular text-destructive print:text-black">{formatCurrency(remaining)}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+
+              {/* Notes */}
+              {invoice.notes && (
+                <div className="border-t border-border pt-4">
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Notes</p>
+                  <p className="whitespace-pre-line text-sm text-foreground print:text-black">{invoice.notes}</p>
+                </div>
+              )}
+
+              {/* Pied de page */}
+              <div className="border-t border-border pt-4 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Merci pour votre confiance — {invoice.company_name || 'B-Stock'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Résumé — masqué à l'impression */}
+          <div className="no-print space-y-4">
+            <Panel title="Règlement" description={remaining > 0 ? 'Montant restant à encaisser' : 'Facture entièrement réglée'}>
+              <dl className="space-y-3 px-5 py-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Total</dt>
+                  <dd className="tabular font-medium text-foreground">{formatCurrency(Number(invoice.total_amount))}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Déjà payé</dt>
+                  <dd className="tabular font-medium text-success">{formatCurrency(Number(invoice.amount_paid))}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+                  <dt className="font-medium text-foreground">Reste à payer</dt>
+                  <dd className={`tabular text-lg font-semibold ${remaining > 0 ? 'text-destructive' : 'text-foreground'}`}>
+                    {remaining > 0 ? formatCurrency(remaining) : 'Soldé'}
+                  </dd>
+                </div>
+              </dl>
+            </Panel>
+
+            <Panel title={invoice.type === 'client' ? 'Client' : 'Fournisseur'}>
+              <div className="space-y-1 px-5 py-4 text-sm">
+                <p className="font-medium text-foreground">{partyName || '—'}</p>
+                {partyPhone && <p className="text-xs text-muted-foreground">Tél. {partyPhone}</p>}
+                {partyAddress && <p className="text-xs text-muted-foreground">{partyAddress}</p>}
+                {partyEmail && <p className="text-xs text-muted-foreground">{partyEmail}</p>}
+              </div>
+            </Panel>
+          </div>
+        </div>
+      </PageShell>
 
       <AlertDialog open={confirmAction !== null} onOpenChange={(o) => { if (!o && !acting) setConfirmAction(null) }}>
         <AlertDialogContent>
@@ -487,12 +496,23 @@ export default function InvoiceDetailPage() {
               disabled={acting}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {acting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {acting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               {confirmAction === 'delete' ? 'Oui, supprimer' : 'Oui, annuler la facture'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  )
+}
+
+function BackLink() {
+  return (
+    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
+      <Link href="/dashboard/invoices">
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Factures
+      </Link>
+    </Button>
   )
 }

@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Loader2, ShieldCheck, KeyRound } from 'lucide-react'
+import { ArrowLeft, Loader2, KeyRound, MonitorSmartphone } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { signOut } from 'next-auth/react'
@@ -70,42 +71,37 @@ export default function SecuritySettingsPage() {
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Sécurité et accès"
                 description="Gérez la sécurité de votre compte"
             />
-            <main className="flex-1 p-4 lg:p-6 ">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
+            <PageShell>
+                <div>
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
                         <Link href="/dashboard/settings">
-                            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
-                            Retour aux paramètres
+                            <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                            Paramètres
                         </Link>
                     </Button>
                 </div>
 
-                <div className="max-w-2xl space-y-6">
-                    <Card className="rounded-lg border-border shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-8 border-b border-border flex flex-row items-center gap-4">
-                            <div className="h-12 w-12 rounded-full bg-brand-soft flex items-center justify-center text-brand-strong">
-                                <ShieldCheck className="h-6 w-6" aria-hidden="true" />
-                            </div>
-                            <div>
-                                <CardTitle className="text-xl font-semibold text-foreground">Changer le mot de passe</CardTitle>
-                                <CardDescription>
-                                    Au moins 8 caractères, avec au moins une lettre et un chiffre. Après le changement,
-                                    toutes vos sessions (sur tous vos appareils) sont fermées et vous devrez vous reconnecter.
-                                </CardDescription>
-                            </div>
+                <div className="max-w-3xl space-y-6">
+                    <Card className="gap-0 overflow-hidden pb-0">
+                        <CardHeader className="border-b border-border">
+                            <CardTitle className="text-[15px]">Mot de passe</CardTitle>
+                            <CardDescription>
+                                Au moins 8 caractères, avec au moins une lettre et un chiffre.
+                            </CardDescription>
                         </CardHeader>
                         <form onSubmit={handleUpdatePassword}>
-                            <CardContent className="p-8 space-y-6">
+                            <CardContent className="space-y-4 py-5">
                                 <div className="space-y-2">
                                     <Label htmlFor="current">Mot de passe actuel</Label>
                                     <Input
                                         type="password"
                                         id="current"
+                                        className="h-10 md:max-w-[calc(50%-0.5rem)]"
                                         autoComplete="current-password"
                                         aria-describedby="current-hint"
                                         value={passwords.current}
@@ -117,12 +113,13 @@ export default function SecuritySettingsPage() {
                                         Laissez vide si vous vous connectez uniquement avec Google et n&apos;avez jamais défini de mot de passe.
                                     </p>
                                 </div>
-                                <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="grid gap-4 md:grid-cols-2">
                                     <div className="space-y-2">
                                         <Label htmlFor="newPass">Nouveau mot de passe</Label>
                                         <Input
                                             type="password"
                                             id="newPass"
+                                            className="h-10"
                                             autoComplete="new-password"
                                             required
                                             value={passwords.newPass}
@@ -133,10 +130,11 @@ export default function SecuritySettingsPage() {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="confirm">Confirmer le nouveau</Label>
+                                        <Label htmlFor="confirm">Confirmer le nouveau mot de passe</Label>
                                         <Input
                                             type="password"
                                             id="confirm"
+                                            className="h-10"
                                             autoComplete="new-password"
                                             required
                                             value={passwords.confirm}
@@ -148,7 +146,10 @@ export default function SecuritySettingsPage() {
                                     </div>
                                 </div>
                             </CardContent>
-                            <CardFooter className="px-8 py-4 border-t border-border bg-muted/50 flex justify-end">
+                            <CardFooter className="flex flex-wrap justify-end gap-2 border-t border-border py-4">
+                                <Button type="button" variant="outline" asChild>
+                                    <Link href="/dashboard/settings">Annuler</Link>
+                                </Button>
                                 <Button type="submit" disabled={isLoading || !passwords.newPass || !passwords.confirm}>
                                     {isLoading ? (
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
@@ -160,8 +161,24 @@ export default function SecuritySettingsPage() {
                             </CardFooter>
                         </form>
                     </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-[15px]">Sessions</CardTitle>
+                            <CardDescription>Appareils connectés à votre compte.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="flex items-start gap-3 rounded-lg bg-muted px-4 py-3">
+                                <MonitorSmartphone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                                <p className="text-sm text-muted-foreground">
+                                    Après un changement de mot de passe, toutes vos sessions (sur tous vos appareils) sont
+                                    fermées et vous devrez vous reconnecter.
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
-            </main>
+            </PageShell>
         </div>
     )
 }

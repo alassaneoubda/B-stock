@@ -1,4 +1,5 @@
-'use client'
+// Pas de "use client" : ces composants sont utilisables depuis une page serveur
+// (icône Lucide en prop) comme depuis un composant client (onClick / onRetry).
 
 import type { ReactNode } from 'react'
 import Link from 'next/link'
@@ -29,16 +30,16 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-zinc-200 px-6 py-12 text-center',
+        'flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-6 py-12 text-center',
         className
       )}
     >
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Icon className="h-5 w-5" aria-hidden="true" />
       </div>
       <div className="max-w-sm space-y-1">
-        <p className="text-sm font-semibold text-zinc-900">{title}</p>
-        {description && <p className="text-sm text-zinc-500">{description}</p>}
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>
       {action &&
         (action.href ? (
@@ -69,16 +70,16 @@ export function ErrorState({
     <div
       role="alert"
       className={cn(
-        'flex flex-col items-center justify-center gap-3 rounded-xl border border-red-100 bg-red-50/50 px-6 py-12 text-center',
+        'flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-6 py-12 text-center',
         className
       )}
     >
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-red-600">
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
         <AlertTriangle className="h-5 w-5" aria-hidden="true" />
       </div>
       <div className="max-w-sm space-y-1">
-        <p className="text-sm font-semibold text-zinc-900">{title}</p>
-        <p className="text-sm text-zinc-600">{description}</p>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
       </div>
       {onRetry && (
         <Button size="sm" variant="outline" onClick={onRetry} className="mt-1">
@@ -110,7 +111,7 @@ export function TableSkeleton({ rows = 6, columns = 4 }: { rows?: number; column
 export function PageSkeleton({ children }: { children?: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col" aria-busy="true" aria-label="Chargement de la page">
-      <div className="flex h-14 items-center gap-3 border-b border-zinc-200/60 px-4 lg:px-6">
+      <div className="flex h-14 items-center gap-3 border-b border-border/60 px-4 lg:px-6">
         <Skeleton className="h-5 w-40" />
       </div>
       <div className="flex-1 space-y-6 p-4 lg:p-6">

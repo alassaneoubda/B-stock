@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +24,7 @@ const supplierSchema = z.object({
     type: z.enum(['manufacturer', 'distributor', 'wholesaler']).optional(),
     contactName: z.string().optional(),
     phone: z.string().optional(),
-    email: z.string().email('Email invalide').optional().or(z.literal('')),
+    email: z.string().email('Adresse e-mail invalide').optional().or(z.literal('')),
     address: z.string().optional(),
     notes: z.string().optional(),
 })
@@ -104,127 +105,140 @@ export default function EditSupplierPage() {
         }
     }
 
+    const backLink = (
+        <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
+            <Link href={`/dashboard/suppliers/${supplierId}`}>
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Fiche fournisseur
+            </Link>
+        </Button>
+    )
+
     if (isFetching) {
         return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Modifier le fournisseur" description="Chargement..." />
-                <main className="flex-1 p-4 lg:p-6">
-                    <div className="max-w-2xl">
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Modifier le fournisseur" description="Chargement…" />
+                <PageShell>
+                    <div className="mx-auto w-full max-w-3xl space-y-6">
+                        {backLink}
                         <TableSkeleton rows={6} columns={2} />
                     </div>
-                </main>
+                </PageShell>
             </div>
         )
     }
 
     if (loadError) {
         return (
-            <div className="flex flex-col min-h-screen">
+            <div className="flex min-h-screen flex-col">
                 <DashboardHeader title="Modifier le fournisseur" />
-                <main className="flex-1 p-4 lg:p-6">
-                    <div className="max-w-2xl">
+                <PageShell>
+                    <div className="mx-auto w-full max-w-3xl space-y-6">
+                        {backLink}
                         <ErrorState
                             title="Impossible de charger le fournisseur"
                             description={loadError}
                             onRetry={() => setReloadKey((k) => k + 1)}
                         />
                     </div>
-                </main>
+                </PageShell>
             </div>
         )
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
-            <DashboardHeader title="Modifier le fournisseur" description="Mettre à jour les informations" />
-            <main className="flex-1 p-4 lg:p-6">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
-                        <Link href="/dashboard/suppliers">
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-                        </Link>
-                    </Button>
-                </div>
+        <div className="flex min-h-screen flex-col">
+            <DashboardHeader title="Modifier le fournisseur" description="Mettre à jour les informations du fournisseur" />
+            <PageShell>
+                <form onSubmit={handleSubmit(onSubmit)} className="mx-auto w-full max-w-3xl space-y-6">
+                    {backLink}
 
-                <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                        <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                             {error}
                         </div>
                     )}
 
                     <Card>
                         <CardHeader>
-                            <CardTitle>Informations fournisseur</CardTitle>
-                            <CardDescription>Coordonnées et type de fournisseur</CardDescription>
+                            <CardTitle>Identité</CardTitle>
+                            <CardDescription>Nom du fournisseur, type et personne à contacter.</CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-2">
-                                    <Label htmlFor="name">Nom *</Label>
-                                    <Input id="name" {...register('name')} disabled={isLoading} />
-                                    {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="type">Type</Label>
-                                    <Select
-                                        onValueChange={(value) => setValue('type', value as SupplierForm['type'])}
-                                        value={currentType}
-                                        disabled={isLoading}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Sélectionner un type" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {supplierTypes.map((t) => (
-                                                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                        <CardContent className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2 md:col-span-2">
+                                <Label htmlFor="name">Nom ou raison sociale *</Label>
+                                <Input id="name" {...register('name')} disabled={isLoading} aria-invalid={!!errors.name} />
+                                {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
                             </div>
-
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-2">
-                                    <Label htmlFor="contactName">Personne de contact</Label>
-                                    <Input id="contactName" {...register('contactName')} disabled={isLoading} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="phone">Téléphone</Label>
-                                    <Input id="phone" {...register('phone')} disabled={isLoading} />
-                                </div>
-                            </div>
-
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="space-y-2">
-                                    <Label htmlFor="email">Email</Label>
-                                    <Input id="email" type="email" {...register('email')} disabled={isLoading} />
-                                    {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="address">Adresse</Label>
-                                    <Input id="address" {...register('address')} disabled={isLoading} />
-                                </div>
-                            </div>
-
                             <div className="space-y-2">
-                                <Label htmlFor="notes">Notes</Label>
-                                <Textarea id="notes" {...register('notes')} disabled={isLoading} />
+                                <Label htmlFor="type">Type de fournisseur</Label>
+                                <Select
+                                    onValueChange={(value) => setValue('type', value as SupplierForm['type'])}
+                                    value={currentType}
+                                    disabled={isLoading}
+                                >
+                                    <SelectTrigger id="type" className="w-full">
+                                        <SelectValue placeholder="Sélectionner un type" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {supplierTypes.map((t) => (
+                                            <SelectItem key={t.value} value={t.value}>
+                                                {t.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="contactName">Nom du contact</Label>
+                                <Input id="contactName" {...register('contactName')} disabled={isLoading} />
                             </div>
                         </CardContent>
                     </Card>
 
-                    <div className="flex justify-end gap-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Coordonnées</CardTitle>
+                            <CardDescription>Pour joindre le fournisseur et préparer vos commandes.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="phone">Téléphone</Label>
+                                <Input id="phone" type="tel" {...register('phone')} disabled={isLoading} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="email">E-mail</Label>
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    {...register('email')}
+                                    disabled={isLoading}
+                                    aria-invalid={!!errors.email}
+                                />
+                                {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+                            </div>
+                            <div className="space-y-2 md:col-span-2">
+                                <Label htmlFor="address">Adresse</Label>
+                                <Input id="address" {...register('address')} disabled={isLoading} />
+                            </div>
+                            <div className="space-y-2 md:col-span-2">
+                                <Label htmlFor="notes">Notes</Label>
+                                <Textarea id="notes" {...register('notes')} disabled={isLoading} />
+                                <p className="text-xs text-muted-foreground">Visible uniquement par votre équipe.</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <div className="flex justify-end gap-2">
                         <Button type="button" variant="outline" asChild disabled={isLoading}>
                             <Link href="/dashboard/suppliers">Annuler</Link>
                         </Button>
                         <Button type="submit" disabled={isLoading}>
-                            {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                            Enregistrer
+                            {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                            {isLoading ? 'Enregistrement…' : 'Enregistrer'}
                         </Button>
                     </div>
                 </form>
-            </main>
+            </PageShell>
         </div>
     )
 }

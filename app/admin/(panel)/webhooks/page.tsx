@@ -5,7 +5,7 @@ import useSWR from 'swr'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { PageShell, PageIntro, StatCard, StatusBadge } from '@/components/app/blocks'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,25 +81,23 @@ export default function AdminWebhooksPage() {
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Webhooks GeniusPay</h1>
-        <p className="text-sm text-muted-foreground">Événements reçus, diagnostic et rejeu</p>
-      </header>
+    <PageShell>
+      <PageIntro title="Webhooks GeniusPay" description="Événements reçus, diagnostic et rejeu" />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        <Mini label="Total" value={summary?.total ?? 0} />
-        <Mini label="Traités" value={summary?.processed ?? 0} tone="green" />
-        <Mini label="Échoués" value={summary?.failed ?? 0} tone="red" />
-        <Mini label="Rejoués" value={summary?.replayed ?? 0} tone="blue" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={Webhook} label="Total" value={formatNumber(summary?.total ?? 0)} />
+        <StatCard icon={CheckCircle2} label="Traités" value={formatNumber(summary?.processed ?? 0)} tone="success" />
+        <StatCard icon={XCircle} label="Échoués" value={formatNumber(summary?.failed ?? 0)} tone="danger" />
+        <StatCard icon={RefreshCw} label="Rejoués" value={formatNumber(summary?.replayed ?? 0)} tone="info" />
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
             placeholder="Rechercher (référence, type)…"
-            className="pl-9 h-10"
+            className="h-10 pl-9"
+            aria-label="Rechercher"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -107,18 +105,20 @@ export default function AdminWebhooksPage() {
             }}
           />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer par statut">
           {statusFilters.map((f) => (
             <button
               key={f.value}
+              type="button"
+              aria-pressed={status === f.value}
               onClick={() => {
                 setStatus(f.value)
                 setPage(1)
               }}
-              className={`px-3 h-10 rounded-lg text-sm font-medium transition-colors ${
+              className={`h-10 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 status === f.value
-                  ? 'bg-primary text-white'
-                  : 'bg-card text-muted-foreground hover:bg-muted border border-border'
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               {f.label}
@@ -127,7 +127,7 @@ export default function AdminWebhooksPage() {
         </div>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
           <div className="p-5">
             <TableSkeleton columns={6} />
@@ -145,7 +145,7 @@ export default function AdminWebhooksPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
+                <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium">Type</th>
                   <th className="px-5 py-3 font-medium">Référence</th>
@@ -156,11 +156,11 @@ export default function AdminWebhooksPage() {
               </thead>
               <tbody>
                 {events.map((e) => (
-                  <tr key={e.id} className="border-b border-border hover:bg-muted/50">
-                    <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">
+                  <tr key={e.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
+                    <td className="tabular whitespace-nowrap px-5 py-3 text-muted-foreground">
                       {formatDateTime(e.created_at)}
                     </td>
-                    <td className="px-5 py-3 font-mono text-xs text-foreground/80">{e.event_type || '—'}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-foreground">{e.event_type || '—'}</td>
                     <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{e.reference || '—'}</td>
                     <td className="px-5 py-3">
                       {e.signature_valid === true ? (
@@ -168,13 +168,13 @@ export default function AdminWebhooksPage() {
                       ) : e.signature_valid === false ? (
                         <XCircle className="h-4 w-4 text-destructive" aria-label="Signature invalide" />
                       ) : (
-                        <span className="text-muted-foreground/70">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="px-5 py-3">
-                      <StatusBadge status={e.status} />
+                      <EventStatusBadge status={e.status} />
                       {e.error && (
-                        <p className="text-xs text-destructive mt-0.5 max-w-[200px] truncate" title={e.error}>
+                        <p className="mt-1 max-w-[220px] truncate text-xs text-destructive" title={e.error}>
                           {e.error}
                         </p>
                       )}
@@ -183,9 +183,9 @@ export default function AdminWebhooksPage() {
                       {e.event_type === 'payment.success' && (
                         <Button size="sm" variant="outline" onClick={() => setToReplay(e)} disabled={!!busy}>
                           {busy === e.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                           ) : (
-                            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                           )}
                           Rejouer
                         </Button>
@@ -200,7 +200,7 @@ export default function AdminWebhooksPage() {
       </Card>
 
       {pagination && pagination.pages > 1 && (
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             Page {pagination.page} / {pagination.pages}
           </p>
@@ -209,17 +209,17 @@ export default function AdminWebhooksPage() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
               aria-label="Page précédente"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
               aria-label="Page suivante"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -244,37 +244,24 @@ export default function AdminWebhooksPage() {
                 if (toReplay) replay(toReplay)
               }}
             >
-              {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               Rejouer
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   )
 }
 
-function Mini({ label, value, tone }: { label: string; value: number; tone?: 'green' | 'red' | 'blue' }) {
-  const tones: Record<string, string> = {
-    green: 'text-success',
-    red: 'text-destructive',
-    blue: 'text-brand-strong',
+function EventStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; tone: 'success' | 'danger' | 'info' | 'default' }> = {
+    processed: { label: 'Traité', tone: 'success' },
+    failed: { label: 'Échoué', tone: 'danger' },
+    replayed: { label: 'Rejoué', tone: 'info' },
+    received: { label: 'Reçu', tone: 'default' },
+    ignored: { label: 'Ignoré', tone: 'default' },
   }
-  return (
-    <Card className="p-4">
-      <p className={`text-2xl font-bold ${tone ? tones[tone] : 'text-foreground'}`}>{formatNumber(value)}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
-    </Card>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    processed: 'bg-success-soft text-success hover:bg-success-soft',
-    failed: 'bg-destructive/10 text-destructive hover:bg-destructive/10',
-    replayed: 'bg-brand-soft text-brand-strong hover:bg-brand-soft',
-    received: 'bg-muted text-muted-foreground hover:bg-muted',
-    ignored: 'bg-muted text-muted-foreground hover:bg-muted',
-  }
-  return <Badge className={map[status] || 'bg-muted text-muted-foreground'}>{status}</Badge>
+  const s = map[status] || { label: status, tone: 'default' as const }
+  return <StatusBadge label={s.label} tone={s.tone} />
 }

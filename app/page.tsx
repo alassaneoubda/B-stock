@@ -1,9 +1,9 @@
 import { AuthModalProvider } from '@/components/auth/auth-modal'
 import { LandingHeader } from '@/components/landing/landing-header'
 import { LandingHero } from '@/components/landing/landing-hero'
-import { LandingProduct } from '@/components/landing/landing-product'
 import { LandingFeatureBand } from '@/components/landing/landing-feature-band'
 import { LandingStories } from '@/components/landing/landing-stories'
+import { LandingPos } from '@/components/landing/landing-pos'
 import { LandingHowItWorks } from '@/components/landing/landing-how'
 import { LandingPricing } from '@/components/landing/landing-pricing'
 import { LandingTestimonials } from '@/components/landing/landing-testimonials'
@@ -32,17 +32,13 @@ export default async function HomePage() {
 
   return (
     <AuthModalProvider>
-      <div className="min-h-screen bg-[#F7F4EF] text-[#111827]">
+      <div className="min-h-screen bg-background text-foreground">
         <LandingHeader links={content.nav.header} platformName={content.platformName} />
         <main>
-          <LandingHero
-            section={content.sections.hero}
-            trialDays={content.trialDays}
-            platformName={content.platformName}
-          />
-          <LandingProduct />
+          <LandingHero section={content.sections.hero} trialDays={content.trialDays} platformName={content.platformName} />
           <LandingFeatureBand />
           <LandingStories features={content.features} />
+          <LandingPos />
           <LandingHowItWorks section={content.sections.how_it_works} />
           <LandingPricing plans={content.plans} />
           <LandingTestimonials items={content.testimonials} />

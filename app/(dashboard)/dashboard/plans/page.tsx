@@ -4,14 +4,13 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import {
   Check,
   Crown,
   Loader2,
   Sparkles,
   Zap,
-  Building2,
   ArrowLeft,
   CheckCircle2,
   XCircle,
@@ -191,307 +190,336 @@ export default function PlansPage() {
     setLoadingCheckout(null)
   }
 
+  // Sélecteur de durée commun quand toutes les offres à plusieurs durées proposent les mêmes
+  const multiPricePlans = plans.filter((p) => p.prices.length > 1)
+  const sharedIntervals =
+    multiPricePlans.length > 0 &&
+    multiPricePlans.every(
+      (p) => p.prices.map((pr) => pr.interval).join('|') === multiPricePlans[0].prices.map((pr) => pr.interval).join('|')
+    )
+      ? multiPricePlans[0].prices.map((pr) => pr.interval)
+      : null
+  const sharedSelected = sharedIntervals ? selectedIntervals[multiPricePlans[0].id] || sharedIntervals[0] : null
+  const selectSharedInterval = (interval: string) =>
+    setSelectedIntervals((prev) => {
+      const next = { ...prev }
+      plans.forEach((p) => {
+        if (p.prices.some((pr) => pr.interval === interval)) next[p.id] = interval
+      })
+      return next
+    })
+
   if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Choisir un plan" />
-        <main className="flex-1 p-4 lg:p-6">
-          <div className="max-w-5xl mx-auto space-y-6" aria-busy="true" aria-label="Chargement des offres">
-            <Skeleton className="h-28 rounded-lg" />
-            <div className="grid gap-4 sm:gap-6 md:grid-cols-3">
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Offres et tarifs" />
+        <PageShell className="max-w-5xl">
+          <div className="space-y-6" aria-busy="true" aria-label="Chargement des offres">
+            <Skeleton className="h-28 rounded-xl" />
+            <div className="grid gap-4 md:grid-cols-3">
               {Array.from({ length: 3 }, (_, i) => (
                 <Skeleton key={i} className="h-96 rounded-xl" />
               ))}
             </div>
           </div>
-        </main>
+        </PageShell>
       </div>
     )
   }
 
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Choisir un plan" />
-        <main className="flex-1 p-4 lg:p-6">
-          <div className="max-w-5xl mx-auto space-y-6">
-            <PaymentBanner state={paymentState} message={paymentMessage} />
-            <ErrorState title="Impossible de charger les offres" description={loadError} onRetry={fetchData} />
-          </div>
-        </main>
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Offres et tarifs" />
+        <PageShell className="max-w-5xl">
+          <PaymentBanner state={paymentState} message={paymentMessage} />
+          <ErrorState title="Impossible de charger les offres" description={loadError} onRetry={fetchData} />
+        </PageShell>
       </div>
     )
   }
 
+  const subscriptionTone: 'brand' | 'success' | 'danger' = subscription
+    ? subscription.status === 'trialing'
+      ? 'brand'
+      : subscription.isActive
+        ? 'success'
+        : 'danger'
+    : 'success'
+
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
+    <div className="flex min-h-screen flex-col">
       <DashboardHeader
-        title="Choisir un plan"
+        title="Offres et tarifs"
+        description="Choisissez la formule adaptée à votre activité"
         actions={
-          <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+          <Button variant="ghost" size="sm" className="hidden sm:inline-flex" asChild>
             <Link href="/dashboard">
-              <ArrowLeft className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
-              Retour
+              <ArrowLeft aria-hidden="true" />
+              Tableau de bord
             </Link>
           </Button>
         }
       />
 
-      <main className="flex-1 p-4 lg:p-6">
-        <div className="max-w-5xl mx-auto space-y-6">
-          {/* Success / Cancel banners */}
-          <PaymentBanner state={paymentState} message={paymentMessage} />
-          {canceled && paymentState === 'idle' && (
-            <div className="flex items-center gap-3 bg-warning-soft border border-warning/30 rounded-lg p-4">
-              <XCircle className="h-5 w-5 text-warning-foreground shrink-0" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-semibold text-warning-foreground">Paiement annulé</p>
-                <p className="text-xs text-warning-foreground">Aucun montant n&apos;a été débité. Vous pouvez réessayer à tout moment.</p>
-              </div>
+      <PageShell className="max-w-5xl">
+        {/* Retour de paiement / annulation */}
+        <PaymentBanner state={paymentState} message={paymentMessage} />
+        {canceled && paymentState === 'idle' && (
+          <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning-soft p-4" role="status">
+            <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-warning-foreground">Paiement annulé</p>
+              <p className="text-[13px] text-warning-foreground/80">Aucun montant n’a été débité. Vous pouvez réessayer à tout moment.</p>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Current plan status */}
-          {subscription && (
-            <div className={`rounded-lg border p-4 sm:p-6 ${
-              subscription.status === 'trialing'
-                ? 'bg-brand-soft border-brand/40'
-                : subscription.isActive
-                  ? 'bg-card border-border'
-                  : 'bg-destructive/10 border-destructive/30'
-            }`}>
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                <div className="flex-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Plan actuel</p>
-                  <p className="text-lg font-bold text-foreground mt-1">
+        {/* Offre actuelle */}
+        {subscription && (
+          <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+            <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-muted-foreground">Offre actuelle</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2.5">
+                  <p className="text-lg font-semibold tracking-tight text-foreground">
                     {subscription.status === 'trialing'
-                      ? 'Version d\u2019essai gratuite'
+                      ? 'Version d’essai gratuite'
                       : subscription.planName && subscription.planName !== 'Abonnement actif'
                         ? subscription.planName
                         : subscription.isActive
                           ? 'Abonnement actif'
                           : 'Aucun plan actif'}
                   </p>
-
-                  {/* Countdown */}
-                  {subscription.isActive && subscription.daysRemaining < 999 && (
-                    <div className="mt-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className={`text-sm font-semibold ${subscription.daysRemaining <= 5 ? 'text-destructive' : subscription.daysRemaining <= 10 ? 'text-warning-foreground' : 'text-foreground'}`}>
-                          {subscription.daysRemaining} jour{subscription.daysRemaining > 1 ? 's' : ''} restant{subscription.daysRemaining > 1 ? 's' : ''}
-                        </span>
-                        {subscription.endsAt && (
-                          <span className="text-xs text-muted-foreground">
-                            Expire le {formatDateShort(subscription.endsAt)}
-                          </span>
-                        )}
-                      </div>
-                      {subscription.status === 'trialing' && (
-                        <p className="text-xs text-brand-strong">
-                          Votre essai gratuit est en cours. Choisissez un plan pour continuer après l\u2019expiration.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Expired message */}
-                  {!subscription.isActive && (
-                    <p className="text-xs text-destructive mt-2">
-                      Votre {subscription.status === 'expired' && subscription.planName === 'Free Trial' ? 'période d\u2019essai' : 'abonnement'} a expiré. Choisissez un plan pour continuer.
-                    </p>
-                  )}
+                  <StatusBadge
+                    tone={subscriptionTone}
+                    label={subscription.status === 'trialing' ? 'Essai gratuit' : subscription.isActive ? 'Actif' : 'Expiré'}
+                  />
                 </div>
 
-                <Badge
-                  className={`self-start text-xs font-medium border-none shrink-0 ${
-                    subscription.status === 'trialing'
-                      ? 'bg-brand-soft text-brand-strong'
-                      : subscription.isActive
-                        ? 'bg-success-soft text-success'
-                        : 'bg-destructive/10 text-destructive'
-                  }`}
-                >
-                  {subscription.status === 'trialing'
-                    ? 'Essai gratuit'
-                    : subscription.isActive
-                      ? 'Actif'
-                      : 'Expiré'}
-                </Badge>
+                {subscription.status === 'trialing' && subscription.isActive && subscription.daysRemaining < 999 && (
+                  <p className="mt-2 text-[13px] text-muted-foreground">
+                    Votre essai gratuit est en cours. Choisissez un plan pour continuer après l’expiration.
+                  </p>
+                )}
+
+                {/* Message d'expiration */}
+                {!subscription.isActive && (
+                  <p className="mt-2 text-[13px] text-destructive">
+                    Votre {subscription.status === 'expired' && subscription.planName === 'Free Trial' ? 'période d’essai' : 'abonnement'} a expiré. Choisissez un plan pour continuer.
+                  </p>
+                )}
               </div>
+
+              {/* Compte à rebours */}
+              {subscription.isActive && subscription.daysRemaining < 999 && (
+                <div className="shrink-0 sm:text-right">
+                  <p
+                    className={`tabular text-2xl font-semibold tracking-tight ${
+                      subscription.daysRemaining <= 5
+                        ? 'text-destructive'
+                        : subscription.daysRemaining <= 10
+                          ? 'text-warning-foreground'
+                          : 'text-foreground'
+                    }`}
+                  >
+                    {subscription.daysRemaining} jour{subscription.daysRemaining > 1 ? 's' : ''}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    restant{subscription.daysRemaining > 1 ? 's' : ''}
+                    {subscription.endsAt && <> · expire le {formatDateShort(subscription.endsAt)}</>}
+                  </p>
+                </div>
+              )}
             </div>
-          )}
+          </section>
+        )}
 
-          {/* Plans grid */}
-          {plans.length === 0 && (
-            <EmptyState
-              title="Aucune offre disponible pour le moment"
-              description="Contactez le support pour souscrire un abonnement."
-              action={{ label: 'Contacter le support', href: '/contact' }}
-            />
-          )}
-          <div className="grid gap-4 sm:gap-6 md:grid-cols-3">
-            {plans.map((plan) => {
-              const Icon = planIcons[plan.id] || Zap
-              const selectedInterval = selectedIntervals[plan.id] || plan.prices[0]?.interval
-              const currentPrice = plan.prices.find((p) => p.interval === selectedInterval)
-              const isCurrentPlan =
-                subscription?.isActive && subscription.status === 'active' && !!subscription.planName?.startsWith(plan.name)
-              const isOnQuote = plan.pricingType === 'on_quote'
+        {/* Offres */}
+        {plans.length === 0 && (
+          <EmptyState
+            title="Aucune offre disponible pour le moment"
+            description="Contactez le support pour souscrire un abonnement."
+            action={{ label: 'Contacter le support', href: '/contact' }}
+          />
+        )}
 
-              return (
-                <div
-                  key={plan.id}
-                  className={`relative bg-card rounded-xl border ${
-                    plan.popular
-                      ? 'border-brand/40 shadow-md shadow-blue-100/50'
-                      : 'border-border'
-                  } p-5 sm:p-6 flex flex-col`}
-                >
+        {plans.length > 0 && (
+          <div className="flex flex-wrap items-end justify-between gap-4 pt-2">
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">Choisir une offre</h2>
+              <p className="text-sm text-muted-foreground">Paiement unique pour la durée choisie, sans engagement.</p>
+            </div>
+            {sharedIntervals && sharedSelected && (
+              <div
+                role="radiogroup"
+                aria-label="Durée de l’abonnement"
+                className="inline-flex rounded-lg border border-border bg-muted p-1"
+              >
+                {sharedIntervals.map((interval) => {
+                  const active = sharedSelected === interval
+                  return (
+                    <button
+                      key={interval}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      disabled={!!loadingCheckout}
+                      onClick={() => selectSharedInterval(interval)}
+                      className={`h-8 rounded-md px-3 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                        active ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {intervalLabels[interval] || interval}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid items-stretch gap-4 md:grid-cols-3">
+          {plans.map((plan) => {
+            const Icon = planIcons[plan.id] || Zap
+            const selectedInterval = selectedIntervals[plan.id] || plan.prices[0]?.interval
+            const currentPrice = plan.prices.find((p) => p.interval === selectedInterval)
+            const isCurrentPlan =
+              subscription?.isActive && subscription.status === 'active' && !!subscription.planName?.startsWith(plan.name)
+            const isOnQuote = plan.pricingType === 'on_quote'
+
+            return (
+              <div
+                key={plan.id}
+                className={`relative flex flex-col rounded-xl border bg-card p-6 ${
+                  plan.popular
+                    ? 'border-transparent shadow-md ring-2 ring-brand'
+                    : 'border-border shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]'
+                }`}
+              >
+                {/* En-tête de l'offre */}
+                <div className="flex items-start justify-between gap-3">
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                      plan.popular ? 'bg-brand-soft text-brand-strong' : 'bg-muted text-foreground'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
                   {plan.popular && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-primary text-white border-none text-[10px] font-semibold px-3">
-                        POPULAIRE
-                      </Badge>
-                    </div>
+                    <span className="inline-flex items-center rounded-full bg-brand px-2.5 py-0.5 text-xs font-semibold text-brand-foreground">
+                      Recommandé
+                    </span>
                   )}
+                </div>
+                <h3 className="mt-4 text-base font-semibold tracking-tight text-foreground">{plan.name}</h3>
+                <p className="mt-1 min-h-10 text-[13px] leading-relaxed text-muted-foreground">{plan.description}</p>
 
-                  {/* Plan header */}
-                  <div className="mb-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                        plan.id === 'entreprise'
-                          ? 'bg-warning-soft text-warning-foreground'
-                          : plan.popular
-                            ? 'bg-brand-soft text-brand-strong'
-                            : 'bg-muted text-foreground/80'
-                      }`}>
-                        <Icon className="h-4 w-4" aria-hidden="true" />
-                      </div>
-                      <h3 className="text-base font-bold text-foreground">{plan.name}</h3>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{plan.description}</p>
-                  </div>
-
-                  {/* Interval selector */}
-                  {plan.prices.length > 1 && (
-                    <div className="flex flex-wrap gap-1 mb-4" role="group" aria-label={`Durée de l'offre ${plan.name}`}>
-                      {plan.prices.map((pr) => (
+                {/* Sélecteur de durée propre à l'offre (si les durées diffèrent d'une offre à l'autre) */}
+                {!sharedIntervals && plan.prices.length > 1 && (
+                  <div
+                    className="mt-4 inline-flex w-full rounded-lg border border-border bg-muted p-0.5"
+                    role="radiogroup"
+                    aria-label={`Durée de l'offre ${plan.name}`}
+                  >
+                    {plan.prices.map((pr) => {
+                      const active = selectedInterval === pr.interval
+                      return (
                         <button
                           key={pr.interval}
                           type="button"
-                          aria-pressed={selectedInterval === pr.interval}
+                          role="radio"
+                          aria-checked={active}
                           disabled={!!loadingCheckout}
                           onClick={() => setSelectedIntervals((prev) => ({ ...prev, [plan.id]: pr.interval }))}
-                          className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                            selectedInterval === pr.interval
-                              ? 'bg-primary text-white'
-                              : 'bg-muted text-muted-foreground hover:bg-muted'
+                          className={`h-7 flex-1 rounded-md px-2 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
+                            active ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
                           }`}
                         >
                           {intervalLabels[pr.interval] || pr.interval}
                         </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Price */}
-                  <div className="mb-4">
-                    {currentPrice && (
-                      <>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight">
-                            {formatMoney(currentPrice.price)}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground/70 mt-0.5 uppercase tracking-wider">
-                          {currentPrice.label.split('/').pop()?.trim()}
-                        </p>
-                      </>
-                    )}
+                      )
+                    })}
                   </div>
+                )}
 
-                  {/* Features */}
-                  <ul className="space-y-2 mb-6 flex-1">
-                    {plan.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2">
-                        <Check className="h-3.5 w-3.5 text-success mt-0.5 shrink-0" aria-hidden="true" />
-                        <span className="text-xs text-foreground/80">{f}</span>
-                      </li>
-                    ))}
-                  </ul>
+                {/* Prix */}
+                <div className="mt-5 border-t border-border pt-5">
+                  {isOnQuote ? (
+                    <p className="text-3xl font-semibold tracking-tight text-foreground">Sur devis</p>
+                  ) : currentPrice ? (
+                    <>
+                      <p className="tabular text-3xl font-semibold tracking-tight text-foreground">{formatMoney(currentPrice.price)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{currentPrice.label.split('/').pop()?.trim()}</p>
+                    </>
+                  ) : null}
+                </div>
 
-                  {isOnQuote && (
-                    <p className="mb-4 text-2xl font-bold text-foreground tracking-tight">Sur devis</p>
-                  )}
+                {/* Fonctionnalités */}
+                <ul className="mt-5 flex-1 space-y-2.5">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2.5">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                      <span className="text-[13px] text-foreground/85">{f}</span>
+                    </li>
+                  ))}
+                </ul>
 
-                  {/* CTA button */}
+                {/* Action */}
+                <div className="mt-6">
                   {isOnQuote && !isCurrentPlan ? (
-                    <Button variant="outline" size="sm" className="w-full h-10 text-xs font-semibold" asChild>
+                    <Button variant="outline" className="h-10 w-full" asChild>
                       <Link href="/contact">Nous contacter</Link>
                     </Button>
                   ) : isCurrentPlan ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full h-10 text-xs font-semibold"
-                      disabled
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                    <Button variant="outline" className="h-10 w-full" disabled>
+                      <CheckCircle2 aria-hidden="true" />
                       Plan actuel
                     </Button>
                   ) : (
                     <Button
-                      size="sm"
-                      className={`w-full h-10 text-xs font-semibold ${
-                        plan.popular
-                          ? 'bg-primary hover:bg-primary text-white'
-                          : ''
-                      }`}
+                      variant={plan.popular ? 'brand' : 'outline'}
+                      className="h-10 w-full"
                       onClick={() => handleCheckout(plan.id)}
                       disabled={!!loadingCheckout || (!isOnQuote && plan.pricingType !== 'free' && !currentPrice)}
                     >
-                      {loadingCheckout === `${plan.id}-${selectedInterval}` ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Building2 className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                      {loadingCheckout === `${plan.id}-${selectedInterval}` && (
+                        <Loader2 className="animate-spin" aria-hidden="true" />
                       )}
                       {plan.pricingType === 'free' ? 'Activer gratuitement' : subscription?.status === 'active' ? 'Renouveler / changer' : 'Choisir ce plan'}
                     </Button>
                   )}
                 </div>
-              )
-            })}
-          </div>
-
-          {/* FAQ / Info */}
-          <div className="bg-card rounded-lg border border-border p-4 sm:p-6">
-            <h3 className="text-sm font-semibold text-foreground mb-3">Questions fréquentes</h3>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-medium text-foreground/80">Comment fonctionne le paiement ?</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Le paiement est sécurisé via GeniusPay (Wave, Orange Money, MTN, Moov, carte bancaire).
-                  Vous payez une seule fois pour la durée choisie. À la fin de la période, vous pouvez renouveler.
-                </p>
               </div>
-              <div>
-                <p className="text-xs font-medium text-foreground/80">Puis-je changer de plan ?</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Oui, vous pouvez passer à un plan supérieur à tout moment.
-                  Le nouveau plan remplacera l&apos;ancien.
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-foreground/80">Que se passe-t-il à l&apos;expiration ?</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Vos données sont conservées. L&apos;accès au dashboard est bloqué
-                  jusqu&apos;au renouvellement de votre abonnement.
-                </p>
-              </div>
-            </div>
-          </div>
+            )
+          })}
         </div>
-      </main>
+
+        {/* Questions fréquentes */}
+        <Panel title="Questions fréquentes">
+          <dl className="divide-y divide-border">
+            <div className="px-5 py-4">
+              <dt className="text-sm font-medium text-foreground">Comment fonctionne le paiement ?</dt>
+              <dd className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                Le paiement est sécurisé via GeniusPay (Wave, Orange Money, MTN, Moov, carte bancaire).
+                Vous payez une seule fois pour la durée choisie. À la fin de la période, vous pouvez renouveler.
+              </dd>
+            </div>
+            <div className="px-5 py-4">
+              <dt className="text-sm font-medium text-foreground">Puis-je changer de plan ?</dt>
+              <dd className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                Oui, vous pouvez passer à un plan supérieur à tout moment. Le nouveau plan remplacera l’ancien.
+              </dd>
+            </div>
+            <div className="px-5 py-4">
+              <dt className="text-sm font-medium text-foreground">Que se passe-t-il à l’expiration ?</dt>
+              <dd className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                Vos données sont conservées. L’accès au tableau de bord est bloqué jusqu’au renouvellement de votre abonnement.
+              </dd>
+            </div>
+          </dl>
+        </Panel>
+      </PageShell>
     </div>
   )
 }
@@ -499,22 +527,22 @@ export default function PlansPage() {
 function PaymentBanner({ state, message }: { state: PaymentState; message: string | null }) {
   if (state === 'idle') return null
   const config: Record<Exclude<PaymentState, 'idle'>, { tone: string; title: string; text: string; spin?: boolean }> = {
-    checking: { tone: 'bg-brand-soft border-brand/40 text-brand-strong', title: 'Vérification du paiement…', text: 'Nous confirmons votre paiement auprès de GeniusPay.', spin: true },
-    pending: { tone: 'bg-brand-soft border-brand/40 text-brand-strong', title: 'Paiement en attente de confirmation', text: 'Validez le paiement sur votre téléphone si demandé. Cette page se met à jour automatiquement.', spin: true },
+    checking: { tone: 'bg-brand-soft border-brand/30 text-brand-strong', title: 'Vérification du paiement…', text: 'Nous confirmons votre paiement auprès de GeniusPay.', spin: true },
+    pending: { tone: 'bg-brand-soft border-brand/30 text-brand-strong', title: 'Paiement en attente de confirmation', text: 'Validez le paiement sur votre téléphone si demandé. Cette page se met à jour automatiquement.', spin: true },
     completed: { tone: 'bg-success-soft border-success/30 text-success', title: 'Paiement confirmé', text: 'Votre abonnement est actif. Merci pour votre confiance !' },
-    failed: { tone: 'bg-destructive/10 border-destructive/30 text-destructive', title: 'Paiement refusé', text: "Aucun montant n'a été débité. Vous pouvez réessayer ou choisir un autre moyen de paiement." },
-    expired: { tone: 'bg-warning-soft border-warning/30 text-warning-foreground', title: 'Paiement expiré', text: "Le délai de paiement est dépassé. Relancez le paiement depuis l'offre choisie." },
-    timeout: { tone: 'bg-warning-soft border-warning/30 text-warning-foreground', title: 'Confirmation toujours en attente', text: 'Si vous avez payé, votre abonnement sera activé automatiquement dans quelques minutes. Sinon, contactez le support.' },
-    error: { tone: 'bg-destructive/10 border-destructive/30 text-destructive', title: 'Vérification impossible', text: 'Réessayez dans un instant ou contactez le support.' },
+    failed: { tone: 'bg-destructive/5 border-destructive/20 text-destructive', title: 'Paiement refusé', text: "Aucun montant n'a été débité. Vous pouvez réessayer ou choisir un autre moyen de paiement." },
+    expired: { tone: 'bg-warning-soft border-warning/40 text-warning-foreground', title: 'Paiement expiré', text: "Le délai de paiement est dépassé. Relancez le paiement depuis l'offre choisie." },
+    timeout: { tone: 'bg-warning-soft border-warning/40 text-warning-foreground', title: 'Confirmation toujours en attente', text: 'Si vous avez payé, votre abonnement sera activé automatiquement dans quelques minutes. Sinon, contactez le support.' },
+    error: { tone: 'bg-destructive/5 border-destructive/20 text-destructive', title: 'Vérification impossible', text: 'Réessayez dans un instant ou contactez le support.' },
   }
   const c = config[state]
   const Icon = state === 'completed' ? CheckCircle2 : c.spin ? Loader2 : XCircle
   return (
-    <div className={`flex items-start gap-3 border rounded-lg p-4 ${c.tone}`} role="status" aria-live="polite">
+    <div className={`flex items-start gap-3 rounded-xl border p-4 ${c.tone}`} role="status" aria-live="polite">
       <Icon className={`h-5 w-5 shrink-0 mt-0.5 ${c.spin ? 'animate-spin' : ''}`} aria-hidden="true" />
       <div>
         <p className="text-sm font-semibold">{c.title}</p>
-        <p className="text-xs opacity-80">{message || c.text}</p>
+        <p className="text-[13px] opacity-80">{message || c.text}</p>
       </div>
     </div>
   )

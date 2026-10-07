@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 import { Loader2, Search, KeyRound, ChevronLeft, ChevronRight, Copy, Users } from 'lucide-react'
 import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
 import { formatNumber } from '@/lib/format'
+import { PageShell, PageIntro } from '@/components/app/blocks'
 import { ROLES, ROLE_LABELS } from '@/lib/permissions'
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
@@ -99,21 +100,19 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Utilisateurs</h1>
-        <p className="text-sm text-muted-foreground">
-          {pagination ? `${formatNumber(pagination.total)} utilisateur(s) — tous tenants` : 'Tous les tenants'}
-        </p>
-      </header>
+    <PageShell>
+      <PageIntro
+        title="Utilisateurs"
+        description={pagination ? `${formatNumber(pagination.total)} utilisateur(s) — tous tenants` : 'Tous les tenants'}
+      />
 
       {resetInfo && (
-        <Card className="p-4 mb-4 border-brand/40 bg-brand-soft">
-          <p className="text-sm text-brand-strong mb-2 font-medium">
+        <Card role="status" className="gap-3 border-brand/40 bg-brand-soft p-4">
+          <p className="text-sm font-medium text-brand-strong">
             Mot de passe temporaire pour {resetInfo.email}
           </p>
-          <div className="flex items-center gap-2">
-            <code className="px-3 py-1.5 bg-card rounded border border-brand/40 text-sm font-mono">
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="rounded-lg border border-brand/40 bg-card px-3 py-1.5 font-mono text-sm text-foreground">
               {resetInfo.password}
             </code>
             <Button
@@ -121,24 +120,25 @@ export default function AdminUsersPage() {
               variant="outline"
               onClick={() => copyPassword(resetInfo.password)}
             >
-              <Copy className="h-4 w-4 mr-1.5" /> Copier
+              <Copy className="h-4 w-4" aria-hidden="true" /> Copier
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setResetInfo(null)}>
               Fermer
             </Button>
           </div>
-          <p className="text-xs text-brand-strong mt-2">
+          <p className="text-xs text-brand-strong">
             Communiquez-le à l&apos;utilisateur. Il ne sera plus affiché.
           </p>
         </Card>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
             placeholder="Rechercher (email, nom, entreprise)…"
-            className="pl-9 h-10"
+            className="h-10 pl-9"
+            aria-label="Rechercher"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -152,7 +152,7 @@ export default function AdminUsersPage() {
             setRole(e.target.value)
             setPage(1)
           }}
-          className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
+          className="h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Filtrer par rôle"
         >
           <option value="">Tous les rôles</option>
@@ -164,7 +164,7 @@ export default function AdminUsersPage() {
         </select>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
           <div className="p-5">
             <TableSkeleton columns={5} />
@@ -182,7 +182,7 @@ export default function AdminUsersPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
+                <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Utilisateur</th>
                   <th className="px-5 py-3 font-medium">Entreprise</th>
                   <th className="px-5 py-3 font-medium">Rôle</th>
@@ -192,16 +192,16 @@ export default function AdminUsersPage() {
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <tr key={u.id} className="border-b border-border hover:bg-muted/50">
+                  <tr key={u.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
                     <td className="px-5 py-3">
                       <p className="font-medium text-foreground">{u.full_name}</p>
-                      <p className="text-xs text-muted-foreground/70">
+                      <p className="text-xs text-muted-foreground">
                         {u.email}
                         {u.auth_provider === 'google' && ' · Google'}
                       </p>
                     </td>
                     <td className="px-5 py-3">
-                      <Link href={`/admin/companies/${u.company_id}`} className="text-foreground/80 hover:underline">
+                      <Link href={`/admin/companies/${u.company_id}`} className="text-foreground hover:underline">
                         {u.company_name}
                       </Link>
                     </td>
@@ -218,7 +218,7 @@ export default function AdminUsersPage() {
                             `Rôle de ${u.email} : ${roleLabel(e.target.value)}`
                           )
                         }
-                        className="rounded-md border border-border bg-card px-2 py-1 text-xs"
+                        className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
@@ -241,7 +241,7 @@ export default function AdminUsersPage() {
                         role="switch"
                         aria-checked={u.is_active}
                         aria-label={u.is_active ? `Désactiver ${u.email}` : `Activer ${u.email}`}
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${
                           u.is_active ? 'bg-success' : 'bg-muted-foreground/20'
                         }`}
                       >
@@ -261,11 +261,11 @@ export default function AdminUsersPage() {
                         aria-label={`Réinitialiser le mot de passe de ${u.email}`}
                       >
                         {busy === 'reset-' + u.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                         ) : (
-                          <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+                          <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
                         )}
-                        MDP
+                        Mot de passe
                       </Button>
                     </td>
                   </tr>
@@ -277,7 +277,7 @@ export default function AdminUsersPage() {
       </Card>
 
       {pagination && pagination.pages > 1 && (
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             Page {pagination.page} / {pagination.pages}
           </p>
@@ -286,17 +286,17 @@ export default function AdminUsersPage() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
               aria-label="Page précédente"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
               aria-label="Page suivante"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -322,12 +322,12 @@ export default function AdminUsersPage() {
                 if (toReset) resetPassword(toReset)
               }}
             >
-              {busy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               Réinitialiser
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   )
 }

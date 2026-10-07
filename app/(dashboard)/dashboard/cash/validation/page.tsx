@@ -3,16 +3,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Shield, CheckCircle2, XCircle, Eye, Loader2 } from 'lucide-react'
+import { Shield, CheckCircle2, XCircle, Eye, Loader2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiFetch, toastError } from '@/lib/api-client'
 import { formatDateTime, formatMoney } from '@/lib/format'
@@ -83,162 +83,221 @@ export default function CashValidationPage() {
     }
   }
 
+  const pendingIn = movements.filter((m) => m.movement_type === 'cash_in').reduce((s, m) => s + Number(m.amount), 0)
+  const pendingOut = movements.filter((m) => m.movement_type !== 'cash_in').reduce((s, m) => s + Number(m.amount), 0)
+
+  const openMovement = (movement: CashMovement) => {
+    setSelectedMovement(movement)
+    setValidationNotes('')
+    setShowValidationDialog(true)
+  }
+
+  const reference = (m: CashMovement) =>
+    m.reference_type && m.reference_id ? `${m.reference_type} #${m.reference_id.slice(0, 8)}` : null
+
   if (isLoading) {
     return <PageSkeleton />
   }
 
+  const header = (
+    <DashboardHeader
+      title="Validation de caisse"
+      description="Approuvez ou rejetez les mouvements manuels avant qu'ils soient comptés"
+    />
+  )
+
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Validation des Mouvements de Caisse" />
-        <main className="flex-1 p-4 lg:p-6">
+      <div className="flex min-h-screen flex-col">
+        {header}
+        <PageShell>
           <ErrorState title="Impossible de charger les mouvements" onRetry={fetchMovements} />
-        </main>
+        </PageShell>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
-      <DashboardHeader title="Validation des Mouvements de Caisse" />
-      <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
+    <div className="flex min-h-screen flex-col">
+      {header}
+      <PageShell>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            label="En attente"
+            value={movements.length}
+            icon={Shield}
+            tone={movements.length > 0 ? 'warning' : 'default'}
+            hint={movements.length > 0 ? 'Mouvements à examiner' : 'Tout est à jour'}
+          />
+          <StatCard label="Entrées à valider" value={fmt(pendingIn)} icon={ArrowDownCircle} tone="success" />
+          <StatCard label="Sorties à valider" value={fmt(pendingOut)} icon={ArrowUpCircle} tone="danger" />
+        </div>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Mouvements en attente de validation ({movements.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {movements.length === 0 ? (
-              <EmptyState
-                icon={CheckCircle2}
-                className="m-4"
-                title="Aucun mouvement en attente de validation"
-                description="Les mouvements manuels de caisse à valider apparaîtront ici."
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Catégorie</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Par</TableHead>
-                    <TableHead className="text-right">Montant</TableHead>
-                    <TableHead>Référence</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {movements.map((movement) => (
-                    <TableRow key={movement.id}>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDateTime(movement.created_at)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={
-                          movement.movement_type === 'cash_in' ? 'border-success/30 text-success' : 'border-destructive/30 text-destructive'
-                        }>
-                          {movement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">{categoryLabels[movement.category] || movement.category}</TableCell>
-                      <TableCell className="text-sm max-w-[200px] truncate" title={movement.description || ''}>
-                        {movement.description || '-'}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{movement.created_by_name}</TableCell>
-                      <TableCell className={`text-right text-sm font-medium ${
-                        movement.movement_type === 'cash_in' ? 'text-success' : 'text-destructive'
-                      }`}>
-                        {movement.movement_type === 'cash_in' ? '+' : '-'}{fmt(Number(movement.amount))}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {movement.reference_type && movement.reference_id
-                          ? `${movement.reference_type} #${movement.reference_id.slice(0, 8)}`
-                          : '-'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="outline" className="h-9 text-xs" onClick={() => {
-                          setSelectedMovement(movement)
-                          setValidationNotes('')
-                          setShowValidationDialog(true)
-                        }}>
-                          <Eye className="h-3 w-3 mr-1" /> Valider
-                        </Button>
-                      </TableCell>
+        <Panel
+          title="Mouvements en attente de validation"
+          description={`${movements.length} mouvement(s) non comptés dans la caisse`}
+        >
+          {movements.length === 0 ? (
+            <EmptyState
+              icon={CheckCircle2}
+              className="m-4"
+              title="Aucun mouvement en attente de validation"
+              description="Les mouvements manuels de caisse à valider apparaîtront ici."
+              action={{ label: 'Retour à la caisse', href: '/dashboard/cash' }}
+            />
+          ) : (
+            <>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="pl-5">Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Catégorie</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Par</TableHead>
+                      <TableHead>Référence</TableHead>
+                      <TableHead className="text-right">Montant</TableHead>
+                      <TableHead className="pr-5"><span className="sr-only">Actions</span></TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {movements.map((movement) => (
+                      <TableRow key={movement.id} className="cursor-pointer" onClick={() => openMovement(movement)}>
+                        <TableCell className="tabular pl-5 text-xs text-muted-foreground">{formatDateTime(movement.created_at)}</TableCell>
+                        <TableCell>
+                          <StatusBadge
+                            label={movement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'}
+                            tone={movement.movement_type === 'cash_in' ? 'success' : 'danger'}
+                          />
+                        </TableCell>
+                        <TableCell className="text-sm">{categoryLabels[movement.category] || movement.category}</TableCell>
+                        <TableCell className="max-w-[220px] truncate text-sm text-muted-foreground" title={movement.description || ''}>
+                          {movement.description || '—'}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{movement.created_by_name}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{reference(movement) ?? '—'}</TableCell>
+                        <TableCell className={`tabular text-right text-sm font-semibold ${movement.movement_type === 'cash_in' ? 'text-success' : 'text-destructive'}`}>
+                          {movement.movement_type === 'cash_in' ? '+' : '-'}{fmt(Number(movement.amount))}
+                        </TableCell>
+                        <TableCell className="pr-5 text-right">
+                          <Button
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); openMovement(movement) }}
+                          >
+                            <Eye className="h-3.5 w-3.5" aria-hidden="true" /> Examiner
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <ul className="divide-y divide-border md:hidden">
+                {movements.map((movement) => (
+                  <li key={movement.id}>
+                    <button
+                      type="button"
+                      onClick={() => openMovement(movement)}
+                      className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge
+                            label={movement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'}
+                            tone={movement.movement_type === 'cash_in' ? 'success' : 'danger'}
+                          />
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {categoryLabels[movement.category] || movement.category}
+                          </span>
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {formatDateTime(movement.created_at)} · {movement.created_by_name}
+                        </p>
+                        {movement.description && <p className="truncate text-xs text-muted-foreground">{movement.description}</p>}
+                      </div>
+                      <span className={`tabular shrink-0 text-sm font-semibold ${movement.movement_type === 'cash_in' ? 'text-success' : 'text-destructive'}`}>
+                        {movement.movement_type === 'cash_in' ? '+' : '-'}{fmt(Number(movement.amount))}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Panel>
 
-        {/* Validation Dialog */}
+        {/* Dialogue de validation */}
         <Dialog open={showValidationDialog} onOpenChange={(o) => { if (!validating) setShowValidationDialog(o) }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Validation du mouvement de caisse</DialogTitle>
+              <DialogTitle>Validation du mouvement</DialogTitle>
+              <DialogDescription>Un mouvement approuvé est compté dans le solde attendu de la caisse.</DialogDescription>
             </DialogHeader>
             {selectedMovement && (
-              <div className="space-y-4 py-4">
-                <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Type</span>
-                    <span className={selectedMovement.movement_type === 'cash_in' ? 'text-success' : 'text-destructive'}>
-                      {selectedMovement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'} de {fmt(Number(selectedMovement.amount))}
-                    </span>
+              <div className="space-y-4 py-2">
+                <div className="flex items-center justify-between rounded-lg border border-border bg-muted/50 p-4">
+                  <StatusBadge
+                    label={selectedMovement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'}
+                    tone={selectedMovement.movement_type === 'cash_in' ? 'success' : 'danger'}
+                  />
+                  <span className={`tabular text-xl font-semibold tracking-tight ${selectedMovement.movement_type === 'cash_in' ? 'text-success' : 'text-destructive'}`}>
+                    {selectedMovement.movement_type === 'cash_in' ? '+' : '-'}{fmt(Number(selectedMovement.amount))}
+                  </span>
+                </div>
+                <dl className="space-y-2 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Catégorie</dt>
+                    <dd className="text-right">{categoryLabels[selectedMovement.category] || selectedMovement.category}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Catégorie</span>
-                    <span>{categoryLabels[selectedMovement.category] || selectedMovement.category}</span>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Saisi par</dt>
+                    <dd className="text-right">{selectedMovement.created_by_name}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Par</span>
-                    <span>{selectedMovement.created_by_name}</span>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Date</dt>
+                    <dd className="tabular text-right">{formatDateTime(selectedMovement.created_at)}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Date</span>
-                    <span>{formatDateTime(selectedMovement.created_at)}</span>
-                  </div>
-                  {selectedMovement.description && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Description</span>
-                      <span>{selectedMovement.description}</span>
+                  {reference(selectedMovement) && (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">Référence</dt>
+                      <dd className="text-right">{reference(selectedMovement)}</dd>
                     </div>
                   )}
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Notes de validation (optionnel)</label>
+                  {selectedMovement.description && (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">Description</dt>
+                      <dd className="text-right">{selectedMovement.description}</dd>
+                    </div>
+                  )}
+                </dl>
+                <div className="space-y-2">
+                  <Label htmlFor="validation-notes">Notes de validation</Label>
                   <Textarea
+                    id="validation-notes"
                     value={validationNotes}
                     onChange={(e) => setValidationNotes(e.target.value)}
-                    placeholder="Commentaires sur cette validation..."
-                    className="mt-1"
+                    placeholder="Commentaires sur cette validation…"
                   />
+                  <p className="text-xs text-muted-foreground">Facultatif, conservé dans l&apos;historique du mouvement.</p>
                 </div>
               </div>
             )}
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-2">
               <Button variant="outline" onClick={() => setShowValidationDialog(false)}>Annuler</Button>
               <Button
                 variant="destructive"
                 onClick={() => setConfirmReject(true)}
                 disabled={validating !== null}
               >
-                <XCircle className="h-4 w-4 mr-2" />
+                <XCircle className="h-4 w-4" aria-hidden="true" />
                 Rejeter
               </Button>
               <Button
                 onClick={() => selectedMovement && handleValidate(selectedMovement, true)}
                 disabled={validating !== null}
-                className="bg-success hover:bg-success"
               >
-                {validating === selectedMovement?.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                {validating === selectedMovement?.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
                 Approuver
               </Button>
             </DialogFooter>
@@ -253,7 +312,7 @@ export default function CashValidationPage() {
                 {selectedMovement
                   ? `${selectedMovement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'} de ${fmt(Number(selectedMovement.amount))} saisie par ${selectedMovement.created_by_name || 'un utilisateur'}. `
                   : ''}
-                Un mouvement rejeté n'est pas compté dans la caisse. Cette décision est définitive.
+                Un mouvement rejeté n&apos;est pas compté dans la caisse. Cette décision est définitive.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -263,13 +322,13 @@ export default function CashValidationPage() {
                 disabled={validating !== null}
                 className="bg-destructive text-white hover:bg-destructive/90"
               >
-                {validating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+                {validating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <XCircle className="h-4 w-4" aria-hidden="true" />}
                 Oui, rejeter
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </main>
+      </PageShell>
     </div>
   )
 }

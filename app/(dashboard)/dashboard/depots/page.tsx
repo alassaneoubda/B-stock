@@ -1,15 +1,16 @@
 import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, MoreHorizontal, Building2, Edit, MapPin, Phone, Star, Package, ArrowRight, Layers } from 'lucide-react'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Edit, MoreHorizontal, Package, Plus, Warehouse } from 'lucide-react'
 import Link from 'next/link'
 import { EmptyState } from '@/components/states'
 import { formatNumber } from '@/lib/format'
@@ -43,118 +44,140 @@ export default async function DepotsPage() {
     const depots = await getDepots(companyId)
 
     return (
-        <div className="flex flex-col min-h-screen bg-muted/30">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Points de Distribution"
-                description="Gérez vos centres logistiques et entrepôts de stockage"
+                title="Dépôts"
+                description="Vos entrepôts et points de stockage"
                 actions={
-                    <Button asChild className="rounded-md h-11 px-6 bg-primary hover:bg-primary transition-all active:scale-95 font-bold">
+                    <Button asChild size="sm" className="h-9">
                         <Link href="/dashboard/depots/new">
-                            <Plus className="h-5 w-5 mr-2" />
-                            Nouveau dépôt
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                            <span className="hidden sm:inline">Nouveau dépôt</span>
+                            <span className="sm:hidden">Nouveau</span>
                         </Link>
                     </Button>
                 }
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
+            <PageShell>
                 {depots.length === 0 ? (
                     <EmptyState
-                        className="bg-card py-20"
+                        icon={Warehouse}
                         title="Aucun dépôt"
-                        description="Commencez par créer votre centre de distribution principal pour gérer vos stocks."
+                        description="Créez votre dépôt principal pour commencer à suivre vos stocks."
                         action={{ label: 'Créer mon premier dépôt', href: '/dashboard/depots/new' }}
                     />
                 ) : (
-                    <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-                        {depots.map((depot) => (
-                            <div
-                                key={depot.id}
-                                className={`group relative overflow-hidden rounded-lg bg-card p-8 shadow-sm border transition-all duration-500 hover:shadow-lg hover:shadow-blue-500/10 hover:-translate-y-2 ${depot.is_main ? 'border-brand/40' : 'border-border'
-                                    }`}
-                            >
-                                <div className="relative z-10 flex flex-col h-full gap-8">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className={`h-14 w-14 rounded-md flex items-center justify-center transition-transform group-hover:scale-110 duration-500 ${depot.is_main ? 'bg-primary text-white shadow-lg shadow-blue-500/30' : 'bg-muted/50 text-muted-foreground/70 border border-border'
-                                                }`}>
-                                                <Building2 className="h-7 w-7" />
-                                            </div>
-                                            <div className="space-y-1">
-                                                <h3 className="text-xl font-semibold text-foreground tracking-tight leading-tight">{depot.name}</h3>
-                                                {depot.is_main && (
-                                                    <Badge className="bg-brand-soft text-brand-strong rounded-full px-3 py-0.5 font-semibold uppercase text-[9px] tracking-wider border-none shadow-none flex items-center gap-1.5 w-fit">
-                                                        <Star className="h-2.5 w-2.5 fill-current" />
-                                                        Centre Principal
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="icon" aria-label={`Actions pour le dépôt ${depot.name}`} className="h-10 w-10 rounded-xl hover:bg-muted/50 border border-transparent hover:border-border transition-all">
-                                                    <MoreHorizontal className="h-5 w-5 text-muted-foreground/70 group-hover:text-foreground" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="w-56 p-2 rounded-md border-border shadow-lg">
-                                                <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-muted/50 transition-colors">
-                                                    <Link href={`/dashboard/depots/${depot.id}/edit`} className="flex items-center gap-3">
-                                                        <Edit className="h-4 w-4 text-muted-foreground/70" />
-                                                        <span className="font-bold text-sm">Paramètres Dépôt</span>
+                    <Panel
+                        title="Liste des dépôts"
+                        description={`${formatNumber(depots.length)} dépôt${depots.length > 1 ? 's' : ''} · références en stock par site`}
+                    >
+                        {/* Tableau (≥ md) */}
+                        <div className="hidden md:block">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="pl-5">Dépôt</TableHead>
+                                        <TableHead>Adresse</TableHead>
+                                        <TableHead>Téléphone</TableHead>
+                                        <TableHead className="text-right">Références en stock</TableHead>
+                                        <TableHead className="w-12 pr-5">
+                                            <span className="sr-only">Actions</span>
+                                        </TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {depots.map((depot) => (
+                                        <TableRow key={depot.id} className="transition-colors hover:bg-muted/40">
+                                            <TableCell className="py-3 pl-5">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <Link
+                                                        href={`/dashboard/stock?depot=${depot.id}`}
+                                                        className="rounded-sm text-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                    >
+                                                        {depot.name}
                                                     </Link>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-brand-soft focus:bg-brand-soft transition-colors">
-                                                    <Link href={`/dashboard/stock?depot=${depot.id}`} className="flex items-center gap-3">
-                                                        <Package className="h-4 w-4 text-brand-strong" />
-                                                        <span className="font-bold text-sm text-brand-strong">Inventaire Réel</span>
-                                                    </Link>
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </div>
+                                                    {depot.is_main && <StatusBadge label="Principal" tone="brand" />}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="max-w-[280px] py-3">
+                                                <span className="block truncate text-sm text-muted-foreground">{depot.address || '—'}</span>
+                                            </TableCell>
+                                            <TableCell className="tabular py-3 text-sm text-muted-foreground">
+                                                {depot.phone || '—'}
+                                            </TableCell>
+                                            <TableCell className="tabular py-3 text-right text-sm font-medium text-foreground">
+                                                {formatNumber(depot.stock_count)}
+                                            </TableCell>
+                                            <TableCell className="py-3 pr-5 text-right">
+                                                <DepotActions depot={depot} />
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
 
-                                    <div className="space-y-4 flex-1">
-                                        {depot.address && (
-                                            <p className="text-sm font-bold text-muted-foreground flex items-start gap-2.5 leading-snug">
-                                                <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground/70 shrink-0" />
-                                                {depot.address}
-                                            </p>
-                                        )}
-                                        {depot.phone && (
-                                            <p className="text-sm font-bold text-muted-foreground flex items-center gap-2.5 uppercase tracking-wider">
-                                                <Phone className="h-4 w-4 text-muted-foreground/70 shrink-0" />
-                                                {depot.phone}
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <div className="pt-6 border-t border-border flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="h-10 w-10 rounded-xl bg-muted/50 border border-border flex items-center justify-center text-muted-foreground/70">
-                                                <Layers className="h-5 w-5" />
+                        {/* Cartes (< md) */}
+                        <ul className="divide-y divide-border md:hidden">
+                            {depots.map((depot) => (
+                                <li key={depot.id} className="flex items-start gap-2 px-4 py-3.5">
+                                    <Link
+                                        href={`/dashboard/stock?depot=${depot.id}`}
+                                        className="flex min-w-0 flex-1 items-start justify-between gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    >
+                                        <div className="min-w-0 space-y-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <p className="truncate text-sm font-medium text-foreground">{depot.name}</p>
+                                                {depot.is_main && <StatusBadge label="Principal" tone="brand" />}
                                             </div>
-                                            <div>
-                                                <p className="text-base font-semibold text-foreground tracking-tight leading-none">{formatNumber(depot.stock_count)}</p>
-                                                <p className="text-[10px] font-semibold uppercase text-muted-foreground/70 tracking-wider mt-1">Références</p>
-                                            </div>
+                                            <p className="truncate text-xs text-muted-foreground">
+                                                {[depot.address, depot.phone].filter(Boolean).join(' · ') || 'Aucune coordonnée'}
+                                            </p>
                                         </div>
-                                        <Button asChild variant="ghost" className="h-10 px-4 rounded-xl font-semibold text-[10px] uppercase tracking-[0.1em] text-brand-strong hover:bg-brand-soft transition-all">
-                                            <Link href={`/dashboard/stock?depot=${depot.id}`} className="flex items-center gap-2">
-                                                Explorer
-                                                <ArrowRight className="h-3 w-3" />
-                                            </Link>
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                {/* Abstract background circle */}
-                                <div className={`absolute -right-8 -bottom-8 h-40 w-40 rounded-full opacity-30 transition-transform duration-700 group-hover:scale-150 ${depot.is_main ? 'bg-brand-soft' : 'bg-muted/50'
-                                    }`} />
-                            </div>
-                        ))}
-                    </div>
+                                        <div className="shrink-0 text-right">
+                                            <p className="tabular text-sm font-medium text-foreground">{formatNumber(depot.stock_count)}</p>
+                                            <p className="text-xs text-muted-foreground">réf.</p>
+                                        </div>
+                                    </Link>
+                                    <DepotActions depot={depot} />
+                                </li>
+                            ))}
+                        </ul>
+                    </Panel>
                 )}
-            </main>
+            </PageShell>
         </div>
+    )
+}
+
+function DepotActions({ depot }: { depot: Depot }) {
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    aria-label={`Actions pour le dépôt ${depot.name}`}
+                >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                    <Link href={`/dashboard/stock?depot=${depot.id}`}>
+                        <Package aria-hidden="true" />
+                        Voir le stock
+                    </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                    <Link href={`/dashboard/depots/${depot.id}/edit`}>
+                        <Edit aria-hidden="true" />
+                        Modifier
+                    </Link>
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
     )
 }

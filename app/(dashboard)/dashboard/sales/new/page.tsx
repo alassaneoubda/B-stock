@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,12 +12,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import {
     Loader2,
     ArrowLeft,
     Search,
     Plus,
+    Minus,
     Trash2,
     ShoppingCart,
     Package,
@@ -26,12 +27,16 @@ import {
     ChevronRight,
     AlertTriangle,
     BoxesIcon,
+    Boxes,
+    Check,
+    Split,
 } from 'lucide-react'
 import Link from 'next/link'
 import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
 import { formatMoney, formatNumber, formatSignedMoney } from '@/lib/format'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { EmptyState, TableSkeleton } from '@/components/states'
+import { cn } from '@/lib/utils'
 
 interface Client {
     id: string
@@ -359,458 +364,599 @@ export default function NewSalePage() {
     const steps: Step[] = ['client', 'products', 'packaging', 'payment']
     const currentStepIndex = steps.indexOf(step)
 
-    return (
-        <div className="flex flex-col min-h-screen">
-            <DashboardHeader
-                title="Nouvelle vente"
-                description="Enregistrez une commande client"
-            />
+    const nextDisabled =
+        (step === 'client' && (!selectedClient || !selectedDepotId)) ||
+        (step === 'products' && orderItems.length === 0)
+    const selectedDepotName = depots.find((d) => d.id === selectedDepotId)?.name as string | undefined
+    const itemsCount = orderItems.reduce((s, i) => s + i.quantity, 0)
 
-            <main className="flex-1 p-4 lg:p-6">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
+    function goBack() {
+        if (currentStepIndex > 0) setStep(steps[currentStepIndex - 1])
+        else router.push('/dashboard/sales')
+    }
+
+    /** Action principale (Suivant / Valider), affichée dans le résumé (écran large) ou la barre du bas (mobile). */
+    function renderPrimaryAction(className?: string) {
+        return step !== 'payment' ? (
+            <Button size="xl" className={className} onClick={() => setStep(steps[currentStepIndex + 1])} disabled={nextDisabled}>
+                Suivant
+                <ChevronRight className="h-5 w-5" aria-hidden="true" />
+            </Button>
+        ) : (
+            <Button variant="brand" size="xl" className={className} onClick={handleSubmit} disabled={isLoading || totalAmount === 0}>
+                {isLoading ? (
+                    <>
+                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                        Enregistrement…
+                    </>
+                ) : (
+                    <>
+                        <Check className="h-5 w-5" aria-hidden="true" />
+                        Valider la vente
+                    </>
+                )}
+            </Button>
+        )
+    }
+
+    const paymentLabels: Record<typeof paymentMethod, string> = {
+        cash: 'Espèces',
+        mobile_money: 'Mobile Money',
+        credit: 'Crédit',
+        mixed: 'Mixte',
+    }
+
+    return (
+        <div className="flex min-h-screen flex-col">
+            <DashboardHeader title="Nouvelle vente" description="Enregistrez une commande client" />
+
+            <PageShell>
+                <div className="space-y-4">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
                         <Link href="/dashboard/sales">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Retour aux ventes
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Ventes
                         </Link>
                     </Button>
-                </div>
 
-                {/* Stepper */}
-                <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
-                    {STEPS.map((s, i) => {
-                        const Icon = s.icon
-                        const isDone = steps.indexOf(s.id) < currentStepIndex
-                        const isActive = s.id === step
-                        return (
-                            <div key={s.id} className="flex items-center gap-2 shrink-0">
-                                <button
-                                    onClick={() => {
-                                        if (isDone) setStep(s.id)
-                                    }}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive
-                                        ? 'bg-accent text-accent-foreground'
-                                        : isDone
-                                            ? 'text-accent hover:bg-accent/10 cursor-pointer'
-                                            : 'text-muted-foreground cursor-not-allowed'
-                                        }`}
-                                >
-                                    <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-accent-foreground text-accent' : isDone ? 'bg-accent/20 text-accent' : 'bg-muted text-muted-foreground'
-                                        }`}>
-                                        {isDone ? '✓' : i + 1}
-                                    </div>
-                                    {s.label}
-                                </button>
-                                {i < STEPS.length - 1 && (
-                                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                                )}
-                            </div>
-                        )
-                    })}
+                    {/* Étapes */}
+                    <nav aria-label="Étapes de la vente">
+                        <ol className="flex items-center gap-2 overflow-x-auto rounded-xl border border-border bg-card p-2 sm:gap-0">
+                            {STEPS.map((s, i) => {
+                                const isDone = i < currentStepIndex
+                                const isActive = s.id === step
+                                return (
+                                    <li key={s.id} className="flex shrink-0 items-center sm:flex-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (isDone) setStep(s.id)
+                                            }}
+                                            disabled={!isDone && !isActive}
+                                            aria-current={isActive ? 'step' : undefined}
+                                            className={cn(
+                                                'flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                                                isActive && 'bg-brand-soft',
+                                                isDone && 'hover:bg-muted',
+                                                !isDone && !isActive && 'cursor-not-allowed'
+                                            )}
+                                        >
+                                            <span
+                                                className={cn(
+                                                    'tabular flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                                                    isActive && 'bg-brand text-brand-foreground',
+                                                    isDone && 'bg-primary text-primary-foreground',
+                                                    !isDone && !isActive && 'border border-border text-muted-foreground'
+                                                )}
+                                            >
+                                                {isDone ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : i + 1}
+                                            </span>
+                                            <span
+                                                className={cn(
+                                                    'font-medium',
+                                                    isActive ? 'text-foreground' : isDone ? 'text-foreground' : 'text-muted-foreground'
+                                                )}
+                                            >
+                                                {s.label}
+                                                {isDone && <span className="sr-only"> (terminé)</span>}
+                                            </span>
+                                        </button>
+                                        {i < STEPS.length - 1 && (
+                                            <span className="mx-1 hidden h-px w-6 shrink-0 bg-border sm:block lg:w-10" aria-hidden="true" />
+                                        )}
+                                    </li>
+                                )
+                            })}
+                        </ol>
+                    </nav>
                 </div>
 
                 {error && (
-                    <div className="mb-6 rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                         {error}
                     </div>
                 )}
 
-                <div className="max-w-3xl space-y-6">
-                    {/* ÉTAPE 1 : CLIENT */}
-                    {step === 'client' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Sélectionner le client</CardTitle>
-                                <CardDescription>Recherchez par nom ou numéro de téléphone</CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                {selectedClient ? (
-                                    <div className="flex items-start justify-between p-4 rounded-lg border-2 border-accent bg-accent/5">
-                                        <div>
-                                            <h3 className="font-semibold text-foreground">{selectedClient.name}</h3>
-                                            {selectedClient.phone && <p className="text-sm text-muted-foreground">{selectedClient.phone}</p>}
-                                            {selectedClient.zone && <p className="text-xs text-muted-foreground">{selectedClient.zone}</p>}
-                                            <div className="flex items-center gap-2 mt-2">
-                                                <span className="text-xs">Produits:</span>
-                                                <span className={`text-xs font-medium ${Number(selectedClient.product_balance) < 0 ? 'text-destructive' : 'text-success'}`}>
-                                                    {formatSignedMoney(selectedClient.product_balance)}
-                                                </span>
-                                                <span className="text-xs ml-2">Emballages:</span>
-                                                <span className={`text-xs font-medium ${Number(selectedClient.packaging_balance) < 0 ? 'text-warning-foreground' : 'text-success'}`}>
-                                                    {formatSignedMoney(selectedClient.packaging_balance)}
-                                                </span>
-                                            </div>
-                                            {creditLimit > 0 && (
-                                                <p className="text-xs text-muted-foreground mt-1">
-                                                    Plafond de crédit : {formatMoney(creditLimit)} — dette actuelle : {formatMoney(currentProductDebt)}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <Button variant="outline" size="sm" onClick={() => setSelectedClient(null)}>
-                                            Changer
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        <div className="relative">
-                                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                            <Input
-                                                placeholder="Rechercher un client..."
-                                                className="pl-9"
-                                                value={clientSearch}
-                                                onChange={e => setClientSearch(e.target.value)}
-                                            />
-                                        </div>
-                                        {loadingClients && <p className="text-sm text-muted-foreground">Recherche...</p>}
-                                        {clients.length > 0 && (
-                                            <div className="border rounded-lg divide-y max-h-60 overflow-y-auto">
-                                                {clients.map(c => (
-                                                    <button
-                                                        key={c.id}
-                                                        className="w-full flex items-start justify-between p-3 hover:bg-muted/50 text-left transition-colors"
-                                                        onClick={() => { setSelectedClient(c); setClientSearch('') }}
-                                                    >
-                                                        <div>
-                                                            <p className="font-medium text-sm">{c.name}</p>
-                                                            {c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}
-                                                        </div>
-                                                        <Badge variant="outline" className="text-xs shrink-0">
-                                                            {c.zone || 'Sans zone'}
-                                                        </Badge>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                        {clientSearch && !loadingClients && clients.length === 0 && (
-                                            <p className="text-sm text-muted-foreground text-center py-4">
-                                                Aucun client trouvé.
-                                                <Link href="/dashboard/clients/new" target="_blank" rel="noopener" className="text-accent ml-1 hover:underline">
-                                                    Créer ce client
-                                                </Link>
-                                                <span className="block text-xs mt-1">
-                                                    (s&apos;ouvre dans un nouvel onglet : votre saisie est conservée ici, revenez ensuite rechercher le client)
-                                                </span>
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="space-y-2">
-                                    <Label>Source de la commande</Label>
-                                    <Select value={orderSource} onValueChange={v => setOrderSource(v as typeof orderSource)}>
-                                        <SelectTrigger>
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="in_person">En personne</SelectItem>
-                                            <SelectItem value="phone">Par téléphone</SelectItem>
-                                            <SelectItem value="whatsapp">Via WhatsApp</SelectItem>
-                                            <SelectItem value="other">Autre</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label>Dépôt de départ</Label>
-                                    <Select value={selectedDepotId} onValueChange={changeDepot} disabled={loadingDepots}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Sélectionner un dépôt" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {depots.map(d => (
-                                                <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* ÉTAPE 2 : PRODUITS */}
-                    {step === 'products' && (
-                        <div className="space-y-4">
+                <div className="grid items-start gap-6 lg:grid-cols-3">
+                    <div className="min-w-0 space-y-4 lg:col-span-2">
+                        {/* ÉTAPE 1 : CLIENT */}
+                        {step === 'client' && (
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Ajouter des produits</CardTitle>
-                                    <CardDescription>Sélectionnez les produits et quantités</CardDescription>
+                                    <CardTitle>Client et dépôt</CardTitle>
+                                    <CardDescription>Recherchez le client par nom ou numéro de téléphone.</CardDescription>
                                 </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                        <Input
-                                            placeholder="Rechercher un produit..."
-                                            className="pl-9"
-                                            value={productSearch}
-                                            onChange={e => setProductSearch(e.target.value)}
-                                        />
-                                    </div>
-
-                                    {loadingProducts ? (
-                                        <TableSkeleton rows={4} columns={2} />
-                                    ) : filteredVariants.length === 0 ? (
-                                        <EmptyState
-                                            icon={Package}
-                                            title={productSearch ? 'Aucun produit ne correspond' : 'Aucun produit en stock dans ce dépôt'}
-                                            description={productSearch ? undefined : 'Approvisionnez ce dépôt ou choisissez-en un autre à l’étape Client.'}
-                                        />
+                                <CardContent className="space-y-5">
+                                    {selectedClient ? (
+                                        <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-muted/40 p-4">
+                                            <div className="min-w-0 space-y-1">
+                                                <p className="font-semibold text-foreground">{selectedClient.name}</p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {[selectedClient.phone, selectedClient.zone].filter(Boolean).join(' · ') || 'Aucune coordonnée'}
+                                                </p>
+                                                <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-xs">
+                                                    <span className="text-muted-foreground">
+                                                        Produits{' '}
+                                                        <span className={cn('tabular font-medium', Number(selectedClient.product_balance) < 0 ? 'text-destructive' : 'text-success')}>
+                                                            {formatSignedMoney(selectedClient.product_balance)}
+                                                        </span>
+                                                    </span>
+                                                    <span className="text-muted-foreground">
+                                                        Emballages{' '}
+                                                        <span className={cn('tabular font-medium', Number(selectedClient.packaging_balance) < 0 ? 'text-warning-foreground' : 'text-success')}>
+                                                            {formatSignedMoney(selectedClient.packaging_balance)}
+                                                        </span>
+                                                    </span>
+                                                </div>
+                                                {creditLimit > 0 && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Plafond de crédit <span className="tabular">{formatMoney(creditLimit)}</span> · dette actuelle{' '}
+                                                        <span className="tabular">{formatMoney(currentProductDebt)}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <Button variant="outline" size="sm" onClick={() => setSelectedClient(null)}>
+                                                Changer
+                                            </Button>
+                                        </div>
                                     ) : (
-                                        <div className="grid gap-2 max-h-64 overflow-y-auto">
-                                            {filteredVariants.map(v => {
-                                                const inOrder = orderItems.find(i => i.variantId === v.id)
-                                                return (
-                                                    <div key={v.id} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${inOrder ? 'border-accent bg-accent/5' : 'hover:bg-muted/50'
-                                                        }`}>
-                                                        <div>
-                                                            <p className="font-medium text-sm">{v.product_name} {v.volume && `(${v.volume})`}</p>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                {formatMoney(v.selling_price)} — Stock : {formatNumber(v.available_stock)}
-                                                            </p>
-                                                        </div>
-                                                        <Button size="sm" variant={inOrder ? 'default' : 'outline'} onClick={() => addItem(v)} disabled={v.available_stock <= 0} aria-label={`Ajouter ${v.product_name}`}>
-                                                            <Plus className="h-3 w-3" />
-                                                        </Button>
-                                                    </div>
-                                                )
-                                            })}
+                                        <div className="space-y-3">
+                                            <div className="relative">
+                                                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                                                <Input
+                                                    placeholder="Nom ou téléphone du client…"
+                                                    aria-label="Rechercher un client"
+                                                    className="h-12 rounded-lg pl-10 text-base"
+                                                    value={clientSearch}
+                                                    onChange={e => setClientSearch(e.target.value)}
+                                                />
+                                                {loadingClients && (
+                                                    <Loader2 className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-label="Recherche en cours" />
+                                                )}
+                                            </div>
+                                            {clients.length > 0 && (
+                                                <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+                                                    {clients.map(c => (
+                                                        <li key={c.id}>
+                                                            <button
+                                                                type="button"
+                                                                className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+                                                                onClick={() => { setSelectedClient(c); setClientSearch('') }}
+                                                            >
+                                                                <span className="min-w-0">
+                                                                    <span className="block truncate text-sm font-medium text-foreground">{c.name}</span>
+                                                                    {c.phone && <span className="block text-xs text-muted-foreground">{c.phone}</span>}
+                                                                </span>
+                                                                <Badge variant="muted">{c.zone || 'Sans zone'}</Badge>
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                            {clientSearch && !loadingClients && clients.length === 0 && (
+                                                <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm">
+                                                    <p className="text-muted-foreground">
+                                                        Aucun client trouvé.{' '}
+                                                        <Link href="/dashboard/clients/new" target="_blank" rel="noopener" className="font-medium text-brand-strong hover:underline">
+                                                            Créer ce client
+                                                        </Link>
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-muted-foreground">
+                                                        S’ouvre dans un nouvel onglet : votre saisie est conservée ici, revenez ensuite rechercher le client.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="orderSource">Source de la commande</Label>
+                                            <Select value={orderSource} onValueChange={v => setOrderSource(v as typeof orderSource)}>
+                                                <SelectTrigger id="orderSource" className="w-full data-[size=default]:h-11">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="in_person">En personne</SelectItem>
+                                                    <SelectItem value="phone">Par téléphone</SelectItem>
+                                                    <SelectItem value="whatsapp">Via WhatsApp</SelectItem>
+                                                    <SelectItem value="other">Autre</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="depot">Dépôt de départ</Label>
+                                            <Select value={selectedDepotId} onValueChange={changeDepot} disabled={loadingDepots}>
+                                                <SelectTrigger id="depot" className="w-full data-[size=default]:h-11">
+                                                    <SelectValue placeholder="Sélectionner un dépôt" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {depots.map(d => (
+                                                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">Le stock disponible dépend du dépôt choisi.</p>
+                                        </div>
+                                    </div>
                                 </CardContent>
                             </Card>
+                        )}
 
-                            {orderItems.length > 0 && (
+                        {/* ÉTAPE 2 : PRODUITS */}
+                        {step === 'products' && (
+                            <>
                                 <Card>
                                     <CardHeader>
-                                        <CardTitle className="text-base">Articles sélectionnés ({orderItems.length})</CardTitle>
+                                        <CardTitle>Produits</CardTitle>
+                                        <CardDescription>
+                                            Touchez un produit pour l’ajouter{selectedDepotName ? ` · stock du dépôt ${selectedDepotName}` : ''}.
+                                        </CardDescription>
                                     </CardHeader>
-                                    <CardContent className="space-y-3">
-                                        {orderItems.map(item => (
-                                            <div key={item.variantId} className="flex items-center gap-3">
-                                                <div className="flex-1">
-                                                    <p className="text-sm font-medium">{item.productName} {item.volume && `(${item.volume})`}</p>
-                                                    <p className="text-xs text-muted-foreground">{formatMoney(item.unitPrice)} / unité</p>
-                                                </div>
-                                                <Input
-                                                    type="number"
-                                                    min="1"
-                                                    max={item.availableStock}
-                                                    value={item.quantity}
-                                                    onChange={e => updateQuantity(item.variantId, Number(e.target.value))}
-                                                    className="w-20 text-center"
-                                                />
-                                                <p className="text-sm font-medium w-24 text-right">
-                                                    {formatMoney(item.quantity * item.unitPrice)}
-                                                </p>
-                                                <Button size="icon" variant="ghost" onClick={() => removeItem(item.variantId)} aria-label={`Retirer ${item.productName}`}>
-                                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                        <Separator />
-                                        <div className="flex justify-between font-semibold">
-                                            <span>Total produits</span>
-                                            <span>{formatMoney(totalProducts)}</span>
+                                    <CardContent className="space-y-4">
+                                        <div className="relative">
+                                            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                                            <Input
+                                                placeholder="Rechercher un produit…"
+                                                aria-label="Rechercher un produit"
+                                                className="h-12 rounded-lg pl-10 text-base"
+                                                value={productSearch}
+                                                onChange={e => setProductSearch(e.target.value)}
+                                            />
                                         </div>
+
+                                        {loadingProducts ? (
+                                            <TableSkeleton rows={4} columns={2} />
+                                        ) : filteredVariants.length === 0 ? (
+                                            <EmptyState
+                                                icon={Package}
+                                                title={productSearch ? 'Aucun produit ne correspond' : 'Aucun produit en stock dans ce dépôt'}
+                                                description={productSearch ? undefined : 'Approvisionnez ce dépôt ou choisissez-en un autre à l’étape Client.'}
+                                            />
+                                        ) : (
+                                            <ul className="grid max-h-[26rem] gap-2 overflow-y-auto sm:grid-cols-2">
+                                                {filteredVariants.map(v => {
+                                                    const inOrder = orderItems.find(i => i.variantId === v.id)
+                                                    const outOfStock = v.available_stock <= 0
+                                                    return (
+                                                        <li key={v.id}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => addItem(v)}
+                                                                disabled={outOfStock}
+                                                                aria-label={`Ajouter ${v.product_name}${v.volume ? ` (${v.volume})` : ''}`}
+                                                                className={cn(
+                                                                    'flex min-h-16 w-full items-center justify-between gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
+                                                                    inOrder ? 'border-brand bg-brand-soft' : 'border-border bg-card hover:bg-muted/60'
+                                                                )}
+                                                            >
+                                                                <span className="min-w-0">
+                                                                    <span className="block truncate text-sm font-medium text-foreground">
+                                                                        {v.product_name}
+                                                                        {v.volume && <span className="font-normal text-muted-foreground"> · {v.volume}</span>}
+                                                                    </span>
+                                                                    <span className="tabular block text-xs text-muted-foreground">
+                                                                        {formatMoney(v.selling_price)} · {outOfStock ? 'Rupture' : `${formatNumber(v.available_stock)} en stock`}
+                                                                    </span>
+                                                                </span>
+                                                                {inOrder ? (
+                                                                    <span className="tabular flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-brand px-2 text-xs font-semibold text-brand-foreground">
+                                                                        {formatNumber(inOrder.quantity)}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground">
+                                                                        <Plus className="h-4 w-4" aria-hidden="true" />
+                                                                    </span>
+                                                                )}
+                                                            </button>
+                                                        </li>
+                                                    )
+                                                })}
+                                            </ul>
+                                        )}
                                     </CardContent>
                                 </Card>
-                            )}
-                        </div>
-                    )}
 
-                    {/* ÉTAPE 3 : EMBALLAGES */}
-                    {step === 'packaging' && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Emballages</CardTitle>
-                                <CardDescription>
-                                    Saisissez les casiers sortis (livrés) et retournés par le client
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {packagingItems.length === 0 ? (
-                                    <p className="text-center text-muted-foreground py-6 text-sm">
-                                        Aucun type d&apos;emballage configuré.
-                                        <Link href="/dashboard/packaging/new" className="text-accent ml-1 hover:underline">
-                                            Configurer les emballages
-                                        </Link>
-                                    </p>
-                                ) : (
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-1">
-                                            <span className="col-span-5">Emballage</span>
-                                            <span className="col-span-3 text-center">Sortis (+)</span>
-                                            <span className="col-span-3 text-center">Retournés (-)</span>
-                                            <span className="col-span-1"></span>
+                                {orderItems.length > 0 && (
+                                    <Card className="gap-0 py-0">
+                                        <CardHeader className="border-b border-border py-4">
+                                            <CardTitle>Panier</CardTitle>
+                                            <CardDescription>
+                                                {orderItems.length} produit{orderItems.length > 1 ? 's' : ''} · {formatNumber(itemsCount)} unité{itemsCount > 1 ? 's' : ''}
+                                            </CardDescription>
+                                        </CardHeader>
+                                        <ul className="divide-y divide-border">
+                                            {orderItems.map(item => (
+                                                <li key={item.variantId} className="flex flex-wrap items-center gap-3 px-5 py-3 sm:flex-nowrap">
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-medium text-foreground">
+                                                            {item.productName}
+                                                            {item.volume && <span className="font-normal text-muted-foreground"> · {item.volume}</span>}
+                                                        </p>
+                                                        <p className="tabular text-xs text-muted-foreground">{formatMoney(item.unitPrice)} / unité</p>
+                                                    </div>
+                                                    <div className="flex items-center rounded-lg border border-border">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon-lg"
+                                                            className="rounded-r-none"
+                                                            onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
+                                                            disabled={item.quantity <= 1}
+                                                            aria-label={`Diminuer la quantité de ${item.productName}`}
+                                                        >
+                                                            <Minus className="h-4 w-4" aria-hidden="true" />
+                                                        </Button>
+                                                        <Input
+                                                            type="number"
+                                                            min="1"
+                                                            max={item.availableStock}
+                                                            value={item.quantity}
+                                                            onChange={e => updateQuantity(item.variantId, Number(e.target.value))}
+                                                            aria-label={`Quantité de ${item.productName}`}
+                                                            className="tabular h-10 w-16 rounded-none border-0 border-x border-border text-center shadow-none focus-visible:ring-0"
+                                                        />
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon-lg"
+                                                            className="rounded-l-none"
+                                                            onClick={() => updateQuantity(item.variantId, item.quantity + 1)}
+                                                            disabled={item.quantity >= item.availableStock}
+                                                            aria-label={`Augmenter la quantité de ${item.productName}`}
+                                                        >
+                                                            <Plus className="h-4 w-4" aria-hidden="true" />
+                                                        </Button>
+                                                    </div>
+                                                    <p className="tabular w-28 text-right text-sm font-semibold text-foreground">
+                                                        {formatMoney(item.quantity * item.unitPrice)}
+                                                    </p>
+                                                    <Button
+                                                        size="icon-lg"
+                                                        variant="ghost"
+                                                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                        onClick={() => removeItem(item.variantId)}
+                                                        aria-label={`Retirer ${item.productName}`}
+                                                    >
+                                                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                                    </Button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <div className="flex items-center justify-between border-t border-border bg-muted/40 px-5 py-3 text-sm">
+                                            <span className="text-muted-foreground">Total produits</span>
+                                            <span className="tabular font-semibold text-foreground">{formatMoney(totalProducts)}</span>
                                         </div>
-                                        {packagingItems.map((pkg, idx) => (
-                                            <div key={pkg.packagingTypeId} className={`grid grid-cols-12 gap-2 items-center p-2 rounded-lg ${(pkg.quantityOut > 0 || pkg.quantityIn > 0) ? 'bg-accent/5 border border-accent/20' : 'hover:bg-muted/30'
-                                                }`}>
-                                                <div className="col-span-5">
-                                                    <p className="text-sm font-medium">{pkg.name}</p>
-                                                    <p className="text-xs text-muted-foreground">{formatMoney(pkg.depositPrice)} / casier</p>
-                                                </div>
-                                                <Input
-                                                    type="number"
-                                                    min="0"
-                                                    value={pkg.quantityOut}
-                                                    onChange={e => {
-                                                        const val = Math.max(0, Number(e.target.value))
-                                                        setPackagingItems(prev => prev.map((p, i) => i === idx ? { ...p, quantityOut: val } : p))
-                                                    }}
-                                                    className="col-span-3 text-center h-8"
-                                                />
-                                                <Input
-                                                    type="number"
-                                                    min="0"
-                                                    value={pkg.quantityIn}
-                                                    onChange={e => {
-                                                        const val = Math.max(0, Number(e.target.value))
-                                                        setPackagingItems(prev => prev.map((p, i) => i === idx ? { ...p, quantityIn: val } : p))
-                                                    }}
-                                                    className="col-span-3 text-center h-8"
-                                                />
-                                            </div>
-                                        ))}
+                                    </Card>
+                                )}
+                            </>
+                        )}
+
+                        {/* ÉTAPE 3 : EMBALLAGES */}
+                        {step === 'packaging' && (
+                            <Card className="gap-0 py-0">
+                                <CardHeader className="border-b border-border py-4">
+                                    <CardTitle>Emballages</CardTitle>
+                                    <CardDescription>Casiers sortis (livrés) et rendus par le client. Laissez 0 si aucun.</CardDescription>
+                                </CardHeader>
+                                {packagingItems.length === 0 ? (
+                                    <div className="p-5">
+                                        <EmptyState
+                                            icon={Boxes}
+                                            title="Aucun type d’emballage configuré"
+                                            description="Vous pouvez passer cette étape ou configurer vos emballages."
+                                            action={{ label: 'Configurer les emballages', href: '/dashboard/packaging/new' }}
+                                        />
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="hidden grid-cols-12 gap-3 border-b border-border bg-muted/40 px-5 py-2.5 text-xs font-medium text-muted-foreground sm:grid">
+                                            <span className="col-span-6">Emballage</span>
+                                            <span className="col-span-3 text-center">Sortis (+)</span>
+                                            <span className="col-span-3 text-center">Rendus (−)</span>
+                                        </div>
+                                        <ul className="divide-y divide-border">
+                                            {packagingItems.map((pkg, idx) => {
+                                                const active = pkg.quantityOut > 0 || pkg.quantityIn > 0
+                                                return (
+                                                    <li
+                                                        key={pkg.packagingTypeId}
+                                                        className={cn('grid grid-cols-2 items-center gap-3 px-5 py-3 sm:grid-cols-12', active && 'bg-brand-soft/50')}
+                                                    >
+                                                        <div className="col-span-2 sm:col-span-6">
+                                                            <p className="text-sm font-medium text-foreground">{pkg.name}</p>
+                                                            <p className="tabular text-xs text-muted-foreground">{formatMoney(pkg.depositPrice)} / casier</p>
+                                                        </div>
+                                                        <div className="space-y-1 sm:col-span-3">
+                                                            <Label htmlFor={`out-${pkg.packagingTypeId}`} className="text-xs text-muted-foreground sm:sr-only">
+                                                                Sortis (+)
+                                                            </Label>
+                                                            <Input
+                                                                id={`out-${pkg.packagingTypeId}`}
+                                                                type="number"
+                                                                min="0"
+                                                                value={pkg.quantityOut}
+                                                                onChange={e => {
+                                                                    const val = Math.max(0, Number(e.target.value))
+                                                                    setPackagingItems(prev => prev.map((p, i) => i === idx ? { ...p, quantityOut: val } : p))
+                                                                }}
+                                                                className="tabular h-11 text-center"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1 sm:col-span-3">
+                                                            <Label htmlFor={`in-${pkg.packagingTypeId}`} className="text-xs text-muted-foreground sm:sr-only">
+                                                                Rendus (−)
+                                                            </Label>
+                                                            <Input
+                                                                id={`in-${pkg.packagingTypeId}`}
+                                                                type="number"
+                                                                min="0"
+                                                                value={pkg.quantityIn}
+                                                                onChange={e => {
+                                                                    const val = Math.max(0, Number(e.target.value))
+                                                                    setPackagingItems(prev => prev.map((p, i) => i === idx ? { ...p, quantityIn: val } : p))
+                                                                }}
+                                                                className="tabular h-11 text-center"
+                                                            />
+                                                        </div>
+                                                    </li>
+                                                )
+                                            })}
+                                        </ul>
                                         {totalPackaging !== 0 && (
-                                            <>
-                                                <Separator />
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-muted-foreground">Emballages sortis</span>
-                                                    <span>+{formatMoney(totalPackagingOut)}</span>
+                                            <dl className="space-y-1.5 border-t border-border bg-muted/40 px-5 py-3 text-sm">
+                                                <div className="flex justify-between">
+                                                    <dt className="text-muted-foreground">Emballages sortis</dt>
+                                                    <dd className="tabular text-foreground">+{formatMoney(totalPackagingOut)}</dd>
                                                 </div>
                                                 {totalPackagingIn > 0 && (
-                                                    <div className="flex justify-between text-sm">
-                                                        <span className="text-muted-foreground">Emballages retournés</span>
-                                                        <span className="text-success">-{formatMoney(totalPackagingIn)}</span>
+                                                    <div className="flex justify-between">
+                                                        <dt className="text-muted-foreground">Emballages rendus</dt>
+                                                        <dd className="tabular text-success">−{formatMoney(totalPackagingIn)}</dd>
                                                     </div>
                                                 )}
                                                 <div className="flex justify-between font-semibold">
-                                                    <span>Net emballages</span>
-                                                    <span>{formatMoney(totalPackaging)}</span>
+                                                    <dt className="text-foreground">Net emballages</dt>
+                                                    <dd className="tabular text-foreground">{formatMoney(totalPackaging)}</dd>
                                                 </div>
-                                            </>
+                                            </dl>
                                         )}
-                                    </div>
+                                    </>
                                 )}
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* ÉTAPE 4 : PAIEMENT */}
-                    {step === 'payment' && (
-                        <div className="space-y-4">
-                            {/* Récapitulatif */}
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">Récapitulatif de la commande</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-muted-foreground">Client</span>
-                                        <span className="font-medium">{selectedClient?.name}</span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-muted-foreground">Produits ({orderItems.length} articles)</span>
-                                        <span>{formatMoney(totalProducts)}</span>
-                                    </div>
-                                    {totalPackaging !== 0 && (
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-muted-foreground">Emballages (net)</span>
-                                            <span>{formatMoney(totalPackaging)}</span>
-                                        </div>
-                                    )}
-                                    <Separator />
-                                    <div className="flex justify-between font-bold text-lg">
-                                        <span>Total à payer</span>
-                                        <span>{formatMoney(totalAmount)}</span>
-                                    </div>
-                                </CardContent>
                             </Card>
+                        )}
 
+                        {/* ÉTAPE 4 : PAIEMENT */}
+                        {step === 'payment' && (
                             <Card>
                                 <CardHeader>
-                                    <CardTitle className="text-base">Mode de paiement</CardTitle>
+                                    <CardTitle>Paiement</CardTitle>
+                                    <CardDescription>Choisissez le mode de paiement et le montant encaissé.</CardDescription>
                                 </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-3">
+                                <CardContent className="space-y-5">
+                                    <div role="radiogroup" aria-label="Mode de paiement" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                                         {[
                                             { value: 'cash', label: 'Espèces', icon: Banknote },
                                             { value: 'mobile_money', label: 'Mobile Money', icon: Smartphone },
                                             { value: 'credit', label: 'Crédit', icon: CreditCard },
-                                            { value: 'mixed', label: 'Mixte', icon: CreditCard },
-                                        ].map(({ value, label, icon: Icon }) => (
-                                            <button
-                                                key={value}
-                                                type="button"
-                                                onClick={() => {
-                                                    setPaymentMethod(value as typeof paymentMethod)
-                                                    if (value === 'cash' || value === 'mobile_money') setPaidAmount(totalAmount)
-                                                }}
-                                                className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all ${paymentMethod === value
-                                                    ? 'border-accent bg-accent/10 text-accent'
-                                                    : 'border-border hover:border-accent/50'
-                                                    }`}
-                                            >
-                                                <Icon className="h-5 w-5" />
-                                                <span className="text-sm font-medium">{label}</span>
-                                            </button>
-                                        ))}
+                                            { value: 'mixed', label: 'Mixte', icon: Split },
+                                        ].map(({ value, label, icon: Icon }) => {
+                                            const selected = paymentMethod === value
+                                            return (
+                                                <button
+                                                    key={value}
+                                                    type="button"
+                                                    role="radio"
+                                                    aria-checked={selected}
+                                                    onClick={() => {
+                                                        setPaymentMethod(value as typeof paymentMethod)
+                                                        if (value === 'cash' || value === 'mobile_money') setPaidAmount(totalAmount)
+                                                    }}
+                                                    className={cn(
+                                                        'flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                                                        selected
+                                                            ? 'border-primary bg-primary text-primary-foreground'
+                                                            : 'border-border bg-card text-foreground hover:bg-muted/60'
+                                                    )}
+                                                >
+                                                    <Icon className="h-5 w-5" aria-hidden="true" />
+                                                    {label}
+                                                </button>
+                                            )
+                                        })}
                                     </div>
 
                                     {paymentMethod !== 'credit' && (
-                                        <div className="space-y-2">
-                                            <Label htmlFor="paidAmount">Montant encaissé (FCFA)</Label>
-                                            <Input
-                                                id="paidAmount"
-                                                type="number"
-                                                min="0"
-                                                max={totalAmount}
-                                                value={paidAmount}
-                                                onChange={e => setPaidAmount(Number(e.target.value))}
-                                            />
-                                            {remainingToPay > 0 && paymentMethod === 'mixed' && (
-                                                <p className="text-sm text-warning-foreground">
-                                                    Reste en crédit : {formatMoney(remainingToPay)}
-                                                </p>
+                                        <div className="grid gap-4 md:grid-cols-2">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="paidAmount">Montant encaissé (FCFA)</Label>
+                                                    <Input
+                                                        id="paidAmount"
+                                                        type="number"
+                                                        inputMode="numeric"
+                                                        min="0"
+                                                        max={totalAmount}
+                                                        value={paidAmount}
+                                                        onChange={e => setPaidAmount(Number(e.target.value))}
+                                                        className="tabular h-12 text-lg font-semibold"
+                                                    />
+                                                    {remainingToPay > 0 && paymentMethod === 'mixed' && (
+                                                        <p className="tabular text-xs font-medium text-warning-foreground">
+                                                            Reste en crédit : {formatMoney(remainingToPay)}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                            {paymentMethod === 'mixed' && (
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="cashAmount">Dont espèces (FCFA)</Label>
+                                                    <Input
+                                                        id="cashAmount"
+                                                        type="number"
+                                                        inputMode="numeric"
+                                                        min="0"
+                                                        max={paidAmount}
+                                                        value={cashAmount ?? paidAmount}
+                                                        onChange={e => setCashAmount(Math.max(0, Number(e.target.value)))}
+                                                        className="tabular h-12 text-lg"
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Seule la part en espèces est enregistrée en caisse
+                                                        {paidAmount - effectiveCashAmount > 0 && ` · Mobile Money / autre : ${formatMoney(paidAmount - effectiveCashAmount)}`}
+                                                    </p>
+                                                </div>
                                             )}
                                         </div>
                                     )}
 
-                                    {paymentMethod === 'mixed' && (
-                                        <div className="space-y-2">
-                                            <Label htmlFor="cashAmount">dont espèces (FCFA)</Label>
-                                            <Input
-                                                id="cashAmount"
-                                                type="number"
-                                                min="0"
-                                                max={paidAmount}
-                                                value={cashAmount ?? paidAmount}
-                                                onChange={e => setCashAmount(Math.max(0, Number(e.target.value)))}
-                                            />
-                                            <p className="text-xs text-muted-foreground">
-                                                Seule la part en espèces est enregistrée en caisse
-                                                {paidAmount - effectiveCashAmount > 0 && ` — Mobile Money / autre : ${formatMoney(paidAmount - effectiveCashAmount)}`}
-                                            </p>
-                                        </div>
-                                    )}
-
                                     {(paymentMethod === 'credit' || paymentMethod === 'mixed') && selectedClient && (
-                                        <div className={`p-3 rounded-lg border text-sm space-y-1 ${exceedsCreditLimit ? 'bg-destructive/10 border-destructive/30 text-destructive' : 'bg-muted/40 border-border'}`}>
+                                        <div
+                                            role={exceedsCreditLimit ? 'alert' : undefined}
+                                            className={cn(
+                                                'space-y-1 rounded-lg border px-4 py-3 text-sm',
+                                                exceedsCreditLimit ? 'border-destructive/20 bg-destructive/5 text-destructive' : 'border-border bg-muted/40 text-foreground'
+                                            )}
+                                        >
                                             <p>
-                                                Plafond de crédit : {creditLimit > 0 ? formatMoney(creditLimit) : 'aucun plafond défini'}
+                                                Plafond de crédit :{' '}
+                                                <span className="tabular font-medium">{creditLimit > 0 ? formatMoney(creditLimit) : 'aucun plafond défini'}</span>
                                             </p>
-                                            <p>Dette actuelle : {formatMoney(currentProductDebt)} — nouvelle dette : {formatMoney(newProductDebt)}</p>
+                                            <p className={exceedsCreditLimit ? undefined : 'text-muted-foreground'}>
+                                                Dette actuelle <span className="tabular">{formatMoney(currentProductDebt)}</span> · nouvelle dette{' '}
+                                                <span className="tabular">{formatMoney(newProductDebt)}</span>
+                                            </p>
                                             {exceedsCreditLimit && (
-                                                <p className="font-semibold flex items-center gap-1.5">
-                                                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                                                <p className="flex items-start gap-1.5 pt-1 font-medium">
+                                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                                                     Plafond dépassé de {formatMoney(currentProductDebt + newProductDebt - creditLimit)} : la vente sera refusée. Encaissez davantage ou augmentez le plafond du client.
                                                 </p>
                                             )}
                                         </div>
                                     )}
 
-                                    {/* Payment allocation preview */}
+                                    {/* Aperçu de la répartition du paiement */}
                                     {(() => {
                                         const effectivePaid = paymentMethod === 'credit' ? 0 : paidAmount
                                         const allocProducts = Math.min(totalProducts, effectivePaid)
@@ -818,98 +964,140 @@ export default function NewSalePage() {
                                         const debtProducts = totalProducts - allocProducts
                                         const debtPackaging = totalPackaging - allocPackaging
                                         return (debtProducts > 0 || debtPackaging > 0) ? (
-                                            <div className="p-4 rounded-lg bg-warning-soft border border-warning/30 space-y-2">
-                                                <p className="text-xs font-bold text-warning-foreground uppercase tracking-wider">Répartition du paiement</p>
-                                                <div className="grid grid-cols-2 gap-3 text-sm">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Payé produits</span>
-                                                        <span className="font-bold">{formatMoney(allocProducts)}</span>
+                                            <div className="grid gap-4 rounded-lg border border-border px-4 py-3 text-sm sm:grid-cols-2">
+                                                <dl className="space-y-1.5">
+                                                    <p className="text-xs font-medium text-muted-foreground">Répartition du paiement</p>
+                                                    <div className="flex justify-between gap-3">
+                                                        <dt className="text-muted-foreground">Payé produits</dt>
+                                                        <dd className="tabular font-medium text-foreground">{formatMoney(allocProducts)}</dd>
                                                     </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Payé emballages</span>
-                                                        <span className="font-bold">{formatMoney(allocPackaging)}</span>
+                                                    <div className="flex justify-between gap-3">
+                                                        <dt className="text-muted-foreground">Payé emballages</dt>
+                                                        <dd className="tabular font-medium text-foreground">{formatMoney(allocPackaging)}</dd>
                                                     </div>
-                                                </div>
-                                                <Separator />
-                                                <p className="text-xs font-bold text-destructive uppercase tracking-wider">Dettes créées</p>
-                                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                                </dl>
+                                                <dl className="space-y-1.5 sm:border-l sm:border-border sm:pl-4">
+                                                    <p className="text-xs font-medium text-muted-foreground">Dettes créées</p>
                                                     {debtProducts > 0 && (
-                                                        <div className="flex justify-between">
-                                                            <span className="text-muted-foreground">Dette produits</span>
-                                                            <span className="font-bold text-destructive">{formatMoney(debtProducts)}</span>
+                                                        <div className="flex justify-between gap-3">
+                                                            <dt className="text-muted-foreground">Dette produits</dt>
+                                                            <dd className="tabular font-medium text-destructive">{formatMoney(debtProducts)}</dd>
                                                         </div>
                                                     )}
                                                     {debtPackaging > 0 && (
-                                                        <div className="flex justify-between">
-                                                            <span className="text-muted-foreground">Dette emballages</span>
-                                                            <span className="font-bold text-warning-foreground">{formatMoney(debtPackaging)}</span>
+                                                        <div className="flex justify-between gap-3">
+                                                            <dt className="text-muted-foreground">Dette emballages</dt>
+                                                            <dd className="tabular font-medium text-warning-foreground">{formatMoney(debtPackaging)}</dd>
                                                         </div>
                                                     )}
-                                                </div>
+                                                </dl>
                                             </div>
                                         ) : null
                                     })()}
 
                                     <div className="space-y-2">
-                                        <Label htmlFor="notes">Notes (optionnel)</Label>
+                                        <Label htmlFor="notes">Notes</Label>
                                         <Textarea
                                             id="notes"
-                                            placeholder="Instructions de livraison, remarques..."
+                                            placeholder="Instructions de livraison, remarques…"
                                             rows={2}
                                             value={notes}
                                             onChange={e => setNotes(e.target.value)}
                                         />
+                                        <p className="text-xs text-muted-foreground">Facultatif.</p>
                                     </div>
                                 </CardContent>
                             </Card>
-                        </div>
-                    )}
-
-                    {/* Navigation entre étapes */}
-                    <div className="flex justify-between pt-2">
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                if (currentStepIndex > 0) setStep(steps[currentStepIndex - 1])
-                                else router.push('/dashboard/sales')
-                            }}
-                        >
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            {currentStepIndex === 0 ? 'Annuler' : 'Précédent'}
-                        </Button>
-
-                        {step !== 'payment' ? (
-                            <Button
-                                onClick={() => setStep(steps[currentStepIndex + 1])}
-                                disabled={
-                                    (step === 'client' && (!selectedClient || !selectedDepotId)) ||
-                                    (step === 'products' && orderItems.length === 0)
-                                }
-                            >
-                                Suivant
-                                <ChevronRight className="h-4 w-4 ml-2" />
-                            </Button>
-                        ) : (
-                            <Button
-                                onClick={handleSubmit}
-                                disabled={isLoading || totalAmount === 0}
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                        Enregistrement...
-                                    </>
-                                ) : (
-                                    <>
-                                        <ShoppingCart className="h-4 w-4 mr-2" />
-                                        Valider la vente
-                                    </>
-                                )}
-                            </Button>
                         )}
+
+                        {/* Navigation (écran large) */}
+                        <div className="hidden items-center justify-between lg:flex">
+                            <Button variant="outline" size="lg" onClick={goBack}>
+                                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                                {currentStepIndex === 0 ? 'Annuler' : 'Précédent'}
+                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                                Étape {currentStepIndex + 1} sur {STEPS.length}
+                            </p>
+                        </div>
                     </div>
+
+                    {/* Résumé collant (écran large) */}
+                    <aside className="hidden lg:sticky lg:top-20 lg:block" aria-label="Résumé de la vente">
+                        <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+                            <div className="border-b border-border px-5 py-3.5">
+                                <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Résumé</h2>
+                                <p className="text-xs text-muted-foreground">Mis à jour à chaque étape</p>
+                            </div>
+                            <dl className="space-y-2.5 px-5 py-4 text-sm">
+                                <div className="flex justify-between gap-3">
+                                    <dt className="text-muted-foreground">Client</dt>
+                                    <dd className="truncate text-right font-medium text-foreground">{selectedClient?.name || '—'}</dd>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                    <dt className="text-muted-foreground">Dépôt</dt>
+                                    <dd className="truncate text-right text-foreground">{selectedDepotName || '—'}</dd>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                    <dt className="text-muted-foreground">
+                                        Produits{orderItems.length > 0 && <span className="tabular"> ({formatNumber(itemsCount)})</span>}
+                                    </dt>
+                                    <dd className="tabular text-foreground">{formatMoney(totalProducts)}</dd>
+                                </div>
+                                {totalPackaging !== 0 && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Emballages (net)</dt>
+                                        <dd className="tabular text-foreground">{formatMoney(totalPackaging)}</dd>
+                                    </div>
+                                )}
+                                {step === 'payment' && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Paiement</dt>
+                                        <dd className="text-foreground">{paymentLabels[paymentMethod]}</dd>
+                                    </div>
+                                )}
+                            </dl>
+                            <div className="space-y-4 border-t border-border bg-muted/40 px-5 py-4">
+                                <div className="flex items-baseline justify-between gap-3">
+                                    <span className="text-sm font-medium text-foreground">Total</span>
+                                    <span className="tabular text-2xl font-semibold tracking-tight text-foreground">{formatMoney(totalAmount)}</span>
+                                </div>
+                                {step === 'payment' && paymentMethod !== 'cash' && paymentMethod !== 'mobile_money' && (
+                                    <div className="flex justify-between gap-3 text-sm">
+                                        <span className="text-muted-foreground">Reste en crédit</span>
+                                        <span className="tabular font-medium text-warning-foreground">
+                                            {formatMoney(paymentMethod === 'credit' ? totalAmount : Math.max(0, remainingToPay))}
+                                        </span>
+                                    </div>
+                                )}
+                                {renderPrimaryAction('w-full')}
+                            </div>
+                        </section>
+                    </aside>
                 </div>
-            </main>
+            </PageShell>
+
+            {/* Barre d'action collante (mobile / tablette) */}
+            <div className="sticky bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:hidden">
+                <div className="mx-auto flex max-w-3xl items-center gap-3">
+                    <Button
+                        variant="outline"
+                        size="icon-lg"
+                        className="h-12 w-12 shrink-0 rounded-lg"
+                        onClick={goBack}
+                        aria-label={currentStepIndex === 0 ? 'Annuler la vente' : 'Étape précédente'}
+                    >
+                        <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+                    </Button>
+                    <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted-foreground">
+                            Total · étape {currentStepIndex + 1}/{STEPS.length}
+                        </p>
+                        <p className="tabular truncate text-lg font-semibold text-foreground">{formatMoney(totalAmount)}</p>
+                    </div>
+                    {renderPrimaryAction('shrink-0')}
+                </div>
+            </div>
         </div>
     )
 }

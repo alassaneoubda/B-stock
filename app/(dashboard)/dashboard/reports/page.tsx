@@ -1,8 +1,9 @@
 import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { BarChart3, TrendingUp, Users, Package, CreditCard, ShoppingCart, ArrowUpRight, ArrowDownRight, PieChart, Wallet, Boxes, Truck } from 'lucide-react'
+import { PageIntro, PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ArrowDownRight, ArrowUpRight, BarChart3, Boxes, CreditCard, Package, Scale, ShoppingCart, Truck, Users, Wallet } from 'lucide-react'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
 
 // Pas de try/catch : une panne SQL remonte à error.tsx au lieu d'afficher des zéros.
@@ -140,6 +141,13 @@ function monthLabel(month: string) {
     return new Date(year, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 }
 
+/** « 2026-10 » → « oct. » (axe du graphique) */
+function monthShort(month: string) {
+    const [year, m] = month.split('-').map(Number)
+    if (!year || !m) return month
+    return new Date(year, m - 1, 1).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')
+}
+
 /** « 2026-10-06 » (ou Date) → jour du mois, sans décalage de fuseau. */
 function dayOfMonth(day: unknown) {
     if (day instanceof Date) return day.getDate()
@@ -154,6 +162,26 @@ const paymentLabels: Record<string, string> = {
     mixed: 'Mixte',
 }
 
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** Montant compact pour les étiquettes de graphique (« 125 k »). */
+function compact(n: number) {
+    if (n <= 0) return '—'
+    if (n >= 1_000_000) return `${formatNumber(Math.round(n / 100_000) / 10)} M`
+    return `${formatNumber(Math.round(n / 1000))} k`
+}
+
+function ChartEmpty({ icon: Icon, text }: { icon: typeof BarChart3; text: string }) {
+    return (
+        <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <Icon className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <p className="text-sm text-muted-foreground">{text}</p>
+        </div>
+    )
+}
+
 export default async function ReportsPage() {
     const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
@@ -162,108 +190,137 @@ export default async function ReportsPage() {
     // salesByMonth[0] n'est le mois en cours que s'il y a eu des ventes ce mois-ci
     const currentMonthSales = data.salesByMonth.find((m) => m.month === m.current_month)
     const salesMinusPurchases = Number(currentMonthSales?.total || 0) - data.procurementTotal
+    const currentMonthTotal = Number(currentMonthSales?.total || 0)
 
-    const kpiData = [
-        {
-            title: "Ventes ce Mois",
-            value: formatMoney(Number(currentMonthSales?.total || 0)),
-            description: `${formatNumber(currentMonthSales?.count || 0)} commande(s) non annulée(s)`,
-            icon: ShoppingCart,
-            color: "bg-primary/10 text-brand-strong",
-        },
-        {
-            title: "Achats ce Mois",
-            value: formatMoney(data.procurementTotal),
-            description: `${formatNumber(data.procurementCount)} commande(s) fournisseur`,
-            icon: Truck,
-            color: "bg-info/10 text-info",
-        },
-        {
-            title: "Créances Produits",
-            value: formatMoney(data.productDebt),
-            description: "Encours de paiement",
-            icon: CreditCard,
-            color: "bg-destructive/10 text-destructive",
-        },
-        {
-            title: "Dettes Emballages",
-            value: formatMoney(data.packagingDebt),
-            description: "Casiers à récupérer",
-            icon: Package,
-            color: "bg-warning/10 text-warning-foreground",
-        },
-        {
-            title: "Valeur du Stock",
-            value: formatMoney(data.stockValue),
-            description: `${formatNumber(data.stockUnits)} unités en réserve`,
-            icon: TrendingUp,
-            color: "bg-success/10 text-success",
-        },
-        {
-            title: "Ventes − Achats",
-            value: formatMoney(salesMinusPurchases),
-            description: "Écart du mois (ce n'est pas une marge comptable)",
-            icon: Boxes,
-            color: salesMinusPurchases >= 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive",
-        },
-    ]
+    // Graphique mensuel : du plus ancien au plus récent
+    const months = [...data.salesByMonth].reverse()
+    const maxMonth = Math.max(...months.map((m) => Number(m.total)), 1)
+    const sixMonthsTotal = months.reduce((sum, m) => sum + Number(m.total), 0)
+
+    const maxDay = Math.max(...data.dailySales.map((d) => Number(d.total)), 1)
+    const todayOfMonth = new Date().getDate()
+
+    const maxClient = Number(data.topClients[0]?.total_sales || 0)
+    const maxProduct = Math.max(...data.topProducts.map((p) => Number(p.revenue)), 0)
+    const paymentsTotal = data.paymentMethods.reduce((sum, pm) => sum + Number(pm.total), 0)
+    const currentMonthName = capitalize(new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))
 
     return (
-        <div className="flex flex-col min-h-screen bg-muted/30">
-            <DashboardHeader
-                title="Intelligence & Rapports"
-                description="Suivez la performance et la santé financière de votre entreprise"
-            />
+        <div className="flex min-h-screen flex-col">
+            <DashboardHeader title="Rapports" description="Performance commerciale et santé financière" />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                {/* KPI Grid */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {kpiData.map((stat) => (
-                        <div
-                            key={stat.title}
-                            className="relative overflow-hidden rounded-lg bg-card p-8 shadow-sm border border-border hover:border-border transition-colors"
-                        >
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color}`}>
-                                    <stat.icon className="h-7 w-7" aria-hidden="true" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">{stat.title}</p>
-                                    <div className="text-2xl font-semibold text-foreground tracking-tight">{stat.value}</div>
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <p className="text-sm font-bold text-muted-foreground/70">{stat.description}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
+            <PageShell>
+                <PageIntro eyebrow="Période en cours" title={currentMonthName} />
+
+                {/* Indicateurs du mois */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <StatCard
+                        emphasis
+                        label="Ventes du mois"
+                        value={formatMoney(currentMonthTotal)}
+                        hint={`${formatNumber(currentMonthSales?.count || 0)} commande(s) non annulée(s)`}
+                        icon={ShoppingCart}
+                    />
+                    <StatCard
+                        label="Achats du mois"
+                        value={formatMoney(data.procurementTotal)}
+                        hint={`${formatNumber(data.procurementCount)} commande(s) fournisseur`}
+                        icon={Truck}
+                    />
+                    <StatCard
+                        label="Ventes − achats"
+                        value={formatMoney(salesMinusPurchases)}
+                        hint="Écart du mois (ce n’est pas une marge comptable)"
+                        icon={Scale}
+                        tone={salesMinusPurchases >= 0 ? 'success' : 'danger'}
+                    />
+                    <StatCard
+                        label="Valeur du stock"
+                        value={formatMoney(data.stockValue)}
+                        hint={`${formatNumber(data.stockUnits)} unités au prix de revient`}
+                        icon={Boxes}
+                    />
                 </div>
 
-                <div className="grid gap-10 lg:grid-cols-2">
-                    {/* Monthly Sales Chart-style Breakdown */}
-                    <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden p-8">
-                        <div className="flex items-center justify-between mb-8">
-                            <div>
-                                <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-3">
-                                    <BarChart3 className="h-6 w-6 text-brand-strong" />
-                                    Ventes par Mois
-                                </h3>
-                                <p className="text-sm font-medium text-muted-foreground/70 mt-1">Évolution des 6 derniers mois</p>
+                <div className="grid gap-4 lg:grid-cols-3">
+                    {/* Ventes par mois */}
+                    <Panel
+                        title="Ventes par mois"
+                        description={`${formatMoney(sixMonthsTotal)} sur les 6 derniers mois`}
+                        className="lg:col-span-2"
+                        bodyClassName="px-5 pb-5 pt-6"
+                    >
+                        {months.length === 0 ? (
+                            <ChartEmpty icon={BarChart3} text="Aucune vente sur les 6 derniers mois." />
+                        ) : (
+                            <div
+                                className="flex h-52 items-end gap-3 sm:gap-5"
+                                role="img"
+                                aria-label={`Ventes par mois sur les 6 derniers mois, total ${formatMoney(sixMonthsTotal)}`}
+                            >
+                                {months.map((month) => {
+                                    const isCurrent = month.month === month.current_month
+                                    const total = Number(month.total)
+                                    const height = total > 0 ? Math.max(6, (total / maxMonth) * 100) : 2
+                                    return (
+                                        <div key={month.month} className="group flex h-full flex-1 flex-col items-center justify-end gap-2">
+                                            <span className="tabular text-[11px] font-medium text-muted-foreground">{compact(total)}</span>
+                                            <div
+                                                className={isCurrent ? 'w-full max-w-16 rounded-md bg-brand' : 'w-full max-w-16 rounded-md bg-primary/80 transition-colors group-hover:bg-primary'}
+                                                style={{ height: `${height}%` }}
+                                                title={`${monthLabel(month.month)} : ${formatMoney(total)} · ${formatNumber(month.count)} commande(s)`}
+                                            />
+                                            <span className={isCurrent ? 'text-xs font-semibold capitalize text-foreground' : 'text-xs capitalize text-muted-foreground'}>
+                                                {monthShort(month.month)}
+                                            </span>
+                                        </div>
+                                    )
+                                })}
                             </div>
-                        </div>
+                        )}
+                    </Panel>
 
-                        <div className="space-y-6">
-                            {data.salesByMonth.length === 0 ? (
-                                <div className="text-center py-12 flex flex-col items-center">
-                                    <div className="h-16 w-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                                        <BarChart3 className="h-8 w-8 text-muted-foreground/70" />
-                                    </div>
-                                    <p className="text-muted-foreground font-bold text-sm">Aucune vente sur les 6 derniers mois</p>
+                    {/* Encours */}
+                    <Panel title="Encours clients" description="Montants restant à recouvrer">
+                        <ul className="divide-y divide-border">
+                            <li className="flex items-start gap-3 px-5 py-4">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                                    <CreditCard className="h-4 w-4" aria-hidden="true" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-foreground">Créances produits</p>
+                                    <p className="text-xs text-muted-foreground">Ventes non encore payées</p>
                                 </div>
-                            ) : (
-                                data.salesByMonth.map((month, index) => {
-                                    const maxSales = Math.max(...data.salesByMonth.map(m => Number(m.total)))
-                                    const pct = maxSales > 0 ? (Number(month.total) / maxSales) * 100 : 0
+                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(data.productDebt)}</span>
+                            </li>
+                            <li className="flex items-start gap-3 px-5 py-4">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-warning-soft text-warning-foreground">
+                                    <Package className="h-4 w-4" aria-hidden="true" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-foreground">Dettes emballages</p>
+                                    <p className="text-xs text-muted-foreground">Casiers et bouteilles à récupérer</p>
+                                </div>
+                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(data.packagingDebt)}</span>
+                            </li>
+                        </ul>
+                    </Panel>
+                </div>
+
+                {/* Détail mensuel */}
+                {data.salesByMonth.length > 0 && (
+                    <Panel title="Détail mensuel" description="Variation par rapport au mois précédent">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="hover:bg-transparent">
+                                    <TableHead className="pl-5">Mois</TableHead>
+                                    <TableHead className="text-right">Commandes</TableHead>
+                                    <TableHead className="text-right">Montant</TableHead>
+                                    <TableHead className="pr-5 text-right">Variation</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {data.salesByMonth.map((month, index) => {
                                     // Variation réelle par rapport au mois précédent (liste triée du plus récent au plus ancien)
                                     const previous = data.salesByMonth[index + 1]
                                     const previousTotal = Number(previous?.total || 0)
@@ -271,192 +328,188 @@ export default async function ReportsPage() {
                                         ? Math.round(((Number(month.total) - previousTotal) / previousTotal) * 100)
                                         : null
                                     return (
-                                        <div key={month.month} className="group/item">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{monthLabel(month.month)}</span>
-                                                <span className="text-sm font-semibold text-foreground">{formatMoney(Number(month.total))}</span>
-                                            </div>
-                                            <div className="relative h-4 w-full bg-muted/50 rounded-full overflow-hidden border border-border">
-                                                <div
-                                                    className="absolute inset-y-0 left-0 bg-primary rounded-full transition-colors group-hover/item:bg-blue-500"
-                                                    style={{ width: `${pct}%` }}
-                                                />
-                                            </div>
-                                            <div className="flex items-center justify-between mt-1">
-                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight">{formatNumber(month.count)} commandes</span>
-                                                {variation !== null && (
-                                                    <div className="flex items-center gap-1" title="Variation par rapport au mois précédent">
-                                                        {variation >= 0 ? (
-                                                            <ArrowUpRight className="h-3 w-3 text-success" aria-hidden="true" />
-                                                        ) : (
-                                                            <ArrowDownRight className="h-3 w-3 text-destructive" aria-hidden="true" />
-                                                        )}
-                                                        <span className={`text-[10px] font-semibold ${variation >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                                            {variation >= 0 ? '+' : '−'}{Math.abs(variation)} % vs mois préc.
-                                                        </span>
-                                                    </div>
+                                        <TableRow key={month.month}>
+                                            <TableCell className="pl-5 font-medium capitalize text-foreground">
+                                                {monthLabel(month.month)}
+                                                {month.month === month.current_month && (
+                                                    <span className="ml-2 align-middle">
+                                                        <StatusBadge label="En cours" tone="brand" />
+                                                    </span>
                                                 )}
-                                            </div>
+                                            </TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(month.count)}</TableCell>
+                                            <TableCell className="tabular text-right font-semibold text-foreground">{formatMoney(Number(month.total))}</TableCell>
+                                            <TableCell className="pr-5 text-right">
+                                                {variation === null ? (
+                                                    <span className="text-muted-foreground">—</span>
+                                                ) : (
+                                                    <span
+                                                        className={`tabular inline-flex items-center gap-1 text-xs font-semibold ${variation >= 0 ? 'text-success' : 'text-destructive'}`}
+                                                    >
+                                                        {variation >= 0 ? (
+                                                            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                                                        ) : (
+                                                            <ArrowDownRight className="h-3.5 w-3.5" aria-hidden="true" />
+                                                        )}
+                                                        {variation >= 0 ? '+' : '−'}{Math.abs(variation)} %
+                                                    </span>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    )
+                                })}
+                            </TableBody>
+                        </Table>
+                    </Panel>
+                )}
+
+                {/* Ventes journalières */}
+                <Panel
+                    title="Ventes journalières"
+                    description="Jours avec ventes du mois en cours"
+                    bodyClassName="px-5 pb-5 pt-6"
+                >
+                    {data.dailySales.length === 0 ? (
+                        <ChartEmpty icon={BarChart3} text="Aucune vente ce mois-ci." />
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <div
+                                className="flex h-48 min-w-max items-end gap-1.5 sm:min-w-0"
+                                role="img"
+                                aria-label={`Ventes journalières du mois en cours, ${data.dailySales.length} jour(s) avec ventes`}
+                            >
+                                {data.dailySales.map((day) => {
+                                    const total = Number(day.total)
+                                    const isToday = dayOfMonth(day.day) === todayOfMonth
+                                    const hPct = total > 0 ? Math.max(4, (total / maxDay) * 100) : 2
+                                    return (
+                                        <div key={String(day.day)} className="group flex h-full min-w-6 flex-1 flex-col items-center justify-end gap-2">
+                                            <span className="tabular whitespace-nowrap text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                                                {compact(total)}
+                                            </span>
+                                            <div
+                                                className={isToday ? 'w-full rounded-md bg-brand' : 'w-full rounded-md bg-primary/80 transition-colors group-hover:bg-primary'}
+                                                style={{ height: `${hPct}%` }}
+                                                title={`${formatDate(day.day)} : ${formatMoney(day.total)} (${formatNumber(day.count)} cmd)`}
+                                            />
+                                            <span className={isToday ? 'tabular text-[11px] font-semibold text-foreground' : 'tabular text-[11px] text-muted-foreground'}>
+                                                {dayOfMonth(day.day)}
+                                            </span>
                                         </div>
                                     )
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Top Clients Breakdown */}
-                    <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden p-8">
-                        <div className="flex items-center justify-between mb-8">
-                            <div>
-                                <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-3">
-                                    <PieChart className="h-6 w-6 text-success" />
-                                    Top Clients
-                                </h3>
-                                <p className="text-sm font-medium text-muted-foreground/70 mt-1">Par contribution au Chiffre d'Affaires</p>
+                                })}
                             </div>
                         </div>
+                    )}
+                </Panel>
 
-                        <div className="space-y-4">
-                            {data.topClients.length === 0 ? (
-                                <div className="text-center py-12 flex flex-col items-center">
-                                    <div className="h-16 w-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-                                        <Users className="h-8 w-8 text-muted-foreground/70" />
-                                    </div>
-                                    <p className="text-muted-foreground/70 font-bold text-sm">Aucun historique client</p>
-                                </div>
-                            ) : (
-                                data.topClients.map((client, i) => (
-                                    <div key={`${client.name}-${i}`} className="flex items-center gap-4 p-4 rounded-lg hover:bg-muted/30 transition-all border border-transparent hover:border-border group/client">
-                                        <div className="h-12 w-12 rounded-md bg-muted font-semibold text-muted-foreground/70 flex items-center justify-center shrink-0 group-hover/client:bg-blue-600 group-hover/client:text-white transition-colors">
-                                            {i + 1}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="text-sm font-semibold text-foreground truncate">{client.name}</span>
-                                                <span className="text-sm font-semibold text-foreground">{formatMoney(Number(client.total_sales))}</span>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{formatNumber(client.orders_count)} transactions</span>
-                                                <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-                                                    <div
-                                                        className="h-full bg-primary/30"
-                                                        style={{ width: `${Number(data.topClients[0]?.total_sales) > 0 ? (Number(client.total_sales) / Number(data.topClients[0].total_sales)) * 100 : 0}%` }}
+                <div className="grid gap-4 lg:grid-cols-2">
+                    {/* Meilleurs clients */}
+                    <Panel title="Meilleurs clients" description="Par chiffre d’affaires, toutes périodes">
+                        {data.topClients.length === 0 ? (
+                            <ChartEmpty icon={Users} text="Aucun historique client pour l’instant." />
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="w-10 pl-5">#</TableHead>
+                                        <TableHead>Client</TableHead>
+                                        <TableHead className="text-right">Commandes</TableHead>
+                                        <TableHead className="pr-5 text-right">Montant</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {data.topClients.map((client, i) => (
+                                        <TableRow key={`${client.name}-${i}`}>
+                                            <TableCell className="tabular pl-5 text-muted-foreground">{i + 1}</TableCell>
+                                            <TableCell className="max-w-0 w-full">
+                                                <span className="block truncate font-medium text-foreground">{client.name}</span>
+                                                <span className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                                                    <span
+                                                        className="block h-full rounded-full bg-primary/70"
+                                                        style={{ width: `${maxClient > 0 ? (Number(client.total_sales) / maxClient) * 100 : 0}%` }}
                                                     />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(client.orders_count)}</TableCell>
+                                            <TableCell className="tabular pr-5 text-right font-semibold text-foreground">
+                                                {formatMoney(Number(client.total_sales))}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </Panel>
+
+                    {/* Produits du mois */}
+                    <Panel title="Produits les plus vendus" description="Par chiffre d’affaires, mois en cours">
+                        {data.topProducts.length === 0 ? (
+                            <ChartEmpty icon={Package} text="Aucune vente ce mois-ci." />
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="w-10 pl-5">#</TableHead>
+                                        <TableHead>Produit</TableHead>
+                                        <TableHead className="text-right">Vendus</TableHead>
+                                        <TableHead className="pr-5 text-right">Montant</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {data.topProducts.map((prod, i) => (
+                                        <TableRow key={`${prod.product_name}-${prod.packaging_name}`}>
+                                            <TableCell className="tabular pl-5 text-muted-foreground">{i + 1}</TableCell>
+                                            <TableCell className="max-w-0 w-full">
+                                                <span className="block truncate font-medium text-foreground">{prod.product_name}</span>
+                                                <span className="block truncate text-xs text-muted-foreground">{prod.packaging_name}</span>
+                                                <span className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                                                    <span
+                                                        className="block h-full rounded-full bg-primary/70"
+                                                        style={{ width: `${maxProduct > 0 ? (Number(prod.revenue) / maxProduct) * 100 : 0}%` }}
+                                                    />
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(prod.units_sold)}</TableCell>
+                                            <TableCell className="tabular pr-5 text-right font-semibold text-foreground">
+                                                {formatMoney(Number(prod.revenue))}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </Panel>
                 </div>
 
-                <div className="grid gap-10 lg:grid-cols-2">
-                    {/* Top Products */}
-                    <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden p-8">
-                        <div className="mb-8">
-                            <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-3">
-                                <Package className="h-6 w-6 text-info" />
-                                Top Produits du Mois
-                            </h3>
-                            <p className="text-sm font-medium text-muted-foreground/70 mt-1">Par chiffre d&apos;affaires</p>
-                        </div>
-                        <div className="space-y-3">
-                            {data.topProducts.length === 0 ? (
-                                <div className="text-center py-12 text-muted-foreground/70 font-bold text-sm">Aucune vente ce mois</div>
-                            ) : (
-                                data.topProducts.map((prod, i) => {
-                                    const maxRev = Math.max(...data.topProducts.map(p => Number(p.revenue)))
-                                    const pct = maxRev > 0 ? (Number(prod.revenue) / maxRev) * 100 : 0
-                                    return (
-                                        <div key={`${prod.product_name}-${prod.packaging_name}`} className="flex items-center gap-4 p-3 rounded-md hover:bg-muted/50 transition-colors">
-                                            <span className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground/70 shrink-0">{i + 1}</span>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-sm font-semibold text-foreground truncate">{prod.product_name}</span>
-                                                    <span className="text-sm font-semibold text-foreground ml-2">{formatMoney(Number(prod.revenue))}</span>
-                                                </div>
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-[10px] font-bold text-muted-foreground">{prod.packaging_name} — {formatNumber(prod.units_sold)} vendus</span>
-                                                    <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-                                                        <div className="h-full bg-info/40 rounded-full" style={{ width: `${pct}%` }} />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Payment Methods */}
-                    <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden p-8">
-                        <div className="mb-8">
-                            <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-3">
-                                <Wallet className="h-6 w-6 text-info" />
-                                Répartition des Paiements
-                            </h3>
-                            <p className="text-sm font-medium text-muted-foreground/70 mt-1">Canaux de règlement ce mois</p>
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            {data.paymentMethods.length === 0 ? (
-                                <div className="col-span-full text-center py-12 text-muted-foreground font-bold text-sm">Aucune vente ce mois</div>
-                            ) : (
-                                data.paymentMethods.map((pm) => (
-                                    <div key={pm.payment_method ?? 'unknown'} className="p-6 rounded-xl bg-muted/50 border border-border hover:bg-card transition-colors">
-                                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
-                                            {paymentLabels[pm.payment_method] || pm.payment_method || 'Non renseigné'}
-                                        </p>
-                                        <p className="text-xl font-semibold text-foreground leading-none mb-2">{formatMoney(Number(pm.total))}</p>
-                                        <div className="flex items-center gap-2">
-                                            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight">{formatNumber(pm.count)} transactions</span>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Daily Sales Bar Chart */}
-                <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden p-8">
-                    <div className="mb-8">
-                        <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-3">
-                            <BarChart3 className="h-6 w-6 text-success" />
-                            Ventes Journalières
-                        </h3>
-                        <p className="text-sm font-medium text-muted-foreground/70 mt-1">Évolution quotidienne du mois en cours</p>
-                    </div>
-                    {data.dailySales.length === 0 ? (
-                        <div className="text-center py-12 text-muted-foreground/70 font-bold text-sm">Aucune donnée ce mois</div>
+                {/* Moyens de paiement */}
+                <Panel title="Moyens de paiement" description="Répartition des ventes du mois en cours">
+                    {data.paymentMethods.length === 0 ? (
+                        <ChartEmpty icon={Wallet} text="Aucune vente ce mois-ci." />
                     ) : (
-                        <div className="flex items-end gap-1 h-48 overflow-x-auto pb-2">
-                            {data.dailySales.map((day) => {
-                                const maxDay = Math.max(...data.dailySales.map(d => Number(d.total)))
-                                const hPct = maxDay > 0 ? (Number(day.total) / maxDay) * 100 : 0
+                        <ul className="grid divide-y divide-border sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4">
+                            {data.paymentMethods.map((pm) => {
+                                const share = paymentsTotal > 0 ? Math.round((Number(pm.total) / paymentsTotal) * 100) : 0
                                 return (
-                                    <div key={String(day.day)} className="flex flex-col items-center gap-1 flex-1 min-w-[24px] group/bar">
-                                        <span className="text-[9px] font-semibold text-muted-foreground/70 opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
-                                            {formatMoney(Number(day.total))}
-                                        </span>
-                                        <div
-                                            className="w-full rounded-t-lg bg-success hover:bg-success transition-colors min-h-[4px]"
-                                            style={{ height: `${Math.max(hPct, 3)}%` }}
-                                            title={`${formatDate(day.day)} : ${formatMoney(day.total)} (${formatNumber(day.count)} cmd)`}
-                                        />
-                                        <span className="text-[8px] font-bold text-muted-foreground/70 leading-none">
-                                            {dayOfMonth(day.day)}
-                                        </span>
-                                    </div>
+                                    <li key={pm.payment_method ?? 'unknown'} className="space-y-2 px-5 py-4">
+                                        <div className="flex items-baseline justify-between gap-2">
+                                            <span className="text-sm font-medium text-foreground">
+                                                {paymentLabels[pm.payment_method] || pm.payment_method || 'Non renseigné'}
+                                            </span>
+                                            <span className="tabular text-xs text-muted-foreground">{share} %</span>
+                                        </div>
+                                        <p className="tabular text-lg font-semibold tracking-tight text-foreground">{formatMoney(Number(pm.total))}</p>
+                                        <div className="h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                                            <div className="h-full rounded-full bg-primary/70" style={{ width: `${share}%` }} />
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">{formatNumber(pm.count)} transaction(s)</p>
+                                    </li>
                                 )
                             })}
-                        </div>
+                        </ul>
                     )}
-                </div>
-            </main>
+                </Panel>
+            </PageShell>
         </div>
     )
 }

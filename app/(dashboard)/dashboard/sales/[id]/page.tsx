@@ -16,9 +16,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import Link from 'next/link'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
     Table,
     TableBody,
@@ -27,21 +26,10 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import {
-    ArrowLeft,
-    User,
-    Package,
-    CreditCard,
-    Truck,
-    Clock,
-    CheckCircle2,
-    XCircle,
-    BoxesIcon,
-    Loader2,
-} from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, SearchX } from 'lucide-react'
 import { apiFetch, ApiError, toastError, toastWarnings } from '@/lib/api-client'
 import { formatDateShort, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
-import { ErrorState, PageSkeleton } from '@/components/states'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface SaleDetail {
     id: string
@@ -89,15 +77,6 @@ interface SaleDetail {
         received_by_name: string | null
         created_at: string
     }>
-}
-
-const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    pending: { label: 'En attente', color: 'bg-muted text-muted-foreground', icon: Clock },
-    confirmed: { label: 'Confirmée', color: 'bg-brand-soft text-brand-strong', icon: CheckCircle2 },
-    preparing: { label: 'En préparation', color: 'bg-warning-soft text-warning-foreground', icon: Package },
-    ready: { label: 'Prête', color: 'bg-info-soft text-info', icon: Package },
-    delivered: { label: 'Livrée', color: 'bg-success-soft text-success', icon: Truck },
-    cancelled: { label: 'Annulée', color: 'bg-destructive/10 text-destructive', icon: XCircle },
 }
 
 const paymentMethodLabels: Record<string, string> = {
@@ -157,28 +136,34 @@ export default function SaleDetailPage() {
         }
     }
 
+
     if (loading && !sale) {
         return <PageSkeleton />
     }
 
     if (loadError === 'error') {
         return (
-            <div className="flex flex-col min-h-screen bg-muted/30">
-                <DashboardHeader title="Commande" />
-                <main className="flex-1 p-4 lg:p-6">
-                    <ErrorState title="Impossible de charger la commande" onRetry={fetchSale} />
-                </main>
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Vente" />
+                <PageShell>
+                    <ErrorState title="Impossible de charger la vente" onRetry={fetchSale} />
+                </PageShell>
             </div>
         )
     }
 
     if (!sale) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-muted/30 gap-4">
-                <h2 className="text-2xl font-semibold text-foreground">Commande introuvable</h2>
-                <Button onClick={() => router.back()} variant="outline" className="rounded-md">
-                    <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-                </Button>
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Vente" />
+                <PageShell>
+                    <EmptyState
+                        icon={SearchX}
+                        title="Vente introuvable"
+                        description="Cette vente n’existe pas ou a été supprimée."
+                        action={{ label: 'Retour aux ventes', href: '/dashboard/sales' }}
+                    />
+                </PageShell>
             </div>
         )
     }
@@ -186,311 +171,277 @@ export default function SaleDetailPage() {
     const remaining = Number(sale.total_amount) - Number(sale.paid_amount)
     const remainingProducts = Number(sale.subtotal) - Number(sale.paid_amount_products || 0)
     const remainingPackaging = Number(sale.packaging_total) - Number(sale.paid_amount_packaging || 0)
-    const status = statusConfig[sale.status] || statusConfig.pending
-    const StatusIcon = status.icon
     const paymentLabel = paymentMethodLabels[sale.payment_method ?? ''] || sale.payment_method || '—'
     const paymentStatus =
         sale.status === 'cancelled'
-            ? { label: 'Vente annulée', color: 'text-muted-foreground' }
+            ? { label: 'Vente annulée', tone: 'default' as const }
             : remaining <= 0
-                ? { label: 'Soldée', color: 'text-success' }
+                ? { label: 'Soldée', tone: 'success' as const }
                 : Number(sale.paid_amount) > 0
-                    ? { label: `Partiellement payée — ${formatMoney(sale.paid_amount)} encaissés`, color: 'text-warning-foreground' }
-                    : { label: 'Non payée (à crédit)', color: 'text-destructive' }
+                    ? { label: 'Partiellement payée', tone: 'warning' as const }
+                    : { label: 'Non payée (à crédit)', tone: 'danger' as const }
+
+    const nextStep: { status: string; label: string } | null =
+        sale.status === 'pending'
+            ? { status: 'confirmed', label: 'Confirmer la commande' }
+            : sale.status === 'confirmed'
+                ? { status: 'preparing', label: 'Mettre en préparation' }
+                : sale.status === 'preparing'
+                    ? { status: 'ready', label: 'Marquer comme prête' }
+                    : sale.status === 'ready'
+                        ? { status: 'delivered', label: 'Marquer comme livrée' }
+                        : null
+    const canChangeStatus = sale.status !== 'cancelled' && sale.status !== 'delivered'
 
     return (
-        <div className="flex flex-col min-h-screen bg-muted/30">
-            <DashboardHeader
-                title={`Commande ${sale.order_number}`}
-                description={`Créée le ${formatDateTime(sale.created_at)}`}
-                actions={
-                    <Button variant="outline" asChild className="rounded-md h-11 px-6 font-bold">
+        <div className="flex min-h-screen flex-col">
+            <DashboardHeader title={`Vente ${sale.order_number}`} description={`Créée le ${formatDateTime(sale.created_at)}`} />
+
+            <PageShell>
+                {/* En-tête de détail */}
+                <div className="space-y-3">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
                         <Link href="/dashboard/sales">
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour aux ventes
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Ventes
                         </Link>
                     </Button>
-                }
-            />
-
-            <main className="flex-1 p-4 lg:p-6 space-y-8 ">
-                {/* Header cards */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    {/* Status */}
-                    <Card className="rounded-xl border-border shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className={`h-14 w-14 rounded-md flex items-center justify-center ${status.color}`}>
-                                <StatusIcon className="h-7 w-7" />
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <h2 className="font-mono text-2xl font-semibold tracking-tight text-foreground">{sale.order_number}</h2>
+                                <StatusBadge status={sale.status} />
                             </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Statut</p>
-                                <p className="text-lg font-semibold text-foreground">{status.label}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Client */}
-                    <Card className="rounded-xl border-border shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-14 w-14 rounded-md bg-brand-soft flex items-center justify-center text-brand-strong">
-                                <User className="h-7 w-7" />
-                            </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Client</p>
-                                <p className="text-lg font-semibold text-foreground">{sale.client_name || 'Client Passager'}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Total */}
-                    <Card className="rounded-xl border-border shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-14 w-14 rounded-md bg-success-soft flex items-center justify-center text-success">
-                                <CreditCard className="h-7 w-7" />
-                            </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Total</p>
-                                <p className="text-lg font-semibold text-foreground">{formatMoney(Number(sale.total_amount))}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Remaining */}
-                    <Card className="rounded-xl border-border shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className={`h-14 w-14 rounded-md flex items-center justify-center ${remaining > 0 ? 'bg-destructive/10 text-destructive' : 'bg-success-soft text-success'}`}>
-                                <CreditCard className="h-7 w-7" />
-                            </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Reste à payer</p>
-                                <p className={`text-lg font-semibold ${remaining > 0 ? 'text-destructive' : 'text-success'}`}>
-                                    {remaining > 0 ? formatMoney(remaining) : 'Soldé ✓'}
-                                </p>
-                                <p className="text-xs text-muted-foreground">Paiement : {paymentLabel}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            <p className="text-sm text-muted-foreground">
+                                {sale.client_name || 'Client passager'} · {formatDateTime(sale.created_at)}
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {updating && (
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Mise à jour en cours" />
+                            )}
+                            <Button variant="outline" asChild>
+                                <Link href={`/dashboard/invoices/${sale.id}`}>
+                                    <FileText className="h-4 w-4" aria-hidden="true" />
+                                    Facture
+                                </Link>
+                            </Button>
+                            {canChangeStatus && (
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={updating}>
+                                            Annuler la vente
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Annuler la vente {sale.order_number} ?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                Les produits et emballages seront remis en stock, la dette du client sera
+                                                effacée et la facture annulée. Cette action est définitive.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Conserver la vente</AlertDialogCancel>
+                                            <AlertDialogAction
+                                                onClick={() => updateStatus('cancelled')}
+                                                className="bg-destructive text-white hover:bg-destructive/90"
+                                            >
+                                                Oui, annuler la vente
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            )}
+                            {canChangeStatus && nextStep && (
+                                <Button variant="brand" onClick={() => updateStatus(nextStep.status)} disabled={updating}>
+                                    {nextStep.label}
+                                </Button>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
-                {/* Debt breakdown */}
-                {remaining > 0 && (
-                    <Card className="rounded-xl border-warning/30 bg-warning-soft shadow-sm">
-                        <CardContent className="p-6">
-                            <p className="text-sm font-semibold text-muted-foreground mb-4">Détail des impayés</p>
-                            <div className="grid gap-4 sm:grid-cols-3">
-                                <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Dette Produits</p>
-                                    <p className={`text-xl font-semibold ${remainingProducts > 0 ? 'text-destructive' : 'text-success'}`}>
-                                        {remainingProducts > 0 ? formatMoney(remainingProducts) : 'Soldé ✓'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Dette Emballages</p>
-                                    <p className={`text-xl font-semibold ${remainingPackaging > 0 ? 'text-warning-foreground' : 'text-success'}`}>
-                                        {remainingPackaging > 0 ? formatMoney(remainingPackaging) : 'Soldé ✓'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Total Restant</p>
-                                    <p className="text-xl font-semibold text-destructive">{formatMoney(remaining)}</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Status actions */}
-                {sale.status !== 'cancelled' && sale.status !== 'delivered' && (
-                    <Card className="rounded-xl border-border shadow-sm">
-                        <CardContent className="p-6 flex flex-wrap gap-3">
-                            <p className="text-sm font-bold text-muted-foreground mr-4 self-center">Changer le statut :</p>
-                            {updating && <Loader2 className="h-4 w-4 animate-spin self-center text-muted-foreground/70" aria-label="Mise à jour en cours" />}
-                            {sale.status === 'pending' && (
-                                <Button onClick={() => updateStatus('confirmed')} disabled={updating} className="rounded-md bg-primary hover:bg-primary font-bold">
-                                    Confirmer la commande
-                                </Button>
-                            )}
-                            {sale.status === 'confirmed' && (
-                                <Button onClick={() => updateStatus('preparing')} disabled={updating} className="rounded-md bg-warning hover:bg-warning font-bold">
-                                    Mettre en préparation
-                                </Button>
-                            )}
-                            {sale.status === 'preparing' && (
-                                <Button onClick={() => updateStatus('ready')} disabled={updating} className="rounded-md bg-info hover:bg-info font-bold">
-                                    Marquer comme prête
-                                </Button>
-                            )}
-                            {sale.status === 'ready' && (
-                                <Button onClick={() => updateStatus('delivered')} disabled={updating} className="rounded-md bg-success hover:bg-success font-bold">
-                                    Marquer comme livrée
-                                </Button>
-                            )}
-                            <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" className="rounded-md font-bold ml-auto" disabled={updating}>
-                                        Annuler la vente
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Annuler la vente {sale.order_number} ?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            Les produits et emballages seront remis en stock, la dette du client sera
-                                            effacée et la facture annulée. Cette action est définitive.
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel>Conserver la vente</AlertDialogCancel>
-                                        <AlertDialogAction
-                                            onClick={() => updateStatus('cancelled')}
-                                            className="bg-destructive text-white hover:bg-destructive/90"
-                                        >
-                                            Oui, annuler la vente
-                                        </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Products table */}
-                <Card className="rounded-xl border-border shadow-sm overflow-hidden">
-                    <CardHeader className="px-8 py-6 border-b border-border">
-                        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-3">
-                            <Package className="h-5 w-5 text-brand-strong" /> Produits commandés
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <Table>
-                            <TableHeader className="bg-muted/30">
-                                <TableRow className="border-none">
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-8">Produit</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Format</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Qté</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">P.U.</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right pr-8">Total</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {sale.items.map((item) => (
-                                    <TableRow key={item.id} className="border-b border-border">
-                                        <TableCell className="py-5 pl-8">
-                                            <div className="flex flex-col">
-                                                <span className="font-semibold text-foreground">{item.product_name}</span>
-                                                {item.brand && <span className="text-[11px] text-muted-foreground/70 font-bold">{item.brand}</span>}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="py-5">
-                                            <Badge className="rounded-lg bg-brand-soft text-brand-strong border-none font-bold text-[10px]">
-                                                {item.packaging_name || 'Standard'}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="py-5 text-right font-semibold text-foreground">{formatNumber(item.quantity)}</TableCell>
-                                        <TableCell className="py-5 text-right font-bold text-muted-foreground">{formatMoney(Number(item.unit_price))}</TableCell>
-                                        <TableCell className="py-5 text-right font-semibold text-foreground pr-8">{formatMoney(Number(item.total_price))}</TableCell>
-                                    </TableRow>
-                                ))}
-                                {/* Subtotal row */}
-                                <TableRow className="bg-muted/30 border-none">
-                                    <TableCell colSpan={4} className="py-4 pl-8 font-semibold text-muted-foreground text-right">Sous-total produits :</TableCell>
-                                    <TableCell className="py-4 text-right font-semibold text-foreground pr-8">{formatMoney(Number(sale.subtotal))}</TableCell>
-                                </TableRow>
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
-
-                {/* Packaging items */}
-                {sale.packagingItems && sale.packagingItems.length > 0 && (
-                    <Card className="rounded-xl border-border shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-6 border-b border-border">
-                            <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-3">
-                                <BoxesIcon className="h-5 w-5 text-warning-foreground" /> Emballages
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-0">
+                <div className="grid items-start gap-4 lg:grid-cols-3">
+                    {/* Contenu principal */}
+                    <div className="space-y-4 lg:col-span-2">
+                        <Panel title="Produits" description={`${sale.items.length} ligne${sale.items.length > 1 ? 's' : ''}`}>
                             <Table>
-                                <TableHeader className="bg-muted/30">
-                                    <TableRow className="border-none">
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-8">Emballage</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Sortie</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Retour</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right pr-8">Consigne</TableHead>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="pl-5">Produit</TableHead>
+                                        <TableHead className="text-right">Qté</TableHead>
+                                        <TableHead className="text-right">Prix unitaire</TableHead>
+                                        <TableHead className="pr-5 text-right">Total</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {sale.packagingItems.map((pkg) => (
-                                        <TableRow key={pkg.id} className="border-b border-border">
-                                            <TableCell className="py-5 pl-8 font-semibold text-foreground">{pkg.packaging_name}</TableCell>
-                                            <TableCell className="py-5 text-right font-bold text-destructive">{pkg.quantity_out}</TableCell>
-                                            <TableCell className="py-5 text-right font-bold text-success">{pkg.quantity_in}</TableCell>
-                                            <TableCell className="py-5 text-right font-semibold text-foreground pr-8">
-                                                {formatMoney((Number(pkg.quantity_out) - Number(pkg.quantity_in)) * Number(pkg.unit_price))}
+                                    {sale.items.map((item) => (
+                                        <TableRow key={item.id}>
+                                            <TableCell className="pl-5">
+                                                <p className="font-medium text-foreground">{item.product_name}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {[item.brand, item.packaging_name || 'Standard'].filter(Boolean).join(' · ')}
+                                                </p>
                                             </TableCell>
+                                            <TableCell className="tabular text-right text-foreground">{formatNumber(item.quantity)}</TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatMoney(Number(item.unit_price))}</TableCell>
+                                            <TableCell className="tabular pr-5 text-right font-medium text-foreground">{formatMoney(Number(item.total_price))}</TableCell>
                                         </TableRow>
                                     ))}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Payments */}
-                <Card className="rounded-xl border-border shadow-sm overflow-hidden">
-                    <CardHeader className="px-8 py-6 border-b border-border">
-                        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-3">
-                            <CreditCard className="h-5 w-5 text-success" /> Paiements
-                        </CardTitle>
-                        <p className={`text-sm font-medium ${paymentStatus.color}`}>
-                            Mode : {paymentLabel} · {paymentStatus.label}
-                        </p>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        {sale.payments.length === 0 ? (
-                            <div className="text-center py-12 text-muted-foreground/70 font-medium">Aucun paiement enregistré</div>
-                        ) : (
-                            <Table>
-                                <TableHeader className="bg-muted/30">
-                                    <TableRow className="border-none">
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-8">Date</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Méthode</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Référence</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right pr-8">Montant</TableHead>
+                                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                                        <TableCell colSpan={3} className="pl-5 text-right text-sm text-muted-foreground">Sous-total produits</TableCell>
+                                        <TableCell className="tabular pr-5 text-right font-semibold text-foreground">{formatMoney(Number(sale.subtotal))}</TableCell>
                                     </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {sale.payments.map((p) => (
-                                        <TableRow key={p.id} className="border-b border-border">
-                                            <TableCell className="py-5 pl-8 font-bold text-muted-foreground">
-                                                {formatDateShort(p.created_at)}
-                                            </TableCell>
-                                            <TableCell className="py-5">
-                                                <Badge className="rounded-lg bg-muted text-muted-foreground border-none font-bold text-[10px] uppercase">
-                                                    {paymentMethodLabels[p.payment_method] || p.payment_method}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-sm font-mono text-muted-foreground">{p.reference || '—'}</TableCell>
-                                            <TableCell className="py-5 text-right font-semibold text-success pr-8">{formatMoney(Number(p.amount))}</TableCell>
-                                        </TableRow>
-                                    ))}
                                 </TableBody>
                             </Table>
+                        </Panel>
+
+                        {sale.packagingItems && sale.packagingItems.length > 0 && (
+                            <Panel title="Emballages" description="Casiers et bouteilles consignés">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Emballage</TableHead>
+                                            <TableHead className="text-right">Sortis</TableHead>
+                                            <TableHead className="text-right">Rendus</TableHead>
+                                            <TableHead className="pr-5 text-right">Consigne</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {sale.packagingItems.map((pkg) => (
+                                            <TableRow key={pkg.id}>
+                                                <TableCell className="pl-5 font-medium text-foreground">{pkg.packaging_name}</TableCell>
+                                                <TableCell className="tabular text-right text-foreground">{formatNumber(pkg.quantity_out)}</TableCell>
+                                                <TableCell className="tabular text-right text-foreground">{formatNumber(pkg.quantity_in)}</TableCell>
+                                                <TableCell className="tabular pr-5 text-right font-medium text-foreground">
+                                                    {formatMoney((Number(pkg.quantity_out) - Number(pkg.quantity_in)) * Number(pkg.unit_price))}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </Panel>
                         )}
-                    </CardContent>
-                </Card>
 
-                {/* Notes */}
-                {sale.notes && (
-                    <Card className="rounded-xl border-border shadow-sm">
-                        <CardHeader className="px-8 py-6 border-b border-border">
-                            <CardTitle className="text-xl font-semibold text-foreground">Notes</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-8">
-                            <p className="text-muted-foreground font-medium leading-relaxed">{sale.notes}</p>
-                        </CardContent>
-                    </Card>
-                )}
-            </main>
+                        <Panel
+                            title="Paiements"
+                            description={`Mode : ${paymentLabel}`}
+                            action={<StatusBadge label={paymentStatus.label} tone={paymentStatus.tone} />}
+                        >
+                            {sale.payments.length === 0 ? (
+                                <p className="px-5 py-10 text-center text-sm text-muted-foreground">Aucun paiement enregistré</p>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Date</TableHead>
+                                            <TableHead>Moyen</TableHead>
+                                            <TableHead>Référence</TableHead>
+                                            <TableHead className="pr-5 text-right">Montant</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {sale.payments.map((p) => (
+                                            <TableRow key={p.id}>
+                                                <TableCell className="tabular pl-5 text-muted-foreground">{formatDateShort(p.created_at)}</TableCell>
+                                                <TableCell className="text-foreground">{paymentMethodLabels[p.payment_method] || p.payment_method}</TableCell>
+                                                <TableCell className="font-mono text-xs text-muted-foreground">{p.reference || '—'}</TableCell>
+                                                <TableCell className="tabular pr-5 text-right font-medium text-foreground">{formatMoney(Number(p.amount))}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </Panel>
+
+                        {sale.notes && (
+                            <Panel title="Notes" bodyClassName="px-5 py-4">
+                                <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{sale.notes}</p>
+                            </Panel>
+                        )}
+                    </div>
+
+                    {/* Résumé */}
+                    <div className="space-y-4 lg:sticky lg:top-20">
+                        <Panel title="Résumé" bodyClassName="px-5 py-4">
+                            <dl className="space-y-2.5 text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-muted-foreground">Produits</dt>
+                                    <dd className="tabular text-foreground">{formatMoney(Number(sale.subtotal))}</dd>
+                                </div>
+                                {Number(sale.packaging_total) > 0 && (
+                                    <div className="flex items-center justify-between gap-3">
+                                        <dt className="text-muted-foreground">Emballages</dt>
+                                        <dd className="tabular text-foreground">{formatMoney(Number(sale.packaging_total))}</dd>
+                                    </div>
+                                )}
+                                <div className="flex items-center justify-between gap-3 border-t border-border pt-2.5">
+                                    <dt className="font-medium text-foreground">Total</dt>
+                                    <dd className="tabular text-lg font-semibold text-foreground">{formatMoney(Number(sale.total_amount))}</dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-muted-foreground">Encaissé</dt>
+                                    <dd className="tabular text-foreground">{formatMoney(Number(sale.paid_amount))}</dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-muted-foreground">Reste à payer</dt>
+                                    <dd className={`tabular font-semibold ${remaining > 0 ? 'text-destructive' : 'text-success'}`}>
+                                        {remaining > 0 ? formatMoney(remaining) : 'Soldé'}
+                                    </dd>
+                                </div>
+                            </dl>
+
+                            {remaining > 0 && (
+                                <div className="mt-4 space-y-1.5 rounded-lg bg-warning-soft px-3 py-2.5 text-xs">
+                                    <p className="font-medium text-warning-foreground">Détail des impayés</p>
+                                    <div className="flex justify-between gap-3 text-warning-foreground/90">
+                                        <span>Produits</span>
+                                        <span className="tabular">{remainingProducts > 0 ? formatMoney(remainingProducts) : 'Soldé'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3 text-warning-foreground/90">
+                                        <span>Emballages</span>
+                                        <span className="tabular">{remainingPackaging > 0 ? formatMoney(remainingPackaging) : 'Soldé'}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </Panel>
+
+                        <Panel title="Client" bodyClassName="px-5 py-4">
+                            <dl className="space-y-2.5 text-sm">
+                                <div className="flex justify-between gap-3">
+                                    <dt className="text-muted-foreground">Nom</dt>
+                                    <dd className="text-right font-medium text-foreground">{sale.client_name || 'Client passager'}</dd>
+                                </div>
+                                {sale.client_phone && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Téléphone</dt>
+                                        <dd className="tabular text-right text-foreground">{sale.client_phone}</dd>
+                                    </div>
+                                )}
+                                {sale.client_address && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Adresse</dt>
+                                        <dd className="text-right text-foreground">{sale.client_address}</dd>
+                                    </div>
+                                )}
+                                {sale.depot_name && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Dépôt</dt>
+                                        <dd className="text-right text-foreground">{sale.depot_name}</dd>
+                                    </div>
+                                )}
+                                {sale.created_by_name && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Vendeur</dt>
+                                        <dd className="text-right text-foreground">{sale.created_by_name}</dd>
+                                    </div>
+                                )}
+                            </dl>
+                        </Panel>
+                    </div>
+                </div>
+            </PageShell>
         </div>
     )
 }

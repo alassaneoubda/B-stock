@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { GoogleButton } from '@/components/auth/google-button'
-import { BrandLogo } from '@/components/brand-logo'
+import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -81,25 +81,23 @@ function AuthModal({
       <DialogPortal>
         {/* L'overlay sert aussi de conteneur défilant (formulaire long sur mobile) ;
             un clic en dehors du panneau ferme la modale. */}
-        <DialogOverlay className="z-[100] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-3 backdrop-blur-sm duration-300 sm:p-6">
+        <DialogOverlay className="z-[100] flex items-start justify-center overflow-y-auto bg-foreground/40 p-3 backdrop-blur-sm duration-300 sm:p-6">
           {/* Panel — descend depuis le haut */}
           <DialogPrimitive.Content
             aria-describedby={undefined}
-            className="relative z-10 my-4 w-full max-w-md outline-none duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:slide-in-from-top-14 data-[state=closed]:slide-out-to-top-14 data-[state=open]:zoom-in-97 data-[state=closed]:zoom-out-97 sm:my-12"
+            className="relative z-10 my-4 w-full max-w-md outline-none duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:slide-in-from-top-14 data-[state=closed]:slide-out-to-top-14 sm:my-12"
           >
             <DialogTitle className="sr-only">
               {mode === 'login' ? 'Connexion' : 'Créer un compte'}
             </DialogTitle>
-            <div className="rounded-2xl bg-white shadow-2xl shadow-zinc-900/20 border border-zinc-200/80 overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-lg">
               {/* Header */}
-              <div className="flex items-center justify-between px-5 sm:px-6 pt-5 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <BrandLogo href={false} height={88} />
-                </div>
+              <div className="flex items-center justify-between px-5 pb-2 pt-5 sm:px-6">
+                <BrandMark href={false} />
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
+                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label="Fermer"
                 >
                   <X className="h-5 w-5" aria-hidden="true" />
@@ -176,52 +174,52 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-bold text-zinc-950">Connexion</h2>
-        <p className="text-sm text-zinc-500">Accédez à votre tableau de bord</p>
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Connexion</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Accédez à votre tableau de bord</p>
       </div>
 
       <GoogleButton label="Se connecter avec Google" callbackUrl="/dashboard" />
 
       <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-zinc-200" />
-        <span className="text-xs text-zinc-400">ou avec votre email</span>
-        <div className="h-px flex-1 bg-zinc-200" />
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">ou avec votre email</span>
+        <div className="h-px flex-1 bg-border" />
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {error && (
           <div
             role="alert"
-            className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium"
+            className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"
           >
             {error}
           </div>
         )}
 
-        <div className="space-y-1.5">
-          <Label htmlFor="login-email" className="text-sm font-medium text-zinc-700">
+        <div className="space-y-2">
+          <Label htmlFor="login-email">
             Email
           </Label>
           <Input
             id="login-email"
             type="email"
             placeholder="nom@entreprise.com"
-            className="h-10"
+            className="h-11"
             {...register('email')}
             disabled={isLoading}
           />
-          {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+          {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="login-password" className="text-sm font-medium text-zinc-700">
+            <Label htmlFor="login-password">
               Mot de passe
             </Label>
             <Link
               href="/forgot-password"
               onClick={onClose}
-              className="text-xs font-medium text-zinc-500 hover:text-zinc-950 hover:underline"
+              className="text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
             >
               Mot de passe oublié ?
             </Link>
@@ -231,43 +229,43 @@ function LoginForm({ onSwitch, onClose }: { onSwitch: () => void; onClose: () =>
               id="login-password"
               type={showPassword ? 'text' : 'password'}
               placeholder="••••••••"
-              className="h-10 pr-10"
+              className="h-11 pr-11"
               {...register('password')}
               disabled={isLoading}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
+              className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
             </button>
           </div>
-          {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+          {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
         </div>
 
         <Button
           type="submit"
-          className="w-full h-10 bg-zinc-950 hover:bg-zinc-800 text-white text-sm font-semibold"
+          className="h-11 w-full"
           disabled={isLoading}
         >
           {isLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" aria-label="Connexion en cours…" />
           ) : (
-            <span className="flex items-center justify-center gap-2">
-              Se connecter <ArrowRight className="h-4 w-4" />
-            </span>
+            <>
+              Se connecter <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </>
           )}
         </Button>
       </form>
 
-      <p className="text-center text-sm text-zinc-500">
+      <p className="text-center text-sm text-muted-foreground">
         Pas encore de compte ?{' '}
         <button
           type="button"
           onClick={onSwitch}
-          className="font-medium text-zinc-950 hover:underline"
+          className="font-medium text-foreground underline-offset-4 hover:underline"
         >
           Créer un compte
         </button>
@@ -351,11 +349,11 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   if (success) {
     return (
       <div role="status" className="py-8 text-center space-y-3">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-          <Check className="h-6 w-6 text-green-600" aria-hidden="true" />
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-soft">
+          <Check className="h-6 w-6 text-success" aria-hidden="true" />
         </div>
-        <h2 className="text-lg font-bold text-zinc-950">Compte créé !</h2>
-        <p className="text-sm text-zinc-500">Vous pouvez maintenant vous connecter.</p>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">Compte créé</h2>
+        <p className="text-sm text-muted-foreground">Vous pouvez maintenant vous connecter.</p>
       </div>
     )
   }
@@ -363,93 +361,93 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-bold text-zinc-950">Créer un compte</h2>
-        <p className="text-sm text-zinc-500">Lancez votre dépôt en quelques minutes</p>
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Créer un compte</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Lancez votre dépôt en quelques minutes</p>
       </div>
 
       <GoogleButton label="S'inscrire avec Google" callbackUrl="/dashboard" />
 
       <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-zinc-200" />
-        <span className="text-xs text-zinc-400">ou avec votre email</span>
-        <div className="h-px flex-1 bg-zinc-200" />
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">ou avec votre email</span>
+        <div className="h-px flex-1 bg-border" />
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {error && (
           <div
             role="alert"
-            className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600 font-medium"
+            className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive"
           >
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="reg-company" className="text-sm font-medium text-zinc-700">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="reg-company">
               Entreprise
             </Label>
             <Input
               id="reg-company"
               placeholder="Ets. Boissons"
-              className="h-10"
+              className="h-11"
               {...register('companyName')}
               disabled={isLoading}
             />
             {errors.companyName && (
-              <p className="text-xs text-red-500">{errors.companyName.message}</p>
+              <p className="text-xs text-destructive">{errors.companyName.message}</p>
             )}
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="reg-name" className="text-sm font-medium text-zinc-700">
+          <div className="space-y-2">
+            <Label htmlFor="reg-name">
               Nom complet
             </Label>
             <Input
               id="reg-name"
               placeholder="Jean Kouassi"
-              className="h-10"
+              className="h-11"
               {...register('fullName')}
               disabled={isLoading}
             />
-            {errors.fullName && <p className="text-xs text-red-500">{errors.fullName.message}</p>}
+            {errors.fullName && <p className="text-xs text-destructive">{errors.fullName.message}</p>}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="reg-email" className="text-sm font-medium text-zinc-700">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="reg-email">
               Email
             </Label>
             <Input
               id="reg-email"
               type="email"
               placeholder="nom@entreprise.com"
-              className="h-10"
+              className="h-11"
               {...register('email')}
               disabled={isLoading}
             />
-            {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="reg-phone" className="text-sm font-medium text-zinc-700">
+          <div className="space-y-2">
+            <Label htmlFor="reg-phone">
               Téléphone
             </Label>
             <Input
               id="reg-phone"
               placeholder="+225 07..."
-              className="h-10"
+              className="h-11"
               {...register('phone')}
               disabled={isLoading}
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="reg-password" className="text-sm font-medium text-zinc-700">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="reg-password">
               Mot de passe
             </Label>
             <div className="relative">
@@ -457,43 +455,43 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
                 id="reg-password"
                 type={showPassword ? 'text' : 'password'}
                 placeholder="8 caractères min."
-                className="h-10 pr-10"
+                className="h-11 pr-11"
                 {...register('password')}
                 disabled={isLoading}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
+                className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
               >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
               </button>
             </div>
-            {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+            {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="reg-confirm" className="text-sm font-medium text-zinc-700">
+          <div className="space-y-2">
+            <Label htmlFor="reg-confirm">
               Confirmation
             </Label>
             <Input
               id="reg-confirm"
               type="password"
               placeholder="••••••••"
-              className="h-10"
+              className="h-11"
               {...register('confirmPassword')}
               disabled={isLoading}
             />
             {errors.confirmPassword && (
-              <p className="text-xs text-red-500">{errors.confirmPassword.message}</p>
+              <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>
             )}
           </div>
         </div>
 
         <Button
           type="submit"
-          className="w-full h-10 bg-zinc-950 hover:bg-zinc-800 text-white text-sm font-semibold"
+          className="h-11 w-full"
           disabled={isLoading}
         >
           {isLoading ? (
@@ -504,12 +502,12 @@ function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
         </Button>
       </form>
 
-      <p className="text-center text-sm text-zinc-500">
+      <p className="text-center text-sm text-muted-foreground">
         Déjà un compte ?{' '}
         <button
           type="button"
           onClick={onSwitch}
-          className="font-medium text-zinc-950 hover:underline"
+          className="font-medium text-foreground underline-offset-4 hover:underline"
         >
           Se connecter
         </button>

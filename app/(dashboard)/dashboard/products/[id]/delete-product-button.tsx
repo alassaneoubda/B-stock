@@ -57,9 +57,9 @@ export function DeleteProductButton({ productId, productName }: { productId: str
             <AlertDialogTrigger asChild>
                 <Button
                     variant="outline"
-                    className="rounded-md h-11 px-6 font-bold text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                    <Trash2 className="h-4 w-4 mr-2" />
+                    <Trash2 aria-hidden="true" />
                     Supprimer
                 </Button>
             </AlertDialogTrigger>
@@ -80,9 +80,9 @@ export function DeleteProductButton({ productId, productName }: { productId: str
                             e.preventDefault()
                             handleDelete()
                         }}
-                        className="bg-destructive hover:bg-destructive"
+                        className="bg-destructive text-white hover:bg-destructive/90"
                     >
-                        {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        {deleting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                         Supprimer
                     </AlertDialogAction>
                 </AlertDialogFooter>

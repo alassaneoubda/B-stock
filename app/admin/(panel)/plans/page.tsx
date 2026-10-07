@@ -4,9 +4,9 @@ import { useState } from 'react'
 import useSWR from 'swr'
 import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { PageShell, PageIntro, StatusBadge } from '@/components/app/blocks'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -35,10 +35,10 @@ const fetcher = (url: string) => apiFetch(url)
 
 type PricingType = 'paid' | 'free' | 'on_quote'
 
-const PRICING_TYPES: { value: PricingType; label: string; badge: string }[] = [
-  { value: 'paid', label: 'Payant', badge: 'bg-info-soft text-info hover:bg-info-soft' },
-  { value: 'free', label: 'Gratuit', badge: 'bg-success-soft text-success hover:bg-success-soft' },
-  { value: 'on_quote', label: 'Sur devis', badge: 'bg-orange-100 text-orange-700 hover:bg-orange-100' },
+const PRICING_TYPES: { value: PricingType; label: string; badge: 'info' | 'success' | 'brand' }[] = [
+  { value: 'paid', label: 'Payant', badge: 'info' },
+  { value: 'free', label: 'Gratuit', badge: 'success' },
+  { value: 'on_quote', label: 'Sur devis', badge: 'brand' },
 ]
 
 function pricingTypeOf(v: unknown): PricingType {
@@ -94,21 +94,19 @@ export default function AdminPlansPage() {
   const plans = data?.data || []
 
   return (
-    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
-      <header className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Plans d&apos;abonnement</h1>
-          <p className="text-sm text-muted-foreground">
-            Source unique : pilote les tarifs du checkout GeniusPay
-          </p>
-        </div>
-        <Button onClick={() => setCreating(true)} className="bg-primary hover:bg-primary">
-          <Plus className="h-4 w-4 mr-1.5" /> Nouveau plan
-        </Button>
-      </header>
+    <PageShell>
+      <PageIntro
+        title="Plans d’abonnement"
+        description="Source unique : pilote les tarifs du checkout GeniusPay"
+        actions={
+          <Button variant="brand" onClick={() => setCreating(true)}>
+            <Plus className="h-4 w-4" aria-hidden="true" /> Nouveau plan
+          </Button>
+        }
+      />
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" aria-busy="true" aria-label="Chargement">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true" aria-label="Chargement">
           {Array.from({ length: 3 }, (_, i) => (
             <Skeleton key={i} className="h-64 rounded-xl" />
           ))}
@@ -123,63 +121,67 @@ export default function AdminPlansPage() {
           action={{ label: 'Nouveau plan', onClick: () => setCreating(true) }}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {plans.map((p) => {
             const prices = asArray<Price>(p.checkout_prices)
             const monthly = prices.find((x) => x.interval === 'monthly')
             const pricingType = pricingTypeOf(p.pricing_type)
             const pt = PRICING_TYPES.find((t) => t.value === pricingType)!
             return (
-              <Card key={p.id} className="p-5">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h2 className="text-lg font-bold text-foreground">{p.display_name || p.name}</h2>
-                    <p className="text-xs text-muted-foreground/70 font-mono">{p.name}</p>
+              <Card key={p.id} className="gap-0 p-5">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-[15px] font-semibold tracking-tight text-foreground">{p.display_name || p.name}</h2>
+                    <p className="font-mono text-xs text-muted-foreground">{p.name}</p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setEditing(p)}
-                    className="text-muted-foreground/70 hover:text-foreground transition-colors"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label={`Modifier le plan ${p.display_name || p.name}`}
                   >
-                    <Pencil className="h-4 w-4" />
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  <Badge className={pt.badge}>{pt.label}</Badge>
-                  {p.is_active ? (
-                    <Badge className="bg-success-soft text-success hover:bg-success-soft">Actif</Badge>
-                  ) : (
-                    <Badge className="bg-muted text-muted-foreground hover:bg-muted">Inactif</Badge>
-                  )}
-                  {p.is_public ? (
-                    <Badge className="bg-brand-soft text-brand-strong hover:bg-brand-soft">Public</Badge>
-                  ) : (
-                    <Badge className="bg-muted text-muted-foreground hover:bg-muted">Masqué</Badge>
-                  )}
+                <div className="mb-4 flex flex-wrap gap-1.5">
+                  <Badge variant={pt.badge}>{pt.label}</Badge>
+                  <StatusBadge label={p.is_active ? 'Actif' : 'Inactif'} tone={p.is_active ? 'success' : 'default'} />
+                  <Badge variant={p.is_public ? 'info' : 'muted'}>{p.is_public ? 'Public' : 'Masqué'}</Badge>
                   {p.is_popular && (
-                    <Badge className="bg-warning-soft text-warning-foreground hover:bg-warning-soft">
-                      <Star className="h-3 w-3 mr-1" /> Populaire
+                    <Badge variant="warning" className="gap-1">
+                      <Star className="h-3 w-3" aria-hidden="true" /> Populaire
                     </Badge>
                   )}
                 </div>
 
                 {pricingType === 'on_quote' ? (
-                  <p className="text-2xl font-bold text-foreground mb-0.5">Sur devis</p>
+                  <p className="text-2xl font-semibold tracking-tight text-foreground">Sur devis</p>
                 ) : (
-                  <p className="text-2xl font-bold text-foreground mb-0.5">
+                  <p className="tabular text-2xl font-semibold tracking-tight text-foreground">
                     {formatMoney(monthly ? monthly.price : p.price_monthly)}
-                    <span className="text-sm font-normal text-muted-foreground/70">/mois</span>
+                    <span className="text-sm font-normal text-muted-foreground"> /mois</span>
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground/70 mb-3">{prices.length} tarif(s) configuré(s)</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{prices.length} tarif(s) configuré(s)</p>
 
-                <ul className="space-y-1 text-sm text-muted-foreground border-t border-border pt-3">
-                  <li>Utilisateurs : {p.max_users === -1 ? '∞' : formatNumber(p.max_users)}</li>
-                  <li>Dépôts : {p.max_depots === -1 ? '∞' : formatNumber(p.max_depots)}</li>
-                  <li>Produits : {p.max_products === -1 ? '∞' : formatNumber(p.max_products)}</li>
-                </ul>
-                <p className="text-xs text-muted-foreground/70 mt-3">{formatNumber(p.subscribers)} abonné(s)</p>
+                <dl className="mt-4 space-y-1.5 border-t border-border pt-4 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Utilisateurs</dt>
+                    <dd className="tabular font-medium text-foreground">{p.max_users === -1 ? '∞' : formatNumber(p.max_users)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Dépôts</dt>
+                    <dd className="tabular font-medium text-foreground">{p.max_depots === -1 ? '∞' : formatNumber(p.max_depots)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Produits</dt>
+                    <dd className="tabular font-medium text-foreground">{p.max_products === -1 ? '∞' : formatNumber(p.max_products)}</dd>
+                  </div>
+                </dl>
+                <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                  <span className="tabular font-medium text-foreground">{formatNumber(p.subscribers)}</span> abonné(s)
+                </p>
               </Card>
             )
           })}
@@ -200,7 +202,7 @@ export default function AdminPlansPage() {
           }}
         />
       )}
-    </div>
+    </PageShell>
   )
 }
 
@@ -336,35 +338,39 @@ function PlanModal({
   return (
     <>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4"
         onClick={saving ? undefined : onClose}
       >
         <div
-          className="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="plan-modal-title"
+          className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-card shadow-lg"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card">
-            <h2 className="font-bold text-foreground">
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card px-6 py-4">
+            <h2 id="plan-modal-title" className="text-[15px] font-semibold tracking-tight text-foreground">
               {isEdit ? `Modifier ${plan!.display_name || plan!.name}` : 'Nouveau plan'}
             </h2>
             <button
               onClick={onClose}
               disabled={saving}
-              className="text-muted-foreground/70 hover:text-foreground transition-colors"
+              type="button"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="Fermer"
             >
-              <X className="h-5 w-5" />
+              <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
 
-          <div className="p-6 space-y-5">
+          <div className="space-y-6 p-6">
             {error && (
-              <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+              <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
                 {error}
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
               {!isEdit && (
                 <Field label="Identifiant (slug, immuable)">
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: premium" />
@@ -374,7 +380,7 @@ function PlanModal({
                 <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Pack Premium" />
               </Field>
               <Field label="Ordre d'affichage">
-                <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} />
+                <Input type="number" className="tabular" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} />
               </Field>
               <Field label="Type de tarification">
                 <Select value={pricingType} onValueChange={(v) => setPricingType(pricingTypeOf(v))}>
@@ -398,10 +404,8 @@ function PlanModal({
 
             {/* Tarifs checkout */}
             <div>
-              <p className="text-xs font-semibold text-foreground/80 uppercase tracking-wide mb-2">
-                Tarifs (FCFA) — pilotent le checkout
-              </p>
-              <p className="text-xs text-muted-foreground/70 mb-3">
+              <h3 className="text-sm font-semibold text-foreground">Tarifs (FCFA) — pilotent le checkout</h3>
+              <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
                 {pricingType === 'paid' &&
                   'Laisser vide pour ne pas proposer cet intervalle. Chaque tarif proposé doit être supérieur à 0.'}
                 {pricingType === 'free' &&
@@ -409,7 +413,7 @@ function PlanModal({
                 {pricingType === 'on_quote' &&
                   'Sur devis : aucun tarif n’est affiché ni activable par le client (attribution par un administrateur).'}
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 {INTERVALS.map((i) => (
                   <Field key={i.key} label={i.label}>
                     <Input
@@ -426,21 +430,20 @@ function PlanModal({
 
             {/* Limites */}
             <div>
-              <p className="text-xs font-semibold text-foreground/80 uppercase tracking-wide mb-2">
-                Limites (-1 = illimité)
-              </p>
-              <div className="grid grid-cols-2 gap-4">
+              <h3 className="text-sm font-semibold text-foreground">Limites</h3>
+              <p className="mb-3 mt-0.5 text-xs text-muted-foreground">-1 = illimité</p>
+              <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Utilisateurs">
-                  <Input type="number" value={maxUsers} onChange={(e) => setMaxUsers(Number(e.target.value))} />
+                  <Input type="number" className="tabular" value={maxUsers} onChange={(e) => setMaxUsers(Number(e.target.value))} />
                 </Field>
                 <Field label="Dépôts">
-                  <Input type="number" value={maxDepots} onChange={(e) => setMaxDepots(Number(e.target.value))} />
+                  <Input type="number" className="tabular" value={maxDepots} onChange={(e) => setMaxDepots(Number(e.target.value))} />
                 </Field>
                 <Field label="Produits">
-                  <Input type="number" value={maxProducts} onChange={(e) => setMaxProducts(Number(e.target.value))} />
+                  <Input type="number" className="tabular" value={maxProducts} onChange={(e) => setMaxProducts(Number(e.target.value))} />
                 </Field>
                 <Field label="Clients">
-                  <Input type="number" value={maxClients} onChange={(e) => setMaxClients(Number(e.target.value))} />
+                  <Input type="number" className="tabular" value={maxClients} onChange={(e) => setMaxClients(Number(e.target.value))} />
                 </Field>
               </div>
             </div>
@@ -450,33 +453,33 @@ function PlanModal({
                 value={features}
                 onChange={(e) => setFeatures(e.target.value)}
                 rows={5}
-                className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-border"
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 placeholder={'Gestion des ventes\nMulti-dépôts\nSupport prioritaire'}
               />
             </Field>
 
             <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-foreground/80">
-                <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Actif
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input type="checkbox" className="h-4 w-4 rounded border-input accent-primary" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Actif
               </label>
-              <label className="flex items-center gap-2 text-sm text-foreground/80">
-                <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} /> Public (page tarifs)
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input type="checkbox" className="h-4 w-4 rounded border-input accent-primary" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} /> Public (page tarifs)
               </label>
-              <label className="flex items-center gap-2 text-sm text-foreground/80">
-                <input type="checkbox" checked={isPopular} onChange={(e) => setIsPopular(e.target.checked)} /> Populaire
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input type="checkbox" className="h-4 w-4 rounded border-input accent-primary" checked={isPopular} onChange={(e) => setIsPopular(e.target.checked)} /> Populaire
               </label>
             </div>
           </div>
 
-          <div className="flex items-center justify-between px-6 py-4 border-t border-border sticky bottom-0 bg-card">
+          <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-border bg-card px-6 py-4">
             {isEdit ? (
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => setConfirmDelete(true)}
-                className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                 disabled={saving}
               >
-                <Trash2 className="h-4 w-4 mr-1.5" /> Supprimer
+                <Trash2 className="h-4 w-4" aria-hidden="true" /> Supprimer
               </Button>
             ) : (
               <span />
@@ -485,8 +488,9 @@ function PlanModal({
               <Button variant="outline" onClick={onClose} disabled={saving}>
                 Annuler
               </Button>
-              <Button onClick={save} className="bg-primary hover:bg-primary" disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Enregistrer'}
+              <Button onClick={save} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                Enregistrer
               </Button>
             </div>
           </div>
@@ -507,13 +511,13 @@ function PlanModal({
             <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
             <AlertDialogAction
               disabled={saving}
-              className="bg-destructive hover:bg-destructive"
+              className={buttonVariants({ variant: 'destructive' })}
               onClick={(e) => {
                 e.preventDefault()
                 remove()
               }}
             >
-              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               Supprimer définitivement
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -525,9 +529,9 @@ function PlanModal({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+    <label className="block space-y-1.5">
+      <span className="block text-sm font-medium text-foreground">{label}</span>
       {children}
-    </div>
+    </label>
   )
 }

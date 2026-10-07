@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,71 +70,78 @@ export default function NewPackagingPage() {
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Ajouter un type d'emballage"
-                description="Créer un nouveau type d'emballage"
+                title="Nouvel emballage"
+                description="Créer un format de conditionnement"
             />
-            <main className="flex-1 p-4 lg:p-6 ">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
+            <PageShell>
+                <div className="mx-auto w-full max-w-3xl space-y-6">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
                         <Link href="/dashboard/packaging">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Retour
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Emballages
                         </Link>
                     </Button>
-                </div>
 
-                <form onSubmit={handleSubmit(onSubmit)} className="max-w-xl space-y-6">
-                    {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                            {error}
-                        </div>
-                    )}
-
-                    <Card className="rounded-lg border-border shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-8 border-b border-border">
-                            <CardTitle className="text-xl font-semibold text-foreground">Nouvel emballage</CardTitle>
-                            <CardDescription>Définissez les caractéristiques du contenant.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="p-8 space-y-6">
-                            <div className="space-y-2">
-                                <Label htmlFor="name">Nom de l'emballage *</Label>
-                                <Input
-                                    id="name"
-                                    placeholder="Ex: Casier 24 Bouteilles"
-                                    {...register('name')}
-                                    disabled={isLoading}
-                                />
-                                {errors.name && (
-                                    <p className="text-sm text-destructive">{errors.name.message}</p>
-                                )}
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                        {error && (
+                            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                                {error}
                             </div>
+                        )}
 
-                            <div className="space-y-2">
-                                <Label htmlFor="unitsPerCase">Nombre d'unités par emballage *</Label>
-                                <Input
-                                    id="unitsPerCase"
-                                    type="number"
-                                    min="1"
-                                    placeholder="Ex: 24"
-                                    {...register('unitsPerCase', { valueAsNumber: true })}
-                                    disabled={isLoading}
-                                />
-                                <p className="text-sm text-muted-foreground">
-                                    Combien de bouteilles/canettes contient cet emballage ?
-                                </p>
-                                {errors.unitsPerCase && (
-                                    <p className="text-sm text-destructive">{errors.unitsPerCase.message}</p>
-                                )}
-                            </div>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Caractéristiques</CardTitle>
+                                <CardDescription>Nom du contenant et nombre d&apos;unités qu&apos;il contient.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-2">
+                                    <Label htmlFor="name">Nom de l&apos;emballage *</Label>
+                                    <Input
+                                        id="name"
+                                        placeholder="Ex. : Casier 24 bouteilles"
+                                        {...register('name')}
+                                        disabled={isLoading}
+                                    />
+                                    {errors.name && (
+                                        <p className="text-xs text-destructive">{errors.name.message}</p>
+                                    )}
+                                </div>
 
-                            <div className="space-y-4 pt-2">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <Label htmlFor="isReturnable" className="text-base">Consignable</Label>
-                                        <p className="text-sm text-muted-foreground mt-1">
-                                            Les clients doivent-ils retourner cet emballage ?
+                                <div className="space-y-2">
+                                    <Label htmlFor="unitsPerCase">Unités par emballage *</Label>
+                                    <Input
+                                        id="unitsPerCase"
+                                        type="number"
+                                        min="1"
+                                        placeholder="Ex. : 24"
+                                        className="tabular"
+                                        {...register('unitsPerCase', { valueAsNumber: true })}
+                                        disabled={isLoading}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Nombre de bouteilles ou canettes contenues.
+                                    </p>
+                                    {errors.unitsPerCase && (
+                                        <p className="text-xs text-destructive">{errors.unitsPerCase.message}</p>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Consigne</CardTitle>
+                                <CardDescription>Suivi des emballages à retourner par les clients.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
+                                    <div className="space-y-0.5">
+                                        <Label htmlFor="isReturnable">Emballage consigné</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Les clients doivent rendre cet emballage.
                                         </p>
                                     </div>
                                     <Switch
@@ -145,45 +153,48 @@ export default function NewPackagingPage() {
                                 </div>
 
                                 {isReturnable && (
-                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                                        <Label htmlFor="depositPrice">Prix de la consigne (FCFA) *</Label>
-                                        <Input
-                                            id="depositPrice"
-                                            type="number"
-                                            min="0"
-                                            placeholder="Ex: 1500"
-                                            {...register('depositPrice', { valueAsNumber: true })}
-                                            disabled={isLoading}
-                                        />
-                                        <p className="text-sm text-muted-foreground">
-                                            Le montant facturé si le client ne rend pas l'emballage.
-                                        </p>
-                                        {errors.depositPrice && (
-                                            <p className="text-sm text-destructive">{errors.depositPrice.message}</p>
-                                        )}
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="depositPrice">Montant de la consigne (FCFA) *</Label>
+                                            <Input
+                                                id="depositPrice"
+                                                type="number"
+                                                min="0"
+                                                placeholder="Ex. : 1500"
+                                                className="tabular"
+                                                {...register('depositPrice', { valueAsNumber: true })}
+                                                disabled={isLoading}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Facturé si le client ne rend pas l&apos;emballage.
+                                            </p>
+                                            {errors.depositPrice && (
+                                                <p className="text-xs text-destructive">{errors.depositPrice.message}</p>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <div className="flex justify-end gap-4">
-                        <Button type="button" variant="outline" asChild disabled={isLoading}>
-                            <Link href="/dashboard/packaging">Annuler</Link>
-                        </Button>
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Création...
-                                </>
-                            ) : (
-                                'Créer'
-                            )}
-                        </Button>
-                    </div>
-                </form>
-            </main>
+                        <div className="flex justify-end gap-2">
+                            <Button type="button" variant="outline" asChild disabled={isLoading}>
+                                <Link href="/dashboard/packaging">Annuler</Link>
+                            </Button>
+                            <Button type="submit" disabled={isLoading}>
+                                {isLoading ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                        Création…
+                                    </>
+                                ) : (
+                                    'Créer l’emballage'
+                                )}
+                            </Button>
+                        </div>
+                    </form>
+                </div>
+            </PageShell>
         </div>
     )
 }

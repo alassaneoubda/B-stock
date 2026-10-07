@@ -10,6 +10,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -65,39 +66,32 @@ export function VehicleRowActions({
                         variant="ghost"
                         size="icon"
                         aria-label={`Actions pour le véhicule ${label}`}
-                        className="h-10 w-10 rounded-xl hover:bg-card hover:shadow-md border border-transparent hover:border-border transition-all"
+                        className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
                     >
-                        <MoreHorizontal className="h-5 w-5 text-muted-foreground/70 group-hover:text-foreground" />
+                        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60 p-2 rounded-md border-border shadow-lg">
-                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-muted/50 focus:bg-muted/50 transition-colors">
-                        <Link href={`/dashboard/vehicles/${vehicleId}/edit`} className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
-                                <Edit className="h-4 w-4" />
-                            </div>
-                            <span className="font-bold text-sm">Modifier Détails</span>
+                <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem asChild className="cursor-pointer">
+                        <Link href={`/dashboard/vehicles/${vehicleId}/edit`}>
+                            <Edit aria-hidden="true" />
+                            Modifier
                         </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-brand-soft focus:bg-brand-soft transition-colors">
-                        <Link href={`/dashboard/deliveries/new?vehicle=${vehicleId}`} className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-brand-soft flex items-center justify-center text-brand-strong">
-                                <Plus className="h-4 w-4" />
-                            </div>
-                            <span className="font-bold text-sm">Nouvelle Tournée</span>
+                    <DropdownMenuItem asChild className="cursor-pointer">
+                        <Link href={`/dashboard/deliveries/new?vehicle=${vehicleId}`}>
+                            <Plus aria-hidden="true" />
+                            Nouvelle tournée
                         </Link>
                     </DropdownMenuItem>
-                    <div className="h-px bg-muted my-1 mx-2" />
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
-                        className="rounded-xl cursor-pointer py-3 hover:bg-destructive/10 focus:bg-destructive/10 text-destructive transition-colors"
+                        variant="destructive"
+                        className="cursor-pointer"
                         onSelect={() => setConfirmOpen(true)}
                     >
-                        <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-destructive/10 flex items-center justify-center text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                            </div>
-                            <span className="font-bold text-sm">Retirer du Parc</span>
-                        </div>
+                        <Trash2 aria-hidden="true" />
+                        Retirer du parc
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
@@ -121,13 +115,13 @@ export function VehicleRowActions({
                         <AlertDialogCancel disabled={isDeleting}>Annuler</AlertDialogCancel>
                         <AlertDialogAction
                             disabled={isDeleting}
-                            className="bg-destructive text-white hover:bg-destructive/90"
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             onClick={(e) => {
                                 e.preventDefault()
                                 handleDelete()
                             }}
                         >
-                            {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            {isDeleting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                             Retirer du parc
                         </AlertDialogAction>
                     </AlertDialogFooter>

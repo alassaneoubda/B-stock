@@ -38,21 +38,22 @@ export function GenerateAlertsButton() {
     }
 
     return (
-        <div className="flex items-center gap-3">
+        <>
             <Button
                 onClick={handleGenerate}
                 disabled={loading}
                 variant="outline"
-                className="rounded-xl h-11 px-6 border-border font-bold hover:bg-card hover:shadow-md transition-all"
+                size="sm"
+                className="h-9"
             >
                 {loading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
+                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 )}
                 Analyser
             </Button>
-        </div>
+        </>
     )
 }
 
@@ -85,12 +86,13 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
             onClick={handleMarkAll}
             disabled={loading}
             variant="ghost"
-            className="rounded-xl h-11 px-6 font-bold text-brand-strong hover:bg-brand-soft transition-all"
+            size="sm"
+            className="h-8 text-muted-foreground hover:text-foreground"
         >
             {loading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-                <CheckCheck className="h-4 w-4 mr-2" />
+                <CheckCheck className="h-4 w-4" aria-hidden="true" />
             )}
             Tout marquer comme lu
         </Button>
@@ -126,9 +128,9 @@ export function MarkAlertReadButton({ alertId }: { alertId: string }) {
             size="sm"
             onClick={handleMark}
             disabled={loading}
-            className="h-8 rounded-xl text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-brand-strong transition-colors"
+            className="h-8 text-muted-foreground hover:text-foreground"
         >
-            {loading && <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />}
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
             Marquer comme lu
         </Button>
     )

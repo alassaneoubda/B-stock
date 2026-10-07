@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -114,55 +115,59 @@ export default function NotificationsSettingsPage() {
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Paramètres des notifications"
-                description="Gérez vos préférences de notifications"
+                title="Notifications"
+                description="Choisissez les événements dont vous voulez être prévenu"
             />
-            <main className="flex-1 p-4 lg:p-6 ">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
+            <PageShell>
+                <div>
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
                         <Link href="/dashboard/settings">
-                            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
-                            Retour aux paramètres
+                            <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                            Paramètres
                         </Link>
                     </Button>
                 </div>
 
                 <div className="max-w-3xl space-y-6">
                     {isLoading ? (
-                        <Card className="rounded-lg border-border shadow-sm p-8 space-y-6" aria-busy="true" aria-label="Chargement">
-                            <Skeleton className="h-6 w-56" />
-                            {Array.from({ length: 4 }, (_, i) => (
-                                <div key={i} className="flex items-center justify-between gap-4">
-                                    <div className="space-y-2 flex-1">
-                                        <Skeleton className="h-4 w-48" />
-                                        <Skeleton className="h-3 w-72" />
+                        <Card aria-busy="true" aria-label="Chargement">
+                            <CardHeader>
+                                <Skeleton className="h-4 w-48" />
+                                <Skeleton className="h-3 w-72" />
+                            </CardHeader>
+                            <CardContent className="space-y-5">
+                                {Array.from({ length: 4 }, (_, i) => (
+                                    <div key={i} className="flex items-center justify-between gap-4">
+                                        <div className="flex-1 space-y-2">
+                                            <Skeleton className="h-4 w-48" />
+                                            <Skeleton className="h-3 w-72" />
+                                        </div>
+                                        <Skeleton className="h-5 w-9 rounded-full" />
                                     </div>
-                                    <Skeleton className="h-5 w-9 rounded-full" />
-                                </div>
-                            ))}
+                                ))}
+                            </CardContent>
                         </Card>
                     ) : loadError || !settings ? (
                         <ErrorState description={loadError ?? undefined} onRetry={fetchSettings} />
                     ) : (
                         <>
-                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-8 border-b border-border">
-                                    <CardTitle className="text-xl font-semibold text-foreground">Événements à suivre</CardTitle>
+                            <Card className="gap-0 overflow-hidden pb-0">
+                                <CardHeader className="border-b border-border">
+                                    <CardTitle className="text-[15px]">Événements à suivre</CardTitle>
                                     <CardDescription>
-                                        Ces préférences sont enregistrées sur votre compte. Les alertes restent toujours
-                                        consultables dans la page{' '}
-                                        <Link href="/dashboard/alerts" className="font-medium text-brand-strong hover:underline">Alertes</Link>.
+                                        Préférences propres à votre compte. Les alertes restent consultables dans la page{' '}
+                                        <Link href="/dashboard/alerts" className="font-medium text-foreground underline-offset-4 hover:underline">Alertes</Link>.
                                     </CardDescription>
                                 </CardHeader>
-                                <CardContent className="p-8 space-y-6">
+                                <CardContent className="divide-y divide-border px-0">
                                     {TOGGLES.map((toggle) => (
-                                        <div key={toggle.key} className="space-y-3">
-                                            <div className="flex items-center justify-between space-x-4">
-                                                <div className="space-y-1">
-                                                    <Label htmlFor={toggle.key}>{toggle.label}</Label>
-                                                    <p className="text-sm text-muted-foreground">{toggle.description}</p>
+                                        <div key={toggle.key} className="space-y-3 px-5 py-4">
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div className="min-w-0 space-y-0.5">
+                                                    <Label htmlFor={toggle.key} className="text-sm font-medium text-foreground">{toggle.label}</Label>
+                                                    <p className="text-xs text-muted-foreground">{toggle.description}</p>
                                                 </div>
                                                 <Switch
                                                     id={toggle.key}
@@ -172,8 +177,8 @@ export default function NotificationsSettingsPage() {
                                                 />
                                             </div>
                                             {toggle.key === 'credit_overdue_enabled' && settings.credit_overdue_enabled && (
-                                                <div className="flex items-center gap-3 pl-1">
-                                                    <Label htmlFor="credit_overdue_days" className="text-sm text-muted-foreground">
+                                                <div className="flex flex-wrap items-center gap-3 rounded-lg bg-muted px-3 py-2.5">
+                                                    <Label htmlFor="credit_overdue_days" className="text-sm font-normal text-muted-foreground">
                                                         Considérer en retard après
                                                     </Label>
                                                     <Input
@@ -182,7 +187,7 @@ export default function NotificationsSettingsPage() {
                                                         inputMode="numeric"
                                                         min={1}
                                                         max={365}
-                                                        className="h-9 w-24"
+                                                        className="tabular h-10 w-24 bg-card"
                                                         value={overdueDaysInput}
                                                         disabled={saving}
                                                         onChange={(e) => {
@@ -196,7 +201,7 @@ export default function NotificationsSettingsPage() {
                                         </div>
                                     ))}
                                 </CardContent>
-                                <CardFooter className="px-8 py-4 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3">
+                                <CardFooter className="flex flex-wrap items-center justify-between gap-3 border-t border-border py-4">
                                     <span className="text-xs text-muted-foreground">
                                         {settings.updated_at
                                             ? `Dernier enregistrement : ${formatDateTime(settings.updated_at)}`
@@ -213,22 +218,22 @@ export default function NotificationsSettingsPage() {
                                 </CardFooter>
                             </Card>
 
-                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-6 border-b border-border">
-                                    <CardTitle className="text-base font-semibold text-foreground">Canaux d&apos;envoi</CardTitle>
+                            <Card className="gap-0 overflow-hidden pb-0">
+                                <CardHeader className="border-b border-border">
+                                    <CardTitle className="text-[15px]">Canaux d&apos;envoi</CardTitle>
                                     <CardDescription>
-                                        L&apos;envoi des notifications par email et par SMS n&apos;est pas encore disponible.
+                                        L&apos;envoi par e-mail et par SMS n&apos;est pas encore disponible.
                                     </CardDescription>
                                 </CardHeader>
-                                <CardContent className="p-8 space-y-6">
+                                <CardContent className="divide-y divide-border px-0">
                                     {[
-                                        { id: 'email_channel', label: 'Notifications par email' },
+                                        { id: 'email_channel', label: 'Notifications par e-mail' },
                                         { id: 'sms_channel', label: 'Notifications par SMS' },
                                     ].map((channel) => (
-                                        <div key={channel.id} className="flex items-center justify-between space-x-4 opacity-60">
-                                            <div className="flex items-center gap-2">
-                                                <Label htmlFor={channel.id}>{channel.label}</Label>
-                                                <Badge variant="outline" className="text-[10px]">Bientôt disponible</Badge>
+                                        <div key={channel.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Label htmlFor={channel.id} className="text-sm font-medium text-muted-foreground">{channel.label}</Label>
+                                                <Badge variant="muted">Bientôt disponible</Badge>
                                             </div>
                                             <Switch id={channel.id} checked={false} disabled aria-describedby={`${channel.id}-hint`} />
                                             <span id={`${channel.id}-hint`} className="sr-only">Bientôt disponible</span>
@@ -239,7 +244,7 @@ export default function NotificationsSettingsPage() {
                         </>
                     )}
                 </div>
-            </main>
+            </PageShell>
         </div>
     )
 }

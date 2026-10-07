@@ -5,14 +5,14 @@ import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from '@/components/ui/dialog'
 import { Percent, Tag, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -170,166 +170,202 @@ export default function PricingPage() {
     }
   }
 
+  const ruleProduct = (rule: PriceRule) => `${rule.product_name}${rule.packaging_name ? ` — ${rule.packaging_name}` : ''}`
+  const promoTarget = (promo: Promotion) =>
+    promo.applies_to === 'all' ? 'Tous les produits' : promo.applies_to === 'category' ? promo.category : promo.product_name
+  const promoValue = (promo: Promotion) =>
+    promo.discount_type === 'percentage' ? `${formatNumber(promo.discount_value)} %` : fmt(Number(promo.discount_value))
+  const promoConditions = (promo: Promotion) =>
+    [
+      promo.min_quantity > 1 ? `Min ${formatNumber(promo.min_quantity)} pcs` : null,
+      promo.min_order_amount ? `Min ${fmt(Number(promo.min_order_amount))}` : null,
+      promo.client_type ? clientTypeLabels[promo.client_type] || promo.client_type : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
   if (isLoading) {
     return <PageSkeleton />
   }
 
+  const description = 'Prix par type de client et promotions'
+
   if (loadError && priceRules.length === 0 && promotions.length === 0) {
     return (
-      <div className="flex flex-col min-h-screen bg-muted/30">
-        <DashboardHeader title="Tarification" />
-        <main className="flex-1 p-4 lg:p-6">
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Tarification" description={description} />
+        <PageShell>
           <ErrorState title="Impossible de charger la tarification" onRetry={() => { setIsLoading(true); fetchData() }} />
-        </main>
+        </PageShell>
       </div>
     )
   }
 
+  const headerAction =
+    tab === 'rules' ? (
+      <Button variant="brand" size="sm" className="h-9" onClick={() => setOpenRule(true)}>
+        <Tag className="h-4 w-4" aria-hidden="true" /> Nouvelle règle
+      </Button>
+    ) : (
+      <Button variant="brand" size="sm" className="h-9" onClick={() => setOpenPromo(true)}>
+        <Percent className="h-4 w-4" aria-hidden="true" /> Nouvelle promotion
+      </Button>
+    )
+
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
-      <DashboardHeader title="Tarification" />
-      <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
+    <div className="flex min-h-screen flex-col">
+      <DashboardHeader title="Tarification" description={description} actions={headerAction} />
+      <PageShell>
+        <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="rules">
+              Règles de prix <span className="tabular ml-1 text-muted-foreground">{priceRules.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="promotions">
+              Promotions <span className="tabular ml-1 text-muted-foreground">{promotions.length}</span>
+            </TabsTrigger>
+          </TabsList>
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <div className="flex items-center justify-between">
-            <TabsList>
-              <TabsTrigger value="rules">Règles de prix ({priceRules.length})</TabsTrigger>
-              <TabsTrigger value="promotions">Promotions ({promotions.length})</TabsTrigger>
-            </TabsList>
-            {tab === 'rules' && (
-              <Button size="sm" onClick={() => setOpenRule(true)}>
-                <Tag className="h-4 w-4 mr-2" /> Nouvelle règle
-              </Button>
-            )}
-            {tab === 'promotions' && (
-              <Button size="sm" onClick={() => setOpenPromo(true)}>
-                <Percent className="h-4 w-4 mr-2" /> Nouvelle promotion
-              </Button>
-            )}
-          </div>
-
-          {/* Price Rules */}
-          <TabsContent value="rules" className="space-y-4">
-            <Card>
-              <CardHeader><CardTitle className="text-sm">Règles de prix par client</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                {priceRules.length === 0 ? (
-                  <EmptyState
-                    icon={Tag}
-                    className="m-4"
-                    title="Aucune règle de prix"
-                    description="Définissez un prix spécifique par type de client et quantité minimale."
-                    action={{ label: 'Nouvelle règle', onClick: () => setOpenRule(true) }}
-                  />
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Produit</TableHead>
-                        <TableHead>Type client</TableHead>
-                        <TableHead className="text-center">Qté min</TableHead>
-                        <TableHead className="text-right">Prix</TableHead>
-                        <TableHead>Validité</TableHead>
-                        <TableHead>Statut</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {priceRules.map((rule) => (
-                        <TableRow key={rule.id}>
-                          <TableCell className="text-sm">{rule.product_name}{rule.packaging_name ? ` — ${rule.packaging_name}` : ''}</TableCell>
-                          <TableCell className="text-sm">{clientTypeLabels[rule.client_type] || rule.client_type}</TableCell>
-                          <TableCell className="text-center text-sm">{formatNumber(rule.min_quantity)}</TableCell>
-                          <TableCell className="text-right text-sm font-medium">{fmt(Number(rule.price))}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {validityLabel(rule.valid_from, rule.valid_until)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={rule.is_active ? 'default' : 'secondary'}>
-                              {rule.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </TableCell>
+          {/* Règles de prix */}
+          <TabsContent value="rules">
+            <Panel title="Règles de prix par client" description="Prix spécifique selon le type de client et la quantité">
+              {priceRules.length === 0 ? (
+                <EmptyState
+                  icon={Tag}
+                  className="m-4"
+                  title="Aucune règle de prix"
+                  description="Définissez un prix spécifique par type de client et quantité minimale."
+                  action={{ label: 'Nouvelle règle', onClick: () => setOpenRule(true) }}
+                />
+              ) : (
+                <>
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="pl-5">Produit</TableHead>
+                          <TableHead>Type client</TableHead>
+                          <TableHead className="text-right">Qté min</TableHead>
+                          <TableHead className="text-right">Prix</TableHead>
+                          <TableHead>Validité</TableHead>
+                          <TableHead className="pr-5">Statut</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {priceRules.map((rule) => (
+                          <TableRow key={rule.id}>
+                            <TableCell className="pl-5 text-sm font-medium text-foreground">{ruleProduct(rule)}</TableCell>
+                            <TableCell className="text-sm">{clientTypeLabels[rule.client_type] || rule.client_type}</TableCell>
+                            <TableCell className="tabular text-right text-sm">{formatNumber(rule.min_quantity)}</TableCell>
+                            <TableCell className="tabular text-right text-sm font-semibold">{fmt(Number(rule.price))}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{validityLabel(rule.valid_from, rule.valid_until)}</TableCell>
+                            <TableCell className="pr-5">
+                              <StatusBadge label={rule.is_active ? 'Active' : 'Inactive'} tone={rule.is_active ? 'success' : 'default'} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <ul className="divide-y divide-border md:hidden">
+                    {priceRules.map((rule) => (
+                      <li key={rule.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0 space-y-1">
+                          <p className="truncate text-sm font-medium text-foreground">{ruleProduct(rule)}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {clientTypeLabels[rule.client_type] || rule.client_type} · Min {formatNumber(rule.min_quantity)} · {validityLabel(rule.valid_from, rule.valid_until)}
+                          </p>
+                          <StatusBadge label={rule.is_active ? 'Active' : 'Inactive'} tone={rule.is_active ? 'success' : 'default'} />
+                        </div>
+                        <span className="tabular shrink-0 text-sm font-semibold text-foreground">{fmt(Number(rule.price))}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </Panel>
           </TabsContent>
 
           {/* Promotions */}
-          <TabsContent value="promotions" className="space-y-4">
-            <Card>
-              <CardHeader><CardTitle className="text-sm">Promotions et remises</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                {promotions.length === 0 ? (
-                  <EmptyState
-                    icon={Percent}
-                    className="m-4"
-                    title="Aucune promotion"
-                    description="Créez une remise en pourcentage ou en montant fixe."
-                    action={{ label: 'Nouvelle promotion', onClick: () => setOpenPromo(true) }}
-                  />
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nom</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Valeur</TableHead>
-                        <TableHead>Applique à</TableHead>
-                        <TableHead>Conditions</TableHead>
-                        <TableHead>Validité</TableHead>
-                        <TableHead>Statut</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {promotions.map((promo) => (
-                        <TableRow key={promo.id}>
-                          <TableCell className="text-sm font-medium">{promo.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={promo.discount_type === 'percentage' ? 'border-brand/40 text-brand-strong' : 'border-success/30 text-success'}>
-                              {promo.discount_type === 'percentage' ? '%' : 'FCFA'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm font-medium">
-                            {promo.discount_type === 'percentage' ? `${formatNumber(promo.discount_value)} %` : fmt(Number(promo.discount_value))}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {promo.applies_to === 'all' ? 'Tous' : promo.applies_to === 'category' ? promo.category : promo.product_name}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {promo.min_quantity > 1 && `Min ${formatNumber(promo.min_quantity)} pcs`}
-                            {promo.min_order_amount ? ` • Min ${fmt(Number(promo.min_order_amount))}` : null}
-                            {promo.client_type && ` • ${clientTypeLabels[promo.client_type] || promo.client_type}`}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {validityLabel(promo.valid_from, promo.valid_until)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={promo.is_active ? 'default' : 'secondary'}>
-                              {promo.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </TableCell>
+          <TabsContent value="promotions">
+            <Panel title="Promotions et remises" description="Remises en pourcentage ou en montant fixe">
+              {promotions.length === 0 ? (
+                <EmptyState
+                  icon={Percent}
+                  className="m-4"
+                  title="Aucune promotion"
+                  description="Créez une remise en pourcentage ou en montant fixe."
+                  action={{ label: 'Nouvelle promotion', onClick: () => setOpenPromo(true) }}
+                />
+              ) : (
+                <>
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="pl-5">Nom</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead className="text-right">Valeur</TableHead>
+                          <TableHead>S&apos;applique à</TableHead>
+                          <TableHead>Conditions</TableHead>
+                          <TableHead>Validité</TableHead>
+                          <TableHead className="pr-5">Statut</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {promotions.map((promo) => (
+                          <TableRow key={promo.id}>
+                            <TableCell className="pl-5 text-sm font-medium text-foreground">{promo.name}</TableCell>
+                            <TableCell>
+                              <Badge variant={promo.discount_type === 'percentage' ? 'brand' : 'info'}>
+                                {promo.discount_type === 'percentage' ? 'Pourcentage' : 'Montant fixe'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="tabular text-right text-sm font-semibold">{promoValue(promo)}</TableCell>
+                            <TableCell className="text-sm">{promoTarget(promo)}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{promoConditions(promo) || '—'}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{validityLabel(promo.valid_from, promo.valid_until)}</TableCell>
+                            <TableCell className="pr-5">
+                              <StatusBadge label={promo.is_active ? 'Active' : 'Inactive'} tone={promo.is_active ? 'success' : 'default'} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <ul className="divide-y divide-border md:hidden">
+                    {promotions.map((promo) => (
+                      <li key={promo.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0 space-y-1">
+                          <p className="truncate text-sm font-medium text-foreground">{promo.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {promoTarget(promo)}{promoConditions(promo) ? ` · ${promoConditions(promo)}` : ''}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">{validityLabel(promo.valid_from, promo.valid_until)}</p>
+                          <StatusBadge label={promo.is_active ? 'Active' : 'Inactive'} tone={promo.is_active ? 'success' : 'default'} />
+                        </div>
+                        <span className="tabular shrink-0 text-sm font-semibold text-foreground">−{promoValue(promo)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </Panel>
           </TabsContent>
         </Tabs>
 
-        {/* Price Rule Dialog */}
+        {/* Nouvelle règle de prix */}
         <Dialog open={openRule} onOpenChange={(o) => { if (!savingRule) setOpenRule(o) }}>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Nouvelle règle de prix</DialogTitle></DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Nouvelle règle de prix</DialogTitle>
+              <DialogDescription>Ce prix remplace le prix catalogue pour le type de client choisi.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-2 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label>Produit *</Label>
                 <Select value={ruleProductId} onValueChange={setRuleProductId}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
+                  <SelectTrigger className="h-10 w-full"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
                   <SelectContent>
                     {variantOptions.map((v) => (
                       <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
@@ -337,72 +373,72 @@ export default function PricingPage() {
                   </SelectContent>
                 </Select>
                 {ruleProductId && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Prix catalogue : {fmt(variantOptions.find((v) => v.id === ruleProductId)?.price ?? 0)}
+                  <p className="text-xs text-muted-foreground">
+                    Prix catalogue : <span className="tabular">{fmt(variantOptions.find((v) => v.id === ruleProductId)?.price ?? 0)}</span>
                   </p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Type client *</Label>
-                  <Select value={ruleClientType} onValueChange={setRuleClientType}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="retail">Détail</SelectItem>
-                      <SelectItem value="wholesale">Gros</SelectItem>
-                      <SelectItem value="semi_wholesale">Semi-gros</SelectItem>
-                      <SelectItem value="depot">Dépôt</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Quantité min</Label>
-                  <Input type="number" min={1} value={ruleMinQty} onChange={(e) => setRuleMinQty(e.target.value)} className="mt-1" />
-                </div>
+              <div className="space-y-2">
+                <Label>Type client *</Label>
+                <Select value={ruleClientType} onValueChange={setRuleClientType}>
+                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="retail">Détail</SelectItem>
+                    <SelectItem value="wholesale">Gros</SelectItem>
+                    <SelectItem value="semi_wholesale">Semi-gros</SelectItem>
+                    <SelectItem value="depot">Dépôt</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <Label>Prix (FCFA) *</Label>
-                <Input type="number" min={1} value={rulePrice} onChange={(e) => setRulePrice(e.target.value)} className="mt-1" />
+              <div className="space-y-2">
+                <Label htmlFor="rule-min-qty">Quantité min</Label>
+                <Input id="rule-min-qty" type="number" min={1} value={ruleMinQty} onChange={(e) => setRuleMinQty(e.target.value)} className="tabular h-10" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="rule-price">Prix (FCFA) *</Label>
+                <Input id="rule-price" type="number" min={1} value={rulePrice} onChange={(e) => setRulePrice(e.target.value)} className="tabular h-10" />
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
               <Button onClick={handleSaveRule} disabled={savingRule || !ruleProductId || !rulePrice}>
-                {savingRule ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Tag className="h-4 w-4 mr-2" />} Créer
+                {savingRule && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                Créer la règle
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Promotion Dialog */}
+        {/* Nouvelle promotion */}
         <Dialog open={openPromo} onOpenChange={(o) => { if (!savingPromo) setOpenPromo(o) }}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>Nouvelle promotion</DialogTitle></DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Nom *</Label>
-                <Input value={promoName} onChange={(e) => setPromoName(e.target.value)} className="mt-1" />
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Nouvelle promotion</DialogTitle>
+              <DialogDescription>Remise appliquée automatiquement aux ventes qui remplissent les conditions.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-2 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="promo-name">Nom *</Label>
+                <Input id="promo-name" value={promoName} onChange={(e) => setPromoName(e.target.value)} className="h-10" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Type de remise</Label>
-                  <Select value={promoDiscountType} onValueChange={setPromoDiscountType}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percentage">Pourcentage (%)</SelectItem>
-                      <SelectItem value="fixed_amount">Montant fixe (FCFA)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Valeur *</Label>
-                  <Input type="number" value={promoDiscountValue} onChange={(e) => setPromoDiscountValue(e.target.value)} className="mt-1" />
-                </div>
+              <div className="space-y-2">
+                <Label>Type de remise</Label>
+                <Select value={promoDiscountType} onValueChange={setPromoDiscountType}>
+                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="percentage">Pourcentage (%)</SelectItem>
+                    <SelectItem value="fixed_amount">Montant fixe (FCFA)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <Label>Applique à</Label>
+              <div className="space-y-2">
+                <Label htmlFor="promo-value">Valeur *</Label>
+                <Input id="promo-value" type="number" value={promoDiscountValue} onChange={(e) => setPromoDiscountValue(e.target.value)} className="tabular h-10" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>S&apos;applique à</Label>
                 <Select value={promoAppliesTo} onValueChange={setPromoAppliesTo}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tous les produits</SelectItem>
                     <SelectItem value="category">Catégorie</SelectItem>
@@ -411,10 +447,10 @@ export default function PricingPage() {
                 </Select>
               </div>
               {promoAppliesTo === 'product' && (
-                <div>
+                <div className="space-y-2 md:col-span-2">
                   <Label>Produit</Label>
                   <Select value={promoProductId} onValueChange={setPromoProductId}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
+                    <SelectTrigger className="h-10 w-full"><SelectValue placeholder="Choisir un produit" /></SelectTrigger>
                     <SelectContent>
                       {variantOptions.map((v) => (
                         <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
@@ -424,35 +460,37 @@ export default function PricingPage() {
                 </div>
               )}
               {promoAppliesTo === 'category' && (
-                <div>
-                  <Label>Catégorie</Label>
-                  <Input value={promoCategory} onChange={(e) => setPromoCategory(e.target.value)} placeholder="ex: Boissons gazeuses" className="mt-1" />
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="promo-category">Catégorie</Label>
+                  <Input id="promo-category" value={promoCategory} onChange={(e) => setPromoCategory(e.target.value)} placeholder="ex. Boissons gazeuses" className="h-10" />
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Quantité min</Label>
-                  <Input type="number" value={promoMinQty} onChange={(e) => setPromoMinQty(e.target.value)} className="mt-1" />
-                </div>
-                <div>
-                  <Label>Montant min commande</Label>
-                  <Input type="number" value={promoMinOrder} onChange={(e) => setPromoMinOrder(e.target.value)} placeholder="FCFA" className="mt-1" />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="promo-min-qty">Quantité min</Label>
+                <Input id="promo-min-qty" type="number" value={promoMinQty} onChange={(e) => setPromoMinQty(e.target.value)} className="tabular h-10" />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="promo-min-order">Montant min commande</Label>
+                <Input id="promo-min-order" type="number" value={promoMinOrder} onChange={(e) => setPromoMinOrder(e.target.value)} placeholder="FCFA" className="tabular h-10" />
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5 md:col-span-2">
+                <div>
+                  <Label htmlFor="promo-active">Active</Label>
+                  <p className="text-xs text-muted-foreground">Une promotion inactive n&apos;est pas appliquée aux ventes.</p>
+                </div>
                 <Switch id="promo-active" checked={promoActive} onCheckedChange={setPromoActive} />
-                <Label htmlFor="promo-active">Active</Label>
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
               <Button onClick={handleSavePromo} disabled={savingPromo || !promoName || !promoDiscountValue || (promoAppliesTo === 'product' && !promoProductId)}>
-                {savingPromo ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Percent className="h-4 w-4 mr-2" />} Créer
+                {savingPromo && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                Créer la promotion
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </main>
+      </PageShell>
     </div>
   )
 }

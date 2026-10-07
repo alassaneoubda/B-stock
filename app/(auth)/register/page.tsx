@@ -10,10 +10,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { GoogleButton } from '@/components/auth/google-button'
-import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
+import { AuthDivider, AuthHeading, AuthSplitLayout } from '@/components/auth/auth-split-layout'
 import { NETWORK_ERROR, httpErrorMessage, readJson } from '@/components/auth/auth-errors'
 import { passwordPolicyError } from '@/lib/permissions'
-import { Loader2, Eye, EyeOff } from 'lucide-react'
+import { AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react'
 
 const registerSchema = z
   .object({
@@ -94,89 +94,101 @@ export default function RegisterPage() {
 
   return (
     <AuthSplitLayout
-      imageSrc="/images/landing/landing-livraison.jpg"
-      imageAlt="Livraison de casiers de boissons"
-      headline="Ouvrez votre dépôt en quelques minutes."
-      subline="30 jours d’essai. Aucune carte. Stock, ventes et tournées au même endroit."
-      imageSide="right"
+      imageSrc="/images/landing/landing-hero-depot.jpg"
+      imageAlt="Dépôt de boissons B-Stock"
+      headline="Lancez votre dépôt sur B-Stock en quelques minutes."
+      subline="Essai gratuit, sans carte bancaire. Stock, ventes et tournées au même endroit."
       formMaxWidth="max-w-[480px]"
+      footer={
+        <>
+          Déjà un compte ?{' '}
+          <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
+            Se connecter
+          </Link>
+        </>
+      }
     >
-      <h1 className="text-2xl font-bold tracking-tight text-[#0F172A]">Créer un compte</h1>
-      <p className="mt-1 text-sm text-[#64748B]">Lancez votre dépôt B-STOCK</p>
+      <AuthHeading title="Créer un compte" description="Quelques informations pour ouvrir l’espace de votre entreprise." />
 
-      <div className="mt-6">
-        <GoogleButton label="S’inscrire avec Google" callbackUrl="/dashboard" />
-      </div>
+      <GoogleButton label="S’inscrire avec Google" callbackUrl="/dashboard" />
 
-      <div className="my-6 flex items-center gap-3">
-        <div className="h-px flex-1 bg-[#E7E0D6]" />
-        <span className="text-xs text-[#94A3B8]">ou avec votre email</span>
-        <div className="h-px flex-1 bg-[#E7E0D6]" />
-      </div>
+      <AuthDivider />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {error && (
-          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+          <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {error}
           </div>
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="companyName" className="text-sm font-medium text-[#334155]">
-              Nom de l’entreprise
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="companyName">Nom de l’entreprise</Label>
             <Input
               id="companyName"
+              autoComplete="organization"
               placeholder="Ets. Boissons"
-              className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6]"
+              className="h-11"
+              aria-invalid={errors.companyName ? true : undefined}
+              aria-describedby={errors.companyName ? 'companyName-error' : undefined}
               {...register('companyName')}
               disabled={isLoading}
             />
             {errors.companyName && (
-              <p className="text-xs text-red-500">{errors.companyName.message}</p>
+              <p id="companyName-error" className="text-xs text-destructive">
+                {errors.companyName.message}
+              </p>
             )}
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="fullName" className="text-sm font-medium text-[#334155]">
-              Nom complet
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="fullName">Nom complet</Label>
             <Input
               id="fullName"
+              autoComplete="name"
               placeholder="Jean Kouassi"
-              className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6]"
+              className="h-11"
+              aria-invalid={errors.fullName ? true : undefined}
+              aria-describedby={errors.fullName ? 'fullName-error' : undefined}
               {...register('fullName')}
               disabled={isLoading}
             />
-            {errors.fullName && <p className="text-xs text-red-500">{errors.fullName.message}</p>}
+            {errors.fullName && (
+              <p id="fullName-error" className="text-xs text-destructive">
+                {errors.fullName.message}
+              </p>
+            )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-sm font-medium text-[#334155]">
-              Email
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
+              autoComplete="email"
               placeholder="nom@entreprise.com"
-              className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6]"
+              className="h-11"
+              aria-invalid={errors.email ? true : undefined}
+              aria-describedby={errors.email ? 'email-error' : undefined}
               {...register('email')}
               disabled={isLoading}
             />
-            {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+            {errors.email && (
+              <p id="email-error" className="text-xs text-destructive">
+                {errors.email.message}
+              </p>
+            )}
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="phone" className="text-sm font-medium text-[#334155]">
-              Téléphone
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="phone">Téléphone</Label>
             <Input
               id="phone"
-              placeholder="+225 07..."
-              className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6]"
+              type="tel"
+              autoComplete="tel"
+              placeholder="+225 07…"
+              className="h-11"
               {...register('phone')}
               disabled={isLoading}
             />
@@ -184,64 +196,68 @@ export default function RegisterPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="password" className="text-sm font-medium text-[#334155]">
-              Mot de passe
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="password">Mot de passe</Label>
             <div className="relative">
               <Input
                 id="password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 placeholder="8 caractères min."
-                className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6] pr-10"
+                className="h-11 pr-11"
+                aria-invalid={errors.password ? true : undefined}
+                aria-describedby={errors.password ? 'password-error' : undefined}
                 {...register('password')}
                 disabled={isLoading}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#475569]"
+                className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
               >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
               </button>
             </div>
-            {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+            {errors.password && (
+              <p id="password-error" className="text-xs text-destructive">
+                {errors.password.message}
+              </p>
+            )}
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="confirmPassword" className="text-sm font-medium text-[#334155]">
-              Confirmation
-            </Label>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirmation</Label>
             <Input
               id="confirmPassword"
               type="password"
+              autoComplete="new-password"
               placeholder="••••••••"
-              className="h-11 rounded-xl border-[#E7E0D6] bg-[#FBF9F6]"
+              className="h-11"
+              aria-invalid={errors.confirmPassword ? true : undefined}
+              aria-describedby={errors.confirmPassword ? 'confirmPassword-error' : undefined}
               {...register('confirmPassword')}
               disabled={isLoading}
             />
             {errors.confirmPassword && (
-              <p className="text-xs text-red-500">{errors.confirmPassword.message}</p>
+              <p id="confirmPassword-error" className="text-xs text-destructive">
+                {errors.confirmPassword.message}
+              </p>
             )}
           </div>
         </div>
 
-        <Button
-          type="submit"
-          className="mt-2 h-11 w-full rounded-full bg-[#F58233] text-sm font-semibold text-white hover:bg-[#E06B1A]"
-          disabled={isLoading}
-        >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Créer mon compte'}
+        <Button type="submit" className="mt-2 h-11 w-full" disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Création du compte…
+            </>
+          ) : (
+            'Créer mon compte'
+          )}
         </Button>
       </form>
-
-      <p className="mt-6 text-center text-sm text-[#64748B]">
-        Déjà un compte ?{' '}
-        <Link href="/login" className="font-semibold text-[#0F172A] hover:underline">
-          Se connecter
-        </Link>
-      </p>
     </AuthSplitLayout>
   )
 }

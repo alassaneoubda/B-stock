@@ -27,6 +27,7 @@ export function BalanceText({
   return (
     <span
       className={cn(
+        'tabular whitespace-nowrap',
         tone === 'debt' ? debtClassName : tone === 'credit' ? 'text-success' : 'text-muted-foreground',
         className
       )}

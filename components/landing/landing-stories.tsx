@@ -1,105 +1,101 @@
 import Image from 'next/image'
+import {
+  ArrowLeftRight,
+  BarChart3,
+  Boxes,
+  CreditCard,
+  FileText,
+  MonitorSmartphone,
+  ShieldCheck,
+  Truck,
+  Wallet,
+  Warehouse,
+  type LucideIcon,
+} from 'lucide-react'
 import type { CmsFeature } from '@/lib/cms'
-import { ProductCapture } from '@/components/landing/landing-product'
 
-type Story = {
-  id: string
-  eyebrow: string
-  title: string
-  body: string
-  image: string
-  imageAlt: string
-  reverse?: boolean
-  captureSrc?: string
-  captureAlt?: string
+const ICONS: Record<string, LucideIcon> = {
+  warehouse: Warehouse, stock: Warehouse, package: Boxes, boxes: Boxes, truck: Truck, delivery: Truck,
+  wallet: Wallet, cash: Wallet, credit: CreditCard, 'credit-card': CreditCard, file: FileText, invoice: FileText,
+  chart: BarChart3, 'bar-chart': BarChart3, transfer: ArrowLeftRight, shield: ShieldCheck, pos: MonitorSmartphone,
 }
 
-const STORIES: Story[] = [
+const DEFAULT_MODULES = [
+  { icon: Warehouse, title: 'Stock multi-dépôts', text: 'Lots, dates de péremption, seuils d’alerte, inventaires et transferts entre dépôts.' },
+  { icon: FileText, title: 'Ventes et factures', text: 'Une vente génère automatiquement la facture, la sortie de stock et l’encaissement.' },
+  { icon: Boxes, title: 'Emballages consignés', text: 'Casiers et bouteilles suivis séparément des produits, client par client.' },
+  { icon: CreditCard, title: 'Crédits clients', text: 'Plafonds, échéances, règlements partiels et relances, sans cahier.' },
+  { icon: Wallet, title: 'Caisse du jour', text: 'Ouverture, mouvements validés, clôture avec l’écart entre compté et attendu.' },
+  { icon: Truck, title: 'Tournées de livraison', text: 'Véhicules, arrêts, statut de chaque livraison et commandes livrées.' },
+  { icon: MonitorSmartphone, title: 'Point de vente', text: 'Tables, commandes en attente et encaissement rapide pour les maquis.' },
+  { icon: ShieldCheck, title: 'Équipe et droits', text: 'Gérant, caissier, magasinier : chacun ne voit que ce qui le concerne.' },
+]
+
+const STORIES = [
   {
-    id: 'stock',
-    eyebrow: 'Stock',
-    title: 'Sachez exactement ce qu’il reste dans chaque dépôt',
-    body: 'Entrées, sorties, inventaires et alertes de seuil. Vous arrêtez de compter “à peu près” et vous pilotez avec des quantités fiables.',
+    eyebrow: 'Sur le terrain',
+    title: 'Pensé pour le dépôt, pas pour un bureau climatisé',
+    body: 'Grandes zones tactiles, fonctionne sur un téléphone d’entrée de gamme, montants en FCFA et vocabulaire du métier : casiers, consignes, tournées, ardoise.',
     image: '/images/landing/landing-gerant.jpg',
-    imageAlt: 'Gérant de dépôt',
+    alt: 'Gérant de dépôt de boissons',
   },
   {
-    id: 'livraisons',
     eyebrow: 'Livraisons',
-    title: 'Organisez vos tournées sans perdre le stock en route',
-    body: 'Chargez le véhicule, suivez les stops, rapprochez ce qui est parti et ce qui est revenu. Moins d’écarts en fin de journée.',
+    title: 'Chaque tournée suivie, de la sortie du dépôt au dernier client',
+    body: 'Préparez la tournée, suivez chaque arrêt et voyez les commandes passer à « livrée ». Les écarts de fin de journée se voient tout de suite.',
     image: '/images/landing/landing-livraison.jpg',
-    imageAlt: 'Chargement de casiers pour livraison',
-    reverse: true,
-    captureSrc: '/images/landing/capture-tournee.png',
-    captureAlt: 'Planification d’une tournée de livraison dans B-Stock',
-  },
-  {
-    id: 'consignes',
-    eyebrow: 'Emballages consignés',
-    title: 'Les casiers chez le client, enfin sous contrôle',
-    body: 'Donné, retourné, solde : B-Stock sépare produits et emballages. C’est souvent là que les dépôts perdent de l’argent sans le voir.',
-    image: '/images/landing/landing-consignes.jpg',
-    imageAlt: 'Comptage de bouteilles consignées',
-  },
-  {
-    id: 'creances',
-    eyebrow: 'Créances',
-    title: 'Suivez ce que chaque client vous doit vraiment',
-    body: 'Crédit, paiements partiels, relances. Une vision claire des soldes pour décider à qui livrer demain.',
-    image: '/images/landing/landing-equipe.jpg',
-    imageAlt: 'Distributeurs en discussion',
-    reverse: true,
+    alt: 'Chargement de casiers dans un camion de livraison',
   },
 ]
 
 export function LandingStories({ features }: { features: CmsFeature[] }) {
-  // Si le CMS a des modules, on garde les stories visuelles (plus parlantes que des cards icônes)
-  void features
+  const modules = features.length
+    ? features.map((f) => ({ icon: ICONS[f.icon] ?? Boxes, title: f.title, text: f.description ?? '' }))
+    : DEFAULT_MODULES
 
   return (
-    <section id="features" className="bg-[#F7F4EF] py-10 lg:py-16">
-      <div className="mx-auto max-w-[1180px] space-y-16 px-6 lg:space-y-24">
-        {STORIES.map((s) => (
-          <article
-            key={s.id}
-            className={`grid items-center gap-10 lg:grid-cols-2 lg:gap-16 ${
-              s.reverse ? '' : ''
-            }`}
-          >
-            <div className={s.reverse ? 'lg:order-2' : ''}>
-              <div className="relative aspect-[4/3] overflow-hidden rounded-[1.75rem]">
-                <Image
-                  src={s.image}
-                  alt={s.imageAlt}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                />
-              </div>
+    <section id="features" className="scroll-mt-20 py-20 lg:py-28">
+      <div className="mx-auto max-w-[1200px] px-5 sm:px-8">
+        <div className="max-w-2xl">
+          <p className="text-sm font-semibold text-brand-strong">Fonctionnalités</p>
+          <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.2vw,2.5rem)] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+            Tout le cycle du dépôt, dans une seule application
+          </h2>
+          <p className="mt-4 text-lg text-muted-foreground">
+            Du camion du fournisseur à la caisse du soir, chaque opération met à jour le stock, les comptes clients et la caisse.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {modules.map((m) => (
+            <div key={m.title} className="rounded-2xl border border-border bg-card p-6 transition-shadow hover:shadow-md">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-foreground">
+                <m.icon className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <h3 className="mt-5 font-semibold tracking-tight text-foreground">{m.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{m.text}</p>
             </div>
+          ))}
+        </div>
 
-            <div className={s.reverse ? 'lg:order-1' : ''}>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#2563EB]">
-                {s.eyebrow}
-              </p>
-              <h2 className="mt-3 text-[clamp(1.6rem,3vw,2.25rem)] font-bold leading-[1.15] tracking-tight text-[#0F172A]">
-                {s.title}
-              </h2>
-              <p className="mt-4 text-base leading-relaxed text-[#52525B]">{s.body}</p>
-
-              {s.captureSrc && (
-                <div className="mt-8">
-                  <ProductCapture
-                    src={s.captureSrc}
-                    alt={s.captureAlt || 'Capture B-Stock'}
-                    className="max-w-md rounded-2xl"
-                  />
+        <div className="mt-24 space-y-20 lg:space-y-28">
+          {STORIES.map((s, i) => (
+            <article key={s.title} className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+              <div className={i % 2 ? 'lg:order-2' : ''}>
+                <div className="relative aspect-[4/3] overflow-hidden rounded-2xl">
+                  <Image src={s.image} alt={s.alt} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 50vw" />
                 </div>
-              )}
-            </div>
-          </article>
-        ))}
+              </div>
+              <div className={i % 2 ? 'lg:order-1' : ''}>
+                <p className="text-sm font-semibold text-brand-strong">{s.eyebrow}</p>
+                <h3 className="mt-3 text-balance text-[clamp(1.5rem,2.6vw,2rem)] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+                  {s.title}
+                </h3>
+                <p className="mt-4 text-lg leading-relaxed text-muted-foreground">{s.body}</p>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   )

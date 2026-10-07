@@ -47,44 +47,43 @@ export function SubscriptionBlocker({ status, planName, isOwner }: SubscriptionB
       aria-modal="true"
       aria-labelledby="subscription-blocker-title"
       aria-describedby="subscription-blocker-description"
-      className="fixed inset-0 z-[100] bg-card/95 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-background/90 p-4 backdrop-blur-sm"
     >
-      <div className="max-w-md w-full text-center">
-        <div className="mx-auto h-16 w-16 rounded-xl bg-destructive/10 flex items-center justify-center mb-6">
-          <ShieldAlert className="h-8 w-8 text-destructive" aria-hidden="true" />
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-lg">
+        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-destructive/10">
+          <ShieldAlert className="h-6 w-6 text-destructive" aria-hidden="true" />
         </div>
 
-        <h1 id="subscription-blocker-title" className="text-xl sm:text-2xl font-bold text-foreground tracking-tight mb-3">
+        <h1 id="subscription-blocker-title" className="mb-2 text-xl font-semibold tracking-tight text-foreground">
           {title}
         </h1>
 
-        <p id="subscription-blocker-description" className="text-sm text-muted-foreground mb-8 max-w-sm mx-auto leading-relaxed">
+        <p id="subscription-blocker-description" className="mx-auto mb-7 max-w-sm text-sm leading-relaxed text-muted-foreground">
           {description}
         </p>
 
         {isOwner ? (
           <Button
-            size="lg"
-            className="h-12 px-8 text-sm font-semibold bg-primary hover:bg-primary text-white rounded-xl shadow-lg shadow-blue-600/20"
+            variant="brand"
+            className="h-11 w-full"
             asChild
           >
             <Link href="/dashboard/plans" ref={ctaRef}>
               Voir les offres
-              <ArrowRight className="h-4 w-4 ml-2" aria-hidden="true" />
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </Button>
         ) : (
           <Button
-            size="lg"
             variant="outline"
-            className="h-12 px-8 text-sm font-semibold rounded-xl"
+            className="h-11 w-full"
             onClick={() => signOut({ callbackUrl: '/login' })}
           >
             Se déconnecter
           </Button>
         )}
 
-        <p className="text-[10px] text-muted-foreground mt-6">
+        <p className="mt-5 text-xs text-muted-foreground">
           Vos données sont en sécurité et seront accessibles dès la réactivation.
         </p>
       </div>

@@ -1,8 +1,9 @@
 import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, StatCard, StatusBadge } from '@/components/app/blocks'
+import { EmptyState } from '@/components/states'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import {
   Table,
@@ -29,7 +30,8 @@ import {
   MapPin,
   CreditCard,
   Check,
-  Package
+  Package,
+  ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { formatMoney, formatNumber } from '@/lib/format'
@@ -107,157 +109,133 @@ export default async function ClientsPage({
   const totalDebt = clients.reduce((acc, c) => acc + Math.max(0, -Number(c.product_balance)), 0)
   const totalPackagingDebt = clients.reduce((acc, c) => acc + Math.max(0, -Number(c.packaging_balance)), 0)
 
-  const statsData = [
-    {
-      title: "Total Clients",
-      value: formatNumber(clients.length),
-      description: q ? `Résultats pour « ${q} »` : "Base de données clients",
-      icon: Users,
-      color: "bg-primary/10 text-brand-strong",
-    },
-    {
-      title: "Clients Actifs",
-      value: formatNumber(activeClients.length),
-      description: "Partenaires réguliers",
-      icon: Check,
-      color: "bg-success/10 text-success",
-    },
-    {
-      title: "Dettes Produits",
-      value: formatCurrency(totalDebt),
-      description: "Encours à recouvrer",
-      icon: CreditCard,
-      color: "bg-destructive/10 text-destructive",
-    },
-    {
-      title: "Emballages Dus",
-      value: formatCurrency(totalPackagingDebt),
-      description: "Consignes en attente",
-      icon: Package,
-      color: "bg-warning/10 text-warning-foreground",
-    }
-  ]
-
   return (
-    <div className="flex flex-col min-h-screen bg-muted/30">
+    <div className="flex min-h-screen flex-col">
       <DashboardHeader
         title="Clients"
+        description="Répertoire, soldes produits et emballages"
         actions={
-          <Button size="sm" asChild className="h-8 px-3 text-xs font-medium">
-            <Link href="/dashboard/clients/new" className="flex items-center gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
+          <Button variant="brand" size="sm" asChild>
+            <Link href="/dashboard/clients/new">
+              <Plus className="h-4 w-4" aria-hidden="true" />
               Nouveau client
             </Link>
           </Button>
         }
       />
 
-      <main className="flex-1 p-4 lg:p-6 space-y-6">
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {statsData.map((stat) => (
-            <div key={stat.title} className="bg-card rounded-lg border border-border p-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-muted-foreground">{stat.title}</span>
-                <stat.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
-              </div>
-              <p className="text-xl font-bold text-foreground tracking-tight">{stat.value}</p>
-              <p className="text-xs text-muted-foreground mt-1">{stat.description}</p>
-            </div>
-          ))}
+      <PageShell>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard
+            label="Clients"
+            value={formatNumber(clients.length)}
+            hint={q ? `Résultats pour « ${q} »` : 'Dans le répertoire'}
+            icon={Users}
+          />
+          <StatCard
+            label="Clients actifs"
+            value={formatNumber(activeClients.length)}
+            hint="Partenaires réguliers"
+            icon={Check}
+            tone="success"
+          />
+          <StatCard
+            label="Dettes produits"
+            value={formatCurrency(totalDebt)}
+            hint="Encours à recouvrer"
+            icon={CreditCard}
+            emphasis
+          />
+          <StatCard
+            label="Emballages dus"
+            value={formatCurrency(totalPackagingDebt)}
+            hint="Consignes en attente"
+            icon={Package}
+            tone="warning"
+          />
         </div>
 
-        {/* Clients Table */}
-        <div className="bg-card rounded-lg border border-border overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-foreground">Répertoire clients</h3>
-            <form action="/dashboard/clients" method="get" role="search" className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <form action="/dashboard/clients" method="get" role="search" className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               <Input
                 type="search"
                 name="q"
                 defaultValue={q ?? ''}
                 placeholder="Nom, téléphone, zone…"
                 aria-label="Rechercher un client"
-                className="h-9 w-56 pl-8 text-sm"
+                className="h-10 pl-9"
               />
             </form>
+            {q && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/dashboard/clients">Effacer la recherche</Link>
+              </Button>
+            )}
           </div>
 
           {clients.length === 0 && q ? (
-            <div className="text-center py-16 px-4">
-              <p className="text-sm font-semibold text-foreground">Aucun client trouvé</p>
-              <p className="mt-1 text-sm text-muted-foreground">Aucun résultat pour « {q} ».</p>
-              <Button size="sm" variant="outline" className="mt-4" asChild>
-                <Link href="/dashboard/clients">Voir tous les clients</Link>
-              </Button>
-            </div>
+            <EmptyState
+              icon={Search}
+              title="Aucun client trouvé"
+              description={`Aucun résultat pour « ${q} ».`}
+              action={{ label: 'Voir tous les clients', href: '/dashboard/clients' }}
+            />
           ) : clients.length === 0 ? (
-            <div className="text-center py-16 flex flex-col items-center px-4">
-              <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center mb-4">
-                <Users className="h-6 w-6 text-muted-foreground/70" />
-              </div>
-              <h3 className="text-sm font-semibold text-foreground">Aucun client</h3>
-              <p className="mt-1 text-sm text-muted-foreground max-w-xs">
-                Ajoutez vos premiers partenaires pour commencer.
-              </p>
-              <Button size="sm" className="mt-4 h-11 px-6" asChild>
-                <Link href="/dashboard/clients/new">
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Ajouter un client
-                </Link>
-              </Button>
-            </div>
+            <EmptyState
+              icon={Users}
+              title="Aucun client"
+              description="Ajoutez vos premiers partenaires pour commencer."
+              action={{ label: 'Ajouter un client', href: '/dashboard/clients/new' }}
+            />
           ) : (
-            <>
-              {/* Desktop table */}
-              <div className="hidden md:block overflow-x-auto">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+              {/* Tableau (≥ md) */}
+              <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-xs font-medium text-muted-foreground pl-4">Client</TableHead>
-                      <TableHead className="text-xs font-medium text-muted-foreground">Contact</TableHead>
-                      <TableHead className="text-xs font-medium text-muted-foreground">Type / Zone</TableHead>
-                      <TableHead className="text-xs font-medium text-muted-foreground text-right">Solde produits</TableHead>
-                      <TableHead className="text-xs font-medium text-muted-foreground text-right">Solde emballages</TableHead>
-                      <TableHead className="text-xs font-medium text-muted-foreground">Statut</TableHead>
-                      <TableHead className="pr-4"></TableHead>
+                      <TableHead className="pl-5">Client</TableHead>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Type et zone</TableHead>
+                      <TableHead className="text-right">Solde produits</TableHead>
+                      <TableHead className="text-right">Solde emballages</TableHead>
+                      <TableHead>Statut</TableHead>
+                      <TableHead className="w-12 pr-5">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {clients.map((client) => (
-                      <TableRow key={client.id} className="group">
-                        <TableCell className="pl-4">
-                          <div>
-                            <Link href={`/dashboard/clients/${client.id}`} className="text-sm font-medium text-foreground hover:underline">
-                              {client.name}
-                            </Link>
-                            {client.address && (
-                              <p className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-0.5">
-                                <MapPin className="h-3 w-3" />
-                                {client.address}
-                              </p>
-                            )}
-                          </div>
+                      <TableRow key={client.id}>
+                        <TableCell className="pl-5">
+                          <Link
+                            href={`/dashboard/clients/${client.id}`}
+                            className="rounded-sm text-sm font-medium text-foreground transition-colors hover:text-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {client.name}
+                          </Link>
+                          {client.address && (
+                            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                              <span className="truncate">{client.address}</span>
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <div>
-                            <span className="text-sm text-foreground/80">{client.contact_name || '—'}</span>
-                            {client.phone && (
-                              <p className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-0.5">
-                                <Phone className="h-3 w-3" />
-                                {client.phone}
-                              </p>
-                            )}
-                          </div>
+                          <span className="text-sm text-foreground">{client.contact_name || '—'}</span>
+                          {client.phone && (
+                            <p className="tabular mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                              <Phone className="h-3 w-3 shrink-0" aria-hidden="true" />
+                              {client.phone}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded w-fit">
-                              {typeLabels[client.client_type] || client.client_type}
-                            </span>
-                            <span className="text-xs text-muted-foreground/70">{client.zone || '—'}</span>
-                          </div>
+                          <span className="text-sm text-foreground">{typeLabels[client.client_type] || client.client_type}</span>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{client.zone || 'Sans zone'}</p>
                         </TableCell>
                         <TableCell className="text-right">
                           <BalanceText value={client.product_balance} className="text-sm font-medium" />
@@ -266,34 +244,32 @@ export default async function ClientsPage({
                           <BalanceText value={client.packaging_balance} className="text-sm font-medium" debtClassName="text-warning-foreground" />
                         </TableCell>
                         <TableCell>
-                          <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'} border-none`}>
-                            {client.is_active ? 'Actif' : 'Bloqué'}
-                          </Badge>
+                          <StatusBadge label={client.is_active ? 'Actif' : 'Bloqué'} tone={client.is_active ? 'success' : 'default'} />
                         </TableCell>
-                        <TableCell className="pr-4 text-right">
+                        <TableCell className="pr-5 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour ${client.name}`}>
-                                <MoreHorizontal className="h-4 w-4 text-muted-foreground/70" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions pour ${client.name}`}>
+                                <MoreHorizontal className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-48">
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/clients/${client.id}`} className="flex items-center gap-2">
-                                  <Eye className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-sm">Voir le compte</span>
+                                  <Eye className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                                  Voir le compte
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/sales/new?client=${client.id}`} className="flex items-center gap-2">
-                                  <Plus className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-sm">Nouvelle vente</span>
+                                  <Plus className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                                  Nouvelle vente
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/clients/${client.id}/edit`} className="flex items-center gap-2">
-                                  <Edit className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-sm">Modifier</span>
+                                  <Edit className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                                  Modifier
                                 </Link>
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -305,52 +281,43 @@ export default async function ClientsPage({
                 </Table>
               </div>
 
-              {/* Mobile cards */}
-              <div className="md:hidden divide-y divide-border">
+              {/* Cartes (< md) */}
+              <ul className="divide-y divide-border md:hidden">
                 {clients.map((client) => (
-                  <Link
-                    key={client.id}
-                    href={`/dashboard/clients/${client.id}`}
-                    className="block p-4 active:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between mb-2">
+                  <li key={client.id}>
+                    <Link
+                      href={`/dashboard/clients/${client.id}`}
+                      className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                    >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-foreground truncate">{client.name}</p>
-                        {client.phone && (
-                          <p className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-0.5">
-                            <Phone className="h-3 w-3" /> {client.phone}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 ml-2 shrink-0">
-                        <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium text-foreground">{client.name}</p>
+                          {!client.is_active && <StatusBadge label="Bloqué" tone="default" />}
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
                           {typeLabels[client.client_type] || client.client_type}
-                        </span>
-                        <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'} border-none`}>
-                          {client.is_active ? 'Actif' : 'Bloqué'}
-                        </Badge>
+                          {' · '}
+                          {client.zone || 'Sans zone'}
+                          {client.phone ? ` · ${client.phone}` : ''}
+                        </p>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground/70">{client.zone || 'Sans zone'}</span>
-                      <div className="flex items-center gap-3">
-                        {Number(client.product_balance) !== 0 && (
-                          <BalanceText value={client.product_balance} className="font-medium" />
-                        )}
+                      <div className="shrink-0 text-right">
+                        <BalanceText value={client.product_balance} className="block text-sm font-medium" />
                         {Number(client.packaging_balance) !== 0 && (
-                          <span className="font-medium">
-                            Emb. : <BalanceText value={client.packaging_balance} debtClassName="text-warning-foreground" />
+                          <span className="block text-xs text-muted-foreground">
+                            Emb. <BalanceText value={client.packaging_balance} debtClassName="text-warning-foreground" />
                           </span>
                         )}
                       </div>
-                    </div>
-                  </Link>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    </Link>
+                  </li>
                 ))}
-              </div>
-            </>
+              </ul>
+            </div>
           )}
         </div>
-      </main>
+      </PageShell>
     </div>
   )
 }

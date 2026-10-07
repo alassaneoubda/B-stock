@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -134,47 +135,41 @@ export default function PackagingEquivalencesPage() {
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Équivalences d'Emballages"
-                description="Gérez les emballages interchangeables entre formats"
+                title="Équivalences d'emballages"
+                description="Emballages interchangeables entre formats"
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6">
-                <div className="mb-2">
-                    <Button variant="ghost" size="sm" asChild>
-                        <Link href="/dashboard/packaging">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Retour aux emballages
-                        </Link>
-                    </Button>
-                </div>
+            <PageShell>
+                <Button variant="ghost" size="sm" asChild className="-ml-2">
+                    <Link href="/dashboard/packaging">
+                        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                        Emballages
+                    </Link>
+                </Button>
 
-                {error && (
-                    <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                        {error}
-                    </div>
-                )}
-
-                <div className="max-w-2xl space-y-6">
-                    {/* Add new equivalence */}
-                    <Card>
+                <div className="grid items-start gap-6 lg:grid-cols-3">
+                    {/* Nouvelle équivalence */}
+                    <Card className="lg:col-span-1">
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
-                                Nouvelle Équivalence
-                            </CardTitle>
+                            <CardTitle>Nouvelle équivalence</CardTitle>
                             <CardDescription>
-                                Liez deux emballages interchangeables. Ex : Casier Solibra 65cl = Casier Brassivoire 65cl
+                                Liez deux emballages interchangeables. Ex. : casier Solibra 65 cl = casier Brassivoire 65 cl.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="grid gap-4 sm:grid-cols-2">
+                            {error && (
+                                <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                                    {error}
+                                </div>
+                            )}
+                            <div className="grid gap-4">
                                 <div className="space-y-2">
-                                    <Label>Emballage A</Label>
+                                    <Label htmlFor="equivalence-a">Emballage A</Label>
                                     <Select value={selectedA} onValueChange={setSelectedA}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Choisir un emballage..." />
+                                        <SelectTrigger id="equivalence-a" className="w-full">
+                                            <SelectValue placeholder="Choisir un emballage…" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {packagingTypes
@@ -188,10 +183,10 @@ export default function PackagingEquivalencesPage() {
                                     </Select>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Emballage B</Label>
+                                    <Label htmlFor="equivalence-b">Emballage B</Label>
                                     <Select value={selectedB} onValueChange={setSelectedB}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Choisir un emballage..." />
+                                        <SelectTrigger id="equivalence-b" className="w-full">
+                                            <SelectValue placeholder="Choisir un emballage…" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {packagingTypes
@@ -206,17 +201,19 @@ export default function PackagingEquivalencesPage() {
                                 </div>
                             </div>
                             <Button
+                                variant="brand"
+                                className="w-full"
                                 onClick={handleAdd}
                                 disabled={!selectedA || !selectedB || saving}
                             >
                                 {saving ? (
                                     <>
-                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                        Création...
+                                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                        Création…
                                     </>
                                 ) : (
                                     <>
-                                        <Plus className="h-4 w-4 mr-2" />
+                                        <Plus className="h-4 w-4" aria-hidden="true" />
                                         Créer l&apos;équivalence
                                     </>
                                 )}
@@ -224,20 +221,26 @@ export default function PackagingEquivalencesPage() {
                         </CardContent>
                     </Card>
 
-                    {/* Existing equivalences */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Équivalences existantes</CardTitle>
-                            <CardDescription>
-                                {equivalences.length} équivalence{equivalences.length > 1 ? 's' : ''} configurée{equivalences.length > 1 ? 's' : ''}
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
+                    {/* Équivalences existantes */}
+                    <Panel
+                        className="lg:col-span-2"
+                        title="Équivalences existantes"
+                        description={
+                            loading || loadError
+                                ? undefined
+                                : `${formatNumber(equivalences.length)} équivalence${equivalences.length > 1 ? 's' : ''} configurée${equivalences.length > 1 ? 's' : ''}`
+                        }
+                    >
                             {loading ? (
-                                <TableSkeleton rows={3} columns={3} />
+                                <div className="p-5">
+                                    <TableSkeleton rows={3} columns={3} />
+                                </div>
                             ) : loadError ? (
-                                <ErrorState onRetry={() => fetchData()} />
+                                <div className="p-5">
+                                    <ErrorState onRetry={() => fetchData()} />
+                                </div>
                             ) : equivalences.length === 0 ? (
+                                <div className="p-5">
                                 <EmptyState
                                     icon={ArrowLeftRight}
                                     title="Aucune équivalence configurée"
@@ -252,54 +255,80 @@ export default function PackagingEquivalencesPage() {
                                             : undefined
                                     }
                                 />
+                                </div>
                             ) : (
+                                <>
+                                <div className="hidden md:block">
                                 <Table>
                                     <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Emballage A</TableHead>
-                                            <TableHead className="text-center">Lien</TableHead>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Emballage A</TableHead>
+                                            <TableHead className="w-12 text-center"><span className="sr-only">Lien</span></TableHead>
                                             <TableHead>Emballage B</TableHead>
-                                            <TableHead className="text-right">Actions</TableHead>
+                                            <TableHead className="w-12 pr-5"><span className="sr-only">Actions</span></TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {equivalences.map(eq => (
-                                            <TableRow key={eq.id}>
-                                                <TableCell>
-                                                    <div>
-                                                        <p className="font-semibold">{eq.name_a}</p>
-                                                        <p className="text-xs text-muted-foreground">{formatNumber(eq.units_a)} u/casier</p>
-                                                    </div>
+                                            <TableRow key={eq.id} className="transition-colors hover:bg-muted/40">
+                                                <TableCell className="pl-5">
+                                                    <p className="text-sm font-medium text-foreground">{eq.name_a}</p>
+                                                    <p className="tabular text-xs text-muted-foreground">{formatNumber(eq.units_a)} u. par casier</p>
                                                 </TableCell>
                                                 <TableCell className="text-center">
-                                                    <ArrowLeftRight className="h-4 w-4 mx-auto text-muted-foreground" />
+                                                    <ArrowLeftRight className="mx-auto h-4 w-4 text-muted-foreground" aria-hidden="true" />
                                                 </TableCell>
                                                 <TableCell>
-                                                    <div>
-                                                        <p className="font-semibold">{eq.name_b}</p>
-                                                        <p className="text-xs text-muted-foreground">{formatNumber(eq.units_b)} u/casier</p>
-                                                    </div>
+                                                    <p className="text-sm font-medium text-foreground">{eq.name_b}</p>
+                                                    <p className="tabular text-xs text-muted-foreground">{formatNumber(eq.units_b)} u. par casier</p>
                                                 </TableCell>
-                                                <TableCell className="text-right">
+                                                <TableCell className="pr-5 text-right">
                                                     <Button
                                                         variant="ghost"
-                                                        size="icon"
+                                                        size="icon-sm"
                                                         onClick={() => setPendingDelete(eq)}
-                                                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                                         aria-label={`Supprimer l'équivalence ${eq.name_a} / ${eq.name_b}`}
                                                     >
-                                                        <Trash2 className="h-4 w-4" />
+                                                        <Trash2 className="h-4 w-4" aria-hidden="true" />
                                                     </Button>
                                                 </TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
                                 </Table>
+                                </div>
+
+                                <ul className="divide-y divide-border md:hidden">
+                                    {equivalences.map(eq => (
+                                        <li key={eq.id} className="flex items-center gap-3 px-5 py-4">
+                                            <div className="min-w-0 flex-1 space-y-1">
+                                                <p className="truncate text-sm font-medium text-foreground">{eq.name_a}</p>
+                                                <p className="flex items-center gap-1.5 truncate text-sm text-foreground">
+                                                    <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                                                    {eq.name_b}
+                                                </p>
+                                                <p className="tabular text-xs text-muted-foreground">
+                                                    {formatNumber(eq.units_a)} u. ↔ {formatNumber(eq.units_b)} u. par casier
+                                                </p>
+                                            </div>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                onClick={() => setPendingDelete(eq)}
+                                                className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                                aria-label={`Supprimer l'équivalence ${eq.name_a} / ${eq.name_b}`}
+                                            >
+                                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                            </Button>
+                                        </li>
+                                    ))}
+                                </ul>
+                                </>
                             )}
-                        </CardContent>
-                    </Card>
+                    </Panel>
                 </div>
-            </main>
+            </PageShell>
 
             <AlertDialog
                 open={pendingDelete !== null}
@@ -324,9 +353,9 @@ export default function PackagingEquivalencesPage() {
                                 e.preventDefault()
                                 confirmDelete()
                             }}
-                            className="bg-destructive text-white hover:bg-destructive/90"
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                            {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            {deleting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                             Supprimer
                         </AlertDialogAction>
                     </AlertDialogFooter>

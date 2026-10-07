@@ -68,19 +68,22 @@ export function GoogleButton({
         variant="outline"
         onClick={handleClick}
         disabled={isLoading}
-        className="w-full h-11 rounded-xl text-sm font-medium border-[#E7E0D6] bg-white text-[#334155] hover:bg-[#FBF9F6]"
+        className="h-11 w-full"
       >
         {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin" aria-label="Redirection vers Google…" />
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Redirection vers Google…
+          </>
         ) : (
-          <span className="flex items-center justify-center gap-2">
+          <>
             <GoogleIcon className="h-4 w-4" />
             {label}
-          </span>
+          </>
         )}
       </Button>
       {error && (
-        <p role="alert" className="text-xs font-medium text-red-600">
+        <p role="alert" className="text-xs font-medium text-destructive">
           {error}
         </p>
       )}

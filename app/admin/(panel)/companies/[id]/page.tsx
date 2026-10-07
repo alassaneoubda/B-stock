@@ -6,9 +6,9 @@ import { useParams, useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { signIn } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageShell, PageIntro, Panel, StatusBadge } from '@/components/app/blocks'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -235,35 +235,36 @@ export default function AdminCompanyDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-6" aria-busy="true" aria-label="Chargement">
-        <Skeleton className="h-4 w-28" />
-        <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-20 rounded-xl" />
-          ))}
+      <PageShell>
+        <div className="space-y-6" aria-busy="true" aria-label="Chargement">
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-20 rounded-xl" />
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Skeleton className="h-96 rounded-xl lg:col-span-2" />
+            <Skeleton className="h-96 rounded-xl" />
+          </div>
+          <TableSkeleton rows={4} />
         </div>
-        <TableSkeleton rows={4} />
-      </div>
+      </PageShell>
     )
   }
 
   if (error || !company) {
     const notFound = error instanceof ApiError && error.status === 404
     return (
-      <div className="p-4 sm:p-8 max-w-5xl mx-auto">
-        <Link
-          href="/admin/companies"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
-        >
-          <ArrowLeft className="h-4 w-4" /> Entreprises
-        </Link>
+      <PageShell>
+        <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
+          <Link href="/admin/companies">
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Entreprises
+          </Link>
+        </Button>
         <ErrorState
           title={notFound ? 'Entreprise introuvable' : undefined}
           description={error ? errorMessage(error) : 'Les données de cette entreprise sont indisponibles.'}
           onRetry={notFound ? undefined : () => mutate()}
         />
-      </div>
+      </PageShell>
     )
   }
 
@@ -271,292 +272,320 @@ export default function AdminCompanyDetailPage() {
   const isBusy = !!busy
 
   return (
-    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
-      <Link href="/admin/companies" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
-        <ArrowLeft className="h-4 w-4" /> Entreprises
-      </Link>
+    <PageShell>
+      <div className="space-y-3">
+        <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground hover:text-foreground">
+          <Link href="/admin/companies">
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Entreprises
+          </Link>
+        </Button>
 
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-foreground">{company.name}</h1>
-            {company.is_suspended ? (
-              <Badge className="bg-destructive/10 text-destructive">Suspendue</Badge>
-            ) : (
-              <Badge className="bg-success-soft text-success">{statusLabel(company.subscription_status)}</Badge>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground">{company.email || 'Sans email'}</p>
-          {company.is_suspended && company.suspension_reason && (
-            <p className="text-xs text-destructive mt-1">Motif : {company.suspension_reason}</p>
-          )}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setPending('impersonate')} disabled={isBusy}>
-            {busy === 'impersonate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4 mr-1.5" />}
-            Se connecter en tant que
-          </Button>
-          {company.is_suspended ? (
-            <Button onClick={() => suspend(false)} className="bg-success hover:bg-success" disabled={isBusy}>
-              {busy === 'reactivate' ? (
-                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+        <PageIntro
+          title={
+            <span className="flex flex-wrap items-center gap-3">
+              {company.name}
+              {company.is_suspended ? (
+                <StatusBadge label="Suspendue" tone="danger" />
               ) : (
-                <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                <StatusBadge label={statusLabel(company.subscription_status)} tone={statusTone(company.subscription_status)} />
               )}
-              Réactiver
-            </Button>
-          ) : (
-            <Button
-              onClick={() => setPending('suspend')}
-              variant="outline"
-              className="text-destructive border-destructive/30 hover:bg-destructive/10"
-              disabled={isBusy}
-            >
-              <Ban className="h-4 w-4 mr-1.5" /> Suspendre
-            </Button>
-          )}
-        </div>
+            </span>
+          }
+          description={
+            <>
+              {company.email || 'Sans email'}
+              {company.is_suspended && company.suspension_reason && (
+                <span className="mt-1 block text-xs text-destructive">Motif : {company.suspension_reason}</span>
+              )}
+            </>
+          }
+          actions={
+            <>
+              <Button variant="outline" onClick={() => setPending('impersonate')} disabled={isBusy}>
+                {busy === 'impersonate' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <LogIn className="h-4 w-4" aria-hidden="true" />
+                )}
+                Se connecter en tant que
+              </Button>
+              {company.is_suspended ? (
+                <Button onClick={() => suspend(false)} disabled={isBusy}>
+                  {busy === 'reactivate' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Réactiver
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => setPending('suspend')}
+                  variant="outline"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={isBusy}
+                >
+                  <Ban className="h-4 w-4" aria-hidden="true" /> Suspendre
+                </Button>
+              )}
+            </>
+          }
+        />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+      {/* Utilisation */}
+      <section
+        aria-label="Utilisation"
+        className="grid grid-cols-2 divide-border overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)] sm:grid-cols-5 sm:divide-x"
+      >
         <Usage label="Utilisateurs" value={usage?.users} />
         <Usage label="Dépôts" value={usage?.depots} />
         <Usage label="Produits" value={usage?.products} />
         <Usage label="Clients" value={usage?.clients} />
         <Usage label="Commandes" value={usage?.orders} />
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <Card className="p-6">
-          <h2 className="text-sm font-semibold text-foreground mb-1">Abonnement</h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Pour un paiement hors plateforme (espèces, virement, Mobile Money…) : choisissez l’offre et une durée personnalisée.
-          </p>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Abonnement</CardTitle>
+            <CardDescription>
+              Pour un paiement hors plateforme (espèces, virement, Mobile Money…) : choisissez l’offre et une durée personnalisée.
+            </CardDescription>
+          </CardHeader>
 
-          <dl className="space-y-2 text-sm mb-5">
-            <Row label="Statut" value={statusLabel(company.subscription_status)} />
-            <Row label="Plan" value={<span className="capitalize">{planLabel}</span>} />
-            <Row label="Fin d'essai" value={formatDate(company.trial_ends_at)} />
-            <Row
-              label="Fin d'abonnement"
-              value={
-                company.subscription_ends_at
-                  ? formatDate(company.subscription_ends_at)
-                  : company.subscription_status === 'active'
-                    ? 'Illimité'
-                    : '—'
-              }
-            />
-            {plan && <Row label="Prix catalogue" value={formatMoney(plan.price_monthly)} />}
-          </dl>
-
-          <form onSubmit={saveSubscription} className="space-y-4 border-t border-border pt-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="plan">Offre</Label>
-              <select
-                id="plan"
-                value={formPlan}
-                onChange={(e) => setFormPlan(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm"
-              >
-                {plans.map((p: any) => (
-                  <option key={p.name} value={p.name}>
-                    {(p.display_name || p.name) + ` — ${formatMoney(p.price_monthly)}/mois`}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="status">Statut</Label>
-              <select
-                id="status"
-                value={formStatus}
-                onChange={(e) => setFormStatus(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm"
-              >
-                <option value="active">Actif (payé)</option>
-                <option value="trialing">Essai</option>
-                <option value="past_due">Impayé / en retard</option>
-                <option value="canceled">Annulé</option>
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Durée</Label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {(
-                  [
-                    ['months', 'Par mois'],
-                    ['date', 'Date de fin'],
-                    ['unlimited', 'Illimité'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setDurationMode(value)}
-                    aria-pressed={durationMode === value}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                      durationMode === value
-                        ? 'bg-primary text-white border-border'
-                        : 'bg-card text-muted-foreground border-border'
-                    }`}
+          <CardContent>
+            <form onSubmit={saveSubscription} className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="plan">Offre</Label>
+                  <select
+                    id="plan"
+                    value={formPlan}
+                    onChange={(e) => setFormPlan(e.target.value)}
+                    className={SELECT}
                   >
-                    {label}
-                  </button>
-                ))}
+                    {plans.map((p: any) => (
+                      <option key={p.name} value={p.name}>
+                        {(p.display_name || p.name) + ` — ${formatMoney(p.price_monthly)}/mois`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="status">Statut</Label>
+                  <select
+                    id="status"
+                    value={formStatus}
+                    onChange={(e) => setFormStatus(e.target.value)}
+                    className={SELECT}
+                  >
+                    <option value="active">Actif (payé)</option>
+                    <option value="trialing">Essai</option>
+                    <option value="past_due">Impayé / en retard</option>
+                    <option value="canceled">Annulé</option>
+                  </select>
+                </div>
               </div>
 
-              {durationMode === 'months' && (
-                <div className="flex flex-wrap gap-2 items-center">
-                  {[1, 3, 6, 12].map((m) => (
+              <fieldset className="space-y-2">
+                <legend className="mb-1.5 text-sm font-medium text-foreground">Durée</legend>
+                <div className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/60 p-1">
+                  {(
+                    [
+                      ['months', 'Par mois'],
+                      ['date', 'Date de fin'],
+                      ['unlimited', 'Illimité'],
+                    ] as const
+                  ).map(([value, label]) => (
                     <button
-                      key={m}
+                      key={value}
                       type="button"
-                      onClick={() => setFormMonths(String(m))}
-                      aria-pressed={formMonths === String(m)}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                        formMonths === String(m)
-                          ? 'bg-orange-50 text-orange-700 border-orange-200'
-                          : 'bg-card text-muted-foreground border-border'
+                      onClick={() => setDurationMode(value)}
+                      aria-pressed={durationMode === value}
+                      className={`h-8 rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                        durationMode === value
+                          ? 'bg-card text-foreground shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      {m} mois
+                      {label}
                     </button>
                   ))}
+                </div>
+
+                {durationMode === 'months' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[1, 3, 6, 12].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setFormMonths(String(m))}
+                        aria-pressed={formMonths === String(m)}
+                        className={`h-9 rounded-lg border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          formMonths === String(m)
+                            ? 'border-brand/50 bg-brand-soft text-brand-strong'
+                            : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+                        }`}
+                      >
+                        {m} mois
+                      </button>
+                    ))}
+                    <Input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={formMonths}
+                      onChange={(e) => setFormMonths(e.target.value)}
+                      className="tabular h-9 w-24"
+                      aria-label="Nombre de mois"
+                    />
+                  </div>
+                )}
+
+                {durationMode === 'date' && (
                   <Input
+                    type="date"
+                    value={formEndsAt}
+                    onChange={(e) => setFormEndsAt(e.target.value)}
+                    className="h-10 max-w-xs"
+                    aria-label="Date de fin"
+                    required
+                  />
+                )}
+
+                {durationMode === 'unlimited' && (
+                  <p className="text-xs text-muted-foreground">Accès sans date d’expiration (jusqu’à annulation manuelle).</p>
+                )}
+              </fieldset>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pay">Moyen de paiement</Label>
+                  <select
+                    id="pay"
+                    value={formPaymentMethod}
+                    onChange={(e) => setFormPaymentMethod(e.target.value)}
+                    className={SELECT}
+                  >
+                    <option value="especes">Espèces</option>
+                    <option value="virement">Virement</option>
+                    <option value="mobile_money">Mobile Money</option>
+                    <option value="cheque">Chèque</option>
+                    <option value="autre">Autre</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="amount">Montant reçu (FCFA)</Label>
+                  <Input
+                    id="amount"
                     type="number"
-                    min={1}
-                    max={120}
-                    value={formMonths}
-                    onChange={(e) => setFormMonths(e.target.value)}
-                    className="h-9 w-24"
-                    aria-label="Nombre de mois"
+                    min={0}
+                    placeholder="Optionnel"
+                    value={formAmount}
+                    onChange={(e) => setFormAmount(e.target.value)}
+                    className="tabular h-10"
                   />
                 </div>
-              )}
-
-              {durationMode === 'date' && (
-                <Input
-                  type="date"
-                  value={formEndsAt}
-                  onChange={(e) => setFormEndsAt(e.target.value)}
-                  className="h-10"
-                  aria-label="Date de fin"
-                  required
-                />
-              )}
-
-              {durationMode === 'unlimited' && (
-                <p className="text-xs text-muted-foreground">Accès sans date d’expiration (jusqu’à annulation manuelle).</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="pay">Moyen de paiement</Label>
-                <select
-                  id="pay"
-                  value={formPaymentMethod}
-                  onChange={(e) => setFormPaymentMethod(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm"
-                >
-                  <option value="especes">Espèces</option>
-                  <option value="virement">Virement</option>
-                  <option value="mobile_money">Mobile Money</option>
-                  <option value="cheque">Chèque</option>
-                  <option value="autre">Autre</option>
-                </select>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor="note">Note interne</Label>
+                  <Input
+                    id="note"
+                    placeholder="Ex. payé en liquide le 17/08 chez le commercial"
+                    value={formNote}
+                    onChange={(e) => setFormNote(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="amount">Montant reçu (FCFA)</Label>
+
+              <div className="flex justify-end">
+                <Button type="submit" variant="brand" disabled={isBusy} className="w-full sm:w-auto">
+                  {busy === 'save-sub' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Save className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Enregistrer l’abonnement
+                </Button>
+              </div>
+            </form>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+              <div className="flex items-center gap-2">
                 <Input
-                  id="amount"
                   type="number"
-                  min={0}
-                  placeholder="Optionnel"
-                  value={formAmount}
-                  onChange={(e) => setFormAmount(e.target.value)}
-                  className="h-10"
+                  min={1}
+                  max={365}
+                  value={trialDays}
+                  onChange={(e) => setTrialDays(e.target.value)}
+                  className="tabular h-9 w-20"
+                  aria-label="Jours d'essai"
                 />
+                <Button variant="outline" size="sm" className="h-9" onClick={() => setPending('trial')} disabled={isBusy}>
+                  <CalendarPlus className="h-4 w-4" aria-hidden="true" /> Prolonger l’essai
+                </Button>
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="note">Note interne</Label>
-              <Input
-                id="note"
-                placeholder="Ex. payé en liquide le 17/08 chez le commercial"
-                value={formNote}
-                onChange={(e) => setFormNote(e.target.value)}
-                className="h-10"
-              />
-            </div>
-
-            <Button type="submit" disabled={isBusy} className="w-full sm:w-auto">
-              {busy === 'save-sub' ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-              ) : (
-                <Save className="h-4 w-4 mr-1.5" />
-              )}
-              Enregistrer l&apos;abonnement
-            </Button>
-          </form>
-
-          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={1}
-                max={365}
-                value={trialDays}
-                onChange={(e) => setTrialDays(e.target.value)}
-                className="h-9 w-20"
-                aria-label="Jours d'essai"
-              />
-              <Button variant="outline" size="sm" onClick={() => setPending('trial')} disabled={isBusy}>
-                <CalendarPlus className="h-4 w-4 mr-1.5" /> Prolonger l&apos;essai
+              <Button variant="ghost" size="sm" className="h-9 text-muted-foreground" onClick={() => setPending('cancel')} disabled={isBusy}>
+                Annuler l’abonnement
               </Button>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setPending('cancel')} disabled={isBusy}>
-              Annuler l&apos;abonnement
-            </Button>
-          </div>
+          </CardContent>
         </Card>
 
-        <Card className="p-6 border-destructive/30">
-          <h2 className="text-sm font-semibold text-destructive mb-2">Zone sensible</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            La suppression est définitive. Préférez la suspension si vous comptez réactiver plus tard.
-          </p>
-          <Button
-            onClick={() => {
-              setDeleteConfirm('')
-              setPending('delete')
-            }}
-            variant="outline"
-            className="text-destructive border-destructive/30 hover:bg-destructive/10"
-            disabled={isBusy}
-          >
-            {busy === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
-            Supprimer l&apos;entreprise
-          </Button>
-        </Card>
+        <div className="space-y-6">
+          <Panel title="Résumé" description="Abonnement en cours">
+            <dl className="divide-y divide-border text-sm">
+              <Row label="Statut" value={statusLabel(company.subscription_status)} />
+              <Row label="Plan" value={<span className="capitalize">{planLabel}</span>} />
+              <Row label="Fin d’essai" value={formatDate(company.trial_ends_at)} />
+              <Row
+                label="Fin d’abonnement"
+                value={
+                  company.subscription_ends_at
+                    ? formatDate(company.subscription_ends_at)
+                    : company.subscription_status === 'active'
+                      ? 'Illimité'
+                      : '—'
+                }
+              />
+              {plan && <Row label="Prix catalogue" value={formatMoney(plan.price_monthly)} />}
+            </dl>
+          </Panel>
+
+          <section className="rounded-xl border border-destructive/30 bg-card p-5 shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+            <h2 className="text-[15px] font-semibold tracking-tight text-destructive">Zone sensible</h2>
+            <p className="mb-4 mt-1 text-sm text-muted-foreground">
+              La suppression est définitive. Préférez la suspension si vous comptez réactiver plus tard.
+            </p>
+            <Button
+              onClick={() => {
+                setDeleteConfirm('')
+                setPending('delete')
+              }}
+              variant="destructive"
+              disabled={isBusy}
+            >
+              {busy === 'delete' ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+              )}
+              Supprimer l’entreprise
+            </Button>
+          </section>
+        </div>
       </div>
 
-      <Card className="overflow-hidden">
-        <div className="px-5 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-foreground">Utilisateurs ({formatNumber(users.length)})</h2>
-        </div>
+      <Panel title="Utilisateurs" description={`${formatNumber(users.length)} compte(s) dans cette entreprise`}>
         {users.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">Aucun utilisateur dans cette entreprise</p>
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground">Aucun utilisateur dans cette entreprise</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
+                <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-5 py-2.5 font-medium">Nom</th>
                   <th className="px-5 py-2.5 font-medium">Rôle</th>
                   <th className="px-5 py-2.5 font-medium">Statut</th>
@@ -565,27 +594,23 @@ export default function AdminCompanyDetailPage() {
               </thead>
               <tbody>
                 {users.map((u: any) => (
-                  <tr key={u.id} className="border-b border-border">
+                  <tr key={u.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
                     <td className="px-5 py-2.5">
                       <p className="font-medium text-foreground">{u.full_name}</p>
-                      <p className="text-xs text-muted-foreground/70">{u.email}</p>
+                      <p className="text-xs text-muted-foreground">{u.email}</p>
                     </td>
-                    <td className="px-5 py-2.5 text-foreground/80">{roleLabel(u.role)}</td>
+                    <td className="px-5 py-2.5 text-foreground">{roleLabel(u.role)}</td>
                     <td className="px-5 py-2.5">
-                      {u.is_active ? (
-                        <span className="text-success text-xs font-medium">Actif</span>
-                      ) : (
-                        <span className="text-muted-foreground/70 text-xs font-medium">Inactif</span>
-                      )}
+                      <StatusBadge label={u.is_active ? 'Actif' : 'Inactif'} tone={u.is_active ? 'success' : 'default'} />
                     </td>
-                    <td className="px-5 py-2.5 text-muted-foreground">{formatDateTime(u.last_login_at)}</td>
+                    <td className="tabular whitespace-nowrap px-5 py-2.5 text-muted-foreground">{formatDateTime(u.last_login_at)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </Card>
+      </Panel>
 
       <AlertDialog open={pending !== null} onOpenChange={(o) => !o && !busy && setPending(null)}>
         <AlertDialogContent>
@@ -621,7 +646,7 @@ export default function AdminCompanyDetailPage() {
           )}
           {pending === 'cancel' && (
             <AlertDialogHeader>
-              <AlertDialogTitle>Annuler l&apos;abonnement de {company.name} ?</AlertDialogTitle>
+              <AlertDialogTitle>Annuler l’abonnement de {company.name} ?</AlertDialogTitle>
               <AlertDialogDescription>
                 Le statut de l’abonnement passera à « Annulé » : l’entreprise perdra l’accès aux fonctionnalités
                 payantes jusqu’à un nouvel abonnement. Aucun remboursement n’est effectué.
@@ -630,7 +655,7 @@ export default function AdminCompanyDetailPage() {
           )}
           {pending === 'trial' && (
             <AlertDialogHeader>
-              <AlertDialogTitle>Prolonger l&apos;essai de {parseInt(trialDays, 10) || 14} jour(s) ?</AlertDialogTitle>
+              <AlertDialogTitle>Prolonger l’essai de {parseInt(trialDays, 10) || 14} jour(s) ?</AlertDialogTitle>
               <AlertDialogDescription>
                 La fin d’essai sera repoussée et le statut de l’abonnement passera à « Essai »
                 {company.subscription_status === 'active'
@@ -663,7 +688,7 @@ export default function AdminCompanyDetailPage() {
               disabled={isBusy || (pending === 'delete' && deleteConfirm.trim() !== String(company.name).trim())}
               className={
                 pending === 'delete' || pending === 'suspend' || pending === 'cancel'
-                  ? 'bg-destructive hover:bg-destructive'
+                  ? buttonVariants({ variant: 'destructive' })
                   : undefined
               }
               onClick={(e) => {
@@ -675,7 +700,7 @@ export default function AdminCompanyDetailPage() {
                 else if (pending === 'delete') remove()
               }}
             >
-              {isBusy && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {isBusy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               {pending === 'impersonate' && 'Se connecter'}
               {pending === 'suspend' && 'Suspendre'}
               {pending === 'cancel' && 'Annuler l’abonnement'}
@@ -685,24 +710,34 @@ export default function AdminCompanyDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   )
+}
+
+const SELECT =
+  'flex h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+function statusTone(s?: string | null): 'success' | 'warning' | 'danger' | 'default' {
+  if (s === 'active') return 'success'
+  if (s === 'trialing') return 'warning'
+  if (s === 'past_due') return 'danger'
+  return 'default'
 }
 
 function Usage({ label, value }: { label: string; value?: number }) {
   return (
-    <Card className="p-4">
-      <p className="text-2xl font-bold text-foreground">{formatNumber(value ?? 0)}</p>
+    <div className="px-5 py-4">
+      <p className="tabular text-xl font-semibold tracking-tight text-foreground">{formatNumber(value ?? 0)}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
-    </Card>
+    </div>
   )
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between gap-3 px-5 py-2.5">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium text-foreground">{value}</dd>
+      <dd className="tabular text-right font-medium text-foreground">{value}</dd>
     </div>
   )
 }

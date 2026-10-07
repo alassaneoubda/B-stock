@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { AuthProvider } from '@/components/providers/session-provider'
+import { AuthSplitLayout } from '@/components/auth/auth-split-layout'
 import { OnboardingForm } from '@/components/auth/onboarding-form'
 
 export default async function OnboardingPage() {
@@ -15,29 +16,26 @@ export default async function OnboardingPage() {
     redirect('/dashboard')
   }
 
+  const firstName = session.user.name?.split(' ')[0]
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-6 py-12">
-      <div className="w-full max-w-[440px] space-y-8">
-        <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-white text-sm font-bold">B</span>
-          </div>
-          <span className="text-xl font-bold text-foreground">B-Stock</span>
-        </div>
-
-        <div>
-          <h1 className="text-2xl font-bold text-foreground mb-1">
-            Bienvenue, {session.user.name?.split(' ')[0]} 👋
+    <AuthSplitLayout
+      headline="Votre espace est presque prêt."
+      subline="Encore une information et vous pourrez enregistrer vos produits, vos clients et vos premières ventes."
+    >
+      <div className="mb-8 space-y-3">
+        <p className="text-sm font-medium text-muted-foreground">Dernière étape</p>
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Bienvenue{firstName ? `, ${firstName}` : ''}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Dernière étape : comment s&apos;appelle votre entreprise ?
-          </p>
+          <p className="text-sm text-muted-foreground">Comment s’appelle votre entreprise ?</p>
         </div>
-
-        <AuthProvider>
-          <OnboardingForm defaultName={session.user.companyName} />
-        </AuthProvider>
       </div>
-    </div>
+
+      <AuthProvider>
+        <OnboardingForm defaultName={session.user.companyName} />
+      </AuthProvider>
+    </AuthSplitLayout>
   )
 }

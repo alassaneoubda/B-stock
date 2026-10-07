@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { Loader2, Save, Trash2, Plus, Newspaper } from 'lucide-react'
 import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
 import { EmptyState, ErrorState } from '@/components/states'
+import { PageShell, PageIntro } from '@/components/app/blocks'
 
 type Section = {
   section_key: string
@@ -130,42 +131,49 @@ export default function AdminCmsPage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-6" aria-busy="true" aria-label="Chargement du CMS">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-9 w-80" />
-        {Array.from({ length: 3 }, (_, i) => (
-          <Skeleton key={i} className="h-56 rounded-xl" />
-        ))}
-      </div>
+      <PageShell className="max-w-5xl">
+        <div className="space-y-6" aria-busy="true" aria-label="Chargement du CMS">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-9 w-80" />
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-56 rounded-xl" />
+          ))}
+        </div>
+      </PageShell>
     )
   }
 
   if (loadError) {
     return (
-      <div className="p-4 sm:p-8 max-w-5xl mx-auto">
+      <PageShell className="max-w-5xl">
         <ErrorState description={loadError} onRetry={() => load()} />
-      </div>
+      </PageShell>
     )
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">CMS Landing</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Modifiez les textes, FAQ et témoignages affichés sur la page d’accueil — sans toucher au code.
-        </p>
-      </div>
+    <PageShell className="max-w-5xl">
+      <PageIntro
+        title="CMS landing"
+        description="Modifiez les textes, FAQ et témoignages affichés sur la page d’accueil — sans toucher au code."
+      />
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+      <div
+        role="tablist"
+        aria-label="Contenus de la landing"
+        className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/60 p-1"
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`h-8 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               tab === t.id
-                ? 'bg-primary text-white'
-                : 'text-muted-foreground hover:bg-muted'
+                ? 'bg-card text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {t.label}
@@ -179,7 +187,7 @@ export default function AdminCmsPage() {
           {sections.map((s) => (
             <form
               key={s.section_key}
-              className="rounded-xl border border-border bg-card p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -195,47 +203,43 @@ export default function AdminCmsPage() {
                 })
               }}
             >
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-foreground">{s.section_key}</h2>
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    name="is_published"
-                    defaultChecked={s.is_published}
+              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+                <h2 className="font-mono text-sm font-semibold text-foreground">{s.section_key}</h2>
+                <PublishedToggle defaultChecked={s.is_published} />
+              </div>
+              <div className="grid gap-4 p-5 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${s.section_key}-title`}>Titre</Label>
+                  <Input id={`${s.section_key}-title`} name="title" defaultValue={s.title || ''} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${s.section_key}-cta`}>Bouton principal</Label>
+                  <Input id={`${s.section_key}-cta`} name="cta_primary_label" defaultValue={s.cta_primary_label || ''} />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`${s.section_key}-subtitle`}>Sous-titre</Label>
+                  <Input id={`${s.section_key}-subtitle`} name="subtitle" defaultValue={s.subtitle || ''} />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`${s.section_key}-body`}>Corps</Label>
+                  <textarea
+                    id={`${s.section_key}-body`}
+                    name="body"
+                    defaultValue={s.body || ''}
+                    className={`${TEXTAREA} min-h-[80px]`}
                   />
-                  Publié
-                </label>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <Label>Titre</Label>
-                  <Input name="title" defaultValue={s.title || ''} />
                 </div>
-                <div>
-                  <Label>CTA primaire</Label>
-                  <Input name="cta_primary_label" defaultValue={s.cta_primary_label || ''} />
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`${s.section_key}-image`}>URL de l’image</Label>
+                  <Input id={`${s.section_key}-image`} name="image_url" defaultValue={s.image_url || ''} />
                 </div>
               </div>
-              <div>
-                <Label>Sous-titre</Label>
-                <Input name="subtitle" defaultValue={s.subtitle || ''} />
+              <div className="flex justify-end border-t border-border px-5 py-3">
+                <Button type="submit" disabled={saving} size="sm">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+                  Enregistrer
+                </Button>
               </div>
-              <div>
-                <Label>Corps</Label>
-                <textarea
-                  name="body"
-                  defaultValue={s.body || ''}
-                  className="w-full min-h-[80px] rounded-md border border-border px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <Label>Image URL</Label>
-                <Input name="image_url" defaultValue={s.image_url || ''} />
-              </div>
-              <Button type="submit" disabled={saving} className="gap-2">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Enregistrer
-              </Button>
             </form>
           ))}
         </div>
@@ -247,7 +251,7 @@ export default function AdminCmsPage() {
           {features.map((f) => (
             <form
               key={f.id}
-              className="rounded-xl border border-border bg-card p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -261,37 +265,40 @@ export default function AdminCmsPage() {
                 })
               }}
             >
-              <div className="flex justify-between">
-                <span className="text-xs font-mono text-muted-foreground/70">{f.slug}</span>
-                <button
-                  type="button"
-                  className="text-destructive text-xs flex items-center gap-1 disabled:opacity-50"
-                  disabled={saving}
-                  onClick={() =>
-                    setPendingDelete({
-                      kind: 'Fonctionnalité',
-                      label: f.title,
-                      body: { type: 'feature', id: f.id, title: f.title, delete: true },
-                    })
-                  }
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                </button>
+              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+                <span className="font-mono text-xs text-muted-foreground">{f.slug}</span>
+                <PublishedToggle defaultChecked={f.is_published} />
               </div>
-              <Input name="title" defaultValue={f.title} required />
-              <textarea
-                name="description"
-                defaultValue={f.description || ''}
-                className="w-full min-h-[60px] rounded-md border border-border px-3 py-2 text-sm"
+              <div className="grid gap-4 p-5 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`feature-${f.id}-title`}>Titre</Label>
+                  <Input id={`feature-${f.id}-title`} name="title" defaultValue={f.title} required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`feature-${f.id}-highlight`}>Mise en avant</Label>
+                  <Input id={`feature-${f.id}-highlight`} name="highlight" defaultValue={f.highlight || ''} placeholder="Highlight" />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`feature-${f.id}-description`}>Description</Label>
+                  <textarea
+                    id={`feature-${f.id}-description`}
+                    name="description"
+                    defaultValue={f.description || ''}
+                    className={`${TEXTAREA} min-h-[60px]`}
+                  />
+                </div>
+              </div>
+              <ItemFooter
+                saving={saving}
+                onDelete={() =>
+                  setPendingDelete({
+                    kind: 'Fonctionnalité',
+                    label: f.title,
+                    body: { type: 'feature', id: f.id, title: f.title, delete: true },
+                  })
+                }
+                deleteLabel={`Supprimer la fonctionnalité « ${f.title} »`}
               />
-              <Input name="highlight" defaultValue={f.highlight || ''} placeholder="Highlight" />
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" name="is_published" defaultChecked={f.is_published} />
-                Publié
-              </label>
-              <Button type="submit" disabled={saving} size="sm">
-                Enregistrer
-              </Button>
             </form>
           ))}
         </div>
@@ -302,7 +309,7 @@ export default function AdminCmsPage() {
           {faq.map((item) => (
             <form
               key={item.id}
-              className="rounded-xl border border-border bg-card p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -315,47 +322,49 @@ export default function AdminCmsPage() {
                 })
               }}
             >
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="text-destructive text-xs flex items-center gap-1 disabled:opacity-50"
-                  disabled={saving}
-                  onClick={() =>
-                    setPendingDelete({
-                      kind: 'Question',
-                      label: item.question,
-                      body: {
-                        type: 'faq',
-                        id: item.id,
-                        question: item.question,
-                        answer: item.answer,
-                        delete: true,
-                      },
-                    })
-                  }
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                </button>
+              <div className="space-y-4 p-5">
+                <div className="flex items-end justify-between gap-3">
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor={`faq-${item.id}-question`}>Question</Label>
+                    <Input id={`faq-${item.id}-question`} name="question" defaultValue={item.question} required />
+                  </div>
+                  <div className="pb-2">
+                    <PublishedToggle defaultChecked={item.is_published} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`faq-${item.id}-answer`}>Réponse</Label>
+                  <textarea
+                    id={`faq-${item.id}-answer`}
+                    name="answer"
+                    defaultValue={item.answer}
+                    required
+                    className={`${TEXTAREA} min-h-[80px]`}
+                  />
+                </div>
               </div>
-              <Input name="question" defaultValue={item.question} required />
-              <textarea
-                name="answer"
-                defaultValue={item.answer}
-                required
-                className="w-full min-h-[80px] rounded-md border border-border px-3 py-2 text-sm"
+              <ItemFooter
+                saving={saving}
+                onDelete={() =>
+                  setPendingDelete({
+                    kind: 'Question',
+                    label: item.question,
+                    body: {
+                      type: 'faq',
+                      id: item.id,
+                      question: item.question,
+                      answer: item.answer,
+                      delete: true,
+                    },
+                  })
+                }
+                deleteLabel={`Supprimer la question « ${item.question} »`}
               />
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" name="is_published" defaultChecked={item.is_published} />
-                Publié
-              </label>
-              <Button type="submit" disabled={saving} size="sm">
-                Enregistrer
-              </Button>
             </form>
           ))}
 
           <form
-            className="rounded-xl border border-dashed border-border bg-muted/50 p-5 space-y-3"
+            className="space-y-4 rounded-xl border border-dashed border-border bg-muted/40 p-5"
             onSubmit={async (e) => {
               e.preventDefault()
               const formEl = e.currentTarget
@@ -371,19 +380,28 @@ export default function AdminCmsPage() {
               if (ok) formEl.reset()
             }}
           >
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <Plus className="h-4 w-4" /> Nouvelle FAQ
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Plus className="h-4 w-4" aria-hidden="true" /> Nouvelle question
             </p>
-            <Input name="question" placeholder="Question" required />
-            <textarea
-              name="answer"
-              placeholder="Réponse"
-              required
-              className="w-full min-h-[60px] rounded-md border border-border px-3 py-2 text-sm"
-            />
-            <Button type="submit" disabled={saving} size="sm">
-              Ajouter
-            </Button>
+            <div className="space-y-1.5">
+              <Label htmlFor="faq-new-question">Question</Label>
+              <Input id="faq-new-question" name="question" placeholder="Question" required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="faq-new-answer">Réponse</Label>
+              <textarea
+                id="faq-new-answer"
+                name="answer"
+                placeholder="Réponse"
+                required
+                className={`${TEXTAREA} min-h-[60px]`}
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={saving} size="sm">
+                Ajouter
+              </Button>
+            </div>
           </form>
         </div>
       )}
@@ -393,7 +411,7 @@ export default function AdminCmsPage() {
           {testimonials.map((t) => (
             <form
               key={t.id}
-              className="rounded-xl border border-border bg-card p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -409,56 +427,65 @@ export default function AdminCmsPage() {
                 })
               }}
             >
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="text-destructive text-xs flex items-center gap-1 disabled:opacity-50"
-                  disabled={saving}
-                  onClick={() =>
-                    setPendingDelete({
-                      kind: 'Témoignage',
-                      label: t.author_name,
-                      body: {
-                        type: 'testimonial',
-                        id: t.id,
-                        author_name: t.author_name,
-                        quote: t.quote,
-                        delete: true,
-                      },
-                    })
-                  }
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                </button>
+              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+                <h2 className="text-sm font-semibold text-foreground">{t.author_name}</h2>
+                <PublishedToggle defaultChecked={t.is_published} />
               </div>
-              <div className="grid sm:grid-cols-3 gap-3">
-                <Input name="author_name" defaultValue={t.author_name} required />
-                <Input name="author_role" defaultValue={t.author_role || ''} placeholder="Rôle" />
-                <Input
-                  name="company_name"
-                  defaultValue={t.company_name || ''}
-                  placeholder="Entreprise"
-                />
+              <div className="grid gap-4 p-5 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-name`}>Nom</Label>
+                  <Input id={`t-${t.id}-name`} name="author_name" defaultValue={t.author_name} required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-role`}>Rôle</Label>
+                  <Input id={`t-${t.id}-role`} name="author_role" defaultValue={t.author_role || ''} placeholder="Rôle" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-company`}>Entreprise</Label>
+                  <Input
+                    id={`t-${t.id}-company`}
+                    name="company_name"
+                    defaultValue={t.company_name || ''}
+                    placeholder="Entreprise"
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-3">
+                  <Label htmlFor={`t-${t.id}-quote`}>Citation</Label>
+                  <textarea
+                    id={`t-${t.id}-quote`}
+                    name="quote"
+                    defaultValue={t.quote}
+                    required
+                    className={`${TEXTAREA} min-h-[80px]`}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-rating`}>Note (1 à 5)</Label>
+                  <Input id={`t-${t.id}-rating`} name="rating" type="number" min={1} max={5} className="tabular" defaultValue={t.rating} />
+                </div>
               </div>
-              <textarea
-                name="quote"
-                defaultValue={t.quote}
-                required
-                className="w-full min-h-[80px] rounded-md border border-border px-3 py-2 text-sm"
+              <ItemFooter
+                saving={saving}
+                onDelete={() =>
+                  setPendingDelete({
+                    kind: 'Témoignage',
+                    label: t.author_name,
+                    body: {
+                      type: 'testimonial',
+                      id: t.id,
+                      author_name: t.author_name,
+                      quote: t.quote,
+                      delete: true,
+                    },
+                  })
+                }
+                deleteLabel={`Supprimer le témoignage de ${t.author_name}`}
               />
-              <Input name="rating" type="number" min={1} max={5} defaultValue={t.rating} />
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" name="is_published" defaultChecked={t.is_published} />
-                Publié
-              </label>
-              <Button type="submit" disabled={saving} size="sm">
-                Enregistrer
-              </Button>
             </form>
           ))}
 
           <form
-            className="rounded-xl border border-dashed border-border bg-muted/50 p-5 space-y-3"
+            className="space-y-4 rounded-xl border border-dashed border-border bg-muted/40 p-5"
             onSubmit={async (e) => {
               e.preventDefault()
               const formEl = e.currentTarget
@@ -476,21 +503,38 @@ export default function AdminCmsPage() {
               if (ok) formEl.reset()
             }}
           >
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <Plus className="h-4 w-4" /> Nouveau témoignage
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Plus className="h-4 w-4" aria-hidden="true" /> Nouveau témoignage
             </p>
-            <Input name="author_name" placeholder="Nom" required />
-            <Input name="author_role" placeholder="Rôle" />
-            <Input name="company_name" placeholder="Entreprise" />
-            <textarea
-              name="quote"
-              placeholder="Citation"
-              required
-              className="w-full min-h-[60px] rounded-md border border-border px-3 py-2 text-sm"
-            />
-            <Button type="submit" disabled={saving} size="sm">
-              Ajouter
-            </Button>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="t-new-name">Nom</Label>
+                <Input id="t-new-name" name="author_name" placeholder="Nom" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-new-role">Rôle</Label>
+                <Input id="t-new-role" name="author_role" placeholder="Rôle" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-new-company">Entreprise</Label>
+                <Input id="t-new-company" name="company_name" placeholder="Entreprise" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="t-new-quote">Citation</Label>
+              <textarea
+                id="t-new-quote"
+                name="quote"
+                placeholder="Citation"
+                required
+                className={`${TEXTAREA} min-h-[60px]`}
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={saving} size="sm">
+                Ajouter
+              </Button>
+            </div>
           </form>
         </div>
       )}
@@ -510,18 +554,66 @@ export default function AdminCmsPage() {
             <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
             <AlertDialogAction
               disabled={saving}
-              className="bg-destructive hover:bg-destructive"
+              className={buttonVariants({ variant: 'destructive' })}
               onClick={(e) => {
                 e.preventDefault()
                 confirmDelete()
               }}
             >
-              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               Supprimer définitivement
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </PageShell>
+  )
+}
+
+const CARD = 'overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]'
+const TEXTAREA =
+  'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+/** Case « Publié » (champ de formulaire natif `is_published`, lu via FormData). */
+function PublishedToggle({ defaultChecked }: { defaultChecked: boolean }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+      <input
+        type="checkbox"
+        name="is_published"
+        defaultChecked={defaultChecked}
+        className="h-4 w-4 rounded border-input accent-primary"
+      />
+      Publié
+    </label>
+  )
+}
+
+function ItemFooter({
+  saving,
+  onDelete,
+  deleteLabel,
+}: {
+  saving: boolean
+  onDelete: () => void
+  deleteLabel: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+        disabled={saving}
+        onClick={onDelete}
+        aria-label={deleteLabel}
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Supprimer
+      </Button>
+      <Button type="submit" disabled={saving} size="sm">
+        Enregistrer
+      </Button>
     </div>
   )
 }
