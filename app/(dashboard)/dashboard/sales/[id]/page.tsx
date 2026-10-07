@@ -30,10 +30,14 @@ import { ArrowLeft, FileText, Loader2, SearchX } from 'lucide-react'
 import { apiFetch, ApiError, toastError, toastWarnings } from '@/lib/api-client'
 import { formatDateShort, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
 import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
+import { PrintTicketButton } from '@/components/print/ticket-printer'
+import { saleToTicket } from '@/components/print/sale-ticket'
+import { MobileMoneyButton } from '@/components/payments/mobile-money-button'
 
 interface SaleDetail {
     id: string
     order_number: string
+    client_id: string | null
     client_name: string
     client_phone: string | null
     client_address: string | null
@@ -226,6 +230,21 @@ export default function SaleDetailPage() {
                                     Facture
                                 </Link>
                             </Button>
+                            <PrintTicketButton ticket={saleToTicket(sale)} />
+                            {sale.status !== 'cancelled' && sale.client_id && remaining > 0 && (
+                                <MobileMoneyButton
+                                    target={{
+                                        kind: 'sale',
+                                        salesOrderId: sale.id,
+                                        label: `Vente ${sale.order_number}`,
+                                        remainingProducts: Math.max(remainingProducts, 0),
+                                        remainingPackaging: Math.max(remainingPackaging, 0),
+                                    }}
+                                    clientName={sale.client_name}
+                                    clientPhone={sale.client_phone}
+                                    onPaid={fetchSale}
+                                />
+                            )}
                             {canChangeStatus && (
                                 <AlertDialog>
                                     <AlertDialogTrigger asChild>

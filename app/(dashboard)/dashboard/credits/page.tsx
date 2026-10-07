@@ -22,6 +22,8 @@ import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
 import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
 import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
+import { MobileMoneyButton, useMobileMoneyAvailability } from '@/components/payments/mobile-money-button'
 
 interface Credit {
   id: string; credit_number: string; client_name: string; client_phone: string
@@ -57,6 +59,7 @@ export default function CreditsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [remindingId, setRemindingId] = useState<string | null>(null)
+  const mobileMoney = useMobileMoneyAvailability()
 
   const fetchData = useCallback(async () => {
     setLoadError(false)
@@ -132,6 +135,12 @@ export default function CreditsPage() {
   const recoveryRate = credits.length > 0 ? Math.round((credits.filter(c => c.status === 'paid').length / credits.length) * 100) : 0
   const isOpen = (c: Credit) => c.status !== 'paid' && c.status !== 'written_off'
   const openPay = (c: Credit, remaining: number) => { setPayDialog(c); setPayAmount(String(remaining)) }
+  const mmTarget = (c: Credit, remaining: number) => ({
+    kind: 'credit' as const,
+    creditNoteId: c.id,
+    label: `Créance ${c.credit_number}`,
+    remaining,
+  })
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -170,6 +179,7 @@ export default function CreditsPage() {
 
         <div className="space-y-4">
           {/* Barre d'outils */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
             <Input
@@ -180,6 +190,12 @@ export default function CreditsPage() {
               onChange={(e) => setSearch(e.target.value)}
               className="h-10 pl-9"
             />
+          </div>
+            {mobileMoney?.enabled && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/dashboard/mobile-money">Suivi Mobile Money</Link>
+              </Button>
+            )}
           </div>
 
           {filtered.length === 0 ? (
@@ -245,6 +261,14 @@ export default function CreditsPage() {
                                   <Banknote className="h-4 w-4" aria-hidden="true" />
                                   Encaisser
                                 </Button>
+                                <MobileMoneyButton
+                                  size="sm"
+                                  label="Mobile Money"
+                                  target={mmTarget(c, remaining)}
+                                  clientName={c.client_name}
+                                  clientPhone={c.client_phone}
+                                  onPaid={fetchData}
+                                />
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -297,11 +321,20 @@ export default function CreditsPage() {
                         </div>
                       </div>
                       {isOpen(c) && (
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button size="sm" variant="outline" className="flex-1" onClick={() => openPay(c, remaining)}>
                             <Banknote className="h-4 w-4" aria-hidden="true" />
                             Encaisser
                           </Button>
+                          <MobileMoneyButton
+                            size="sm"
+                            label="Mobile Money"
+                            className="flex-1"
+                            target={mmTarget(c, remaining)}
+                            clientName={c.client_name}
+                            clientPhone={c.client_phone}
+                            onPaid={fetchData}
+                          />
                           <Button
                             size="sm"
                             variant="ghost"

@@ -14,6 +14,7 @@ import {
     ChevronRight,
     MapPin,
     Layers,
+    Smartphone,
 } from 'lucide-react'
 import Link from 'next/link'
 import { canAccessPath } from '@/lib/route-permissions'
@@ -71,6 +72,12 @@ const settingsSections = [
         icon: Calculator,
         title: 'Comptabilité',
         description: 'Plan de comptes SYSCOHADA et journaux de l’export comptable',
+    },
+    {
+        href: '/dashboard/settings/payments',
+        icon: Smartphone,
+        title: 'Paiements Mobile Money',
+        description: 'Encaisser vos clients par Wave, Orange Money, MTN MoMo et Moov',
     },
     {
         href: '/dashboard/settings/notifications',
