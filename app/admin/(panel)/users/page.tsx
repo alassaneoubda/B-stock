@@ -101,19 +101,19 @@ export default function AdminUsersPage() {
   return (
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-zinc-950">Utilisateurs</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-2xl font-bold text-foreground">Utilisateurs</h1>
+        <p className="text-sm text-muted-foreground">
           {pagination ? `${formatNumber(pagination.total)} utilisateur(s) — tous tenants` : 'Tous les tenants'}
         </p>
       </header>
 
       {resetInfo && (
-        <Card className="p-4 mb-4 border-blue-200 bg-blue-50">
-          <p className="text-sm text-blue-900 mb-2 font-medium">
+        <Card className="p-4 mb-4 border-brand/40 bg-brand-soft">
+          <p className="text-sm text-brand-strong mb-2 font-medium">
             Mot de passe temporaire pour {resetInfo.email}
           </p>
           <div className="flex items-center gap-2">
-            <code className="px-3 py-1.5 bg-white rounded border border-blue-200 text-sm font-mono">
+            <code className="px-3 py-1.5 bg-card rounded border border-brand/40 text-sm font-mono">
               {resetInfo.password}
             </code>
             <Button
@@ -127,7 +127,7 @@ export default function AdminUsersPage() {
               Fermer
             </Button>
           </div>
-          <p className="text-xs text-blue-700 mt-2">
+          <p className="text-xs text-brand-strong mt-2">
             Communiquez-le à l&apos;utilisateur. Il ne sera plus affiché.
           </p>
         </Card>
@@ -135,7 +135,7 @@ export default function AdminUsersPage() {
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" />
           <Input
             placeholder="Rechercher (email, nom, entreprise)…"
             className="pl-9 h-10"
@@ -152,7 +152,7 @@ export default function AdminUsersPage() {
             setRole(e.target.value)
             setPage(1)
           }}
-          className="h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+          className="h-10 rounded-lg border border-border bg-card px-3 text-sm"
           aria-label="Filtrer par rôle"
         >
           <option value="">Tous les rôles</option>
@@ -182,7 +182,7 @@ export default function AdminUsersPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs text-zinc-500 uppercase tracking-wide">
+                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
                   <th className="px-5 py-3 font-medium">Utilisateur</th>
                   <th className="px-5 py-3 font-medium">Entreprise</th>
                   <th className="px-5 py-3 font-medium">Rôle</th>
@@ -192,16 +192,16 @@ export default function AdminUsersPage() {
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <tr key={u.id} className="border-b border-zinc-50 hover:bg-zinc-50">
+                  <tr key={u.id} className="border-b border-border hover:bg-muted/50">
                     <td className="px-5 py-3">
-                      <p className="font-medium text-zinc-900">{u.full_name}</p>
-                      <p className="text-xs text-zinc-400">
+                      <p className="font-medium text-foreground">{u.full_name}</p>
+                      <p className="text-xs text-muted-foreground/70">
                         {u.email}
                         {u.auth_provider === 'google' && ' · Google'}
                       </p>
                     </td>
                     <td className="px-5 py-3">
-                      <Link href={`/admin/companies/${u.company_id}`} className="text-zinc-700 hover:underline">
+                      <Link href={`/admin/companies/${u.company_id}`} className="text-foreground/80 hover:underline">
                         {u.company_name}
                       </Link>
                     </td>
@@ -218,7 +218,7 @@ export default function AdminUsersPage() {
                             `Rôle de ${u.email} : ${roleLabel(e.target.value)}`
                           )
                         }
-                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs"
+                        className="rounded-md border border-border bg-card px-2 py-1 text-xs"
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
@@ -242,11 +242,11 @@ export default function AdminUsersPage() {
                         aria-checked={u.is_active}
                         aria-label={u.is_active ? `Désactiver ${u.email}` : `Activer ${u.email}`}
                         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                          u.is_active ? 'bg-green-500' : 'bg-zinc-300'
+                          u.is_active ? 'bg-success' : 'bg-muted-foreground/20'
                         }`}
                       >
                         <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
                             u.is_active ? 'translate-x-4' : 'translate-x-1'
                           }`}
                         />
@@ -278,7 +278,7 @@ export default function AdminUsersPage() {
 
       {pagination && pagination.pages > 1 && (
         <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             Page {pagination.page} / {pagination.pages}
           </p>
           <div className="flex gap-2">
@@ -286,7 +286,7 @@ export default function AdminUsersPage() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
               aria-label="Page précédente"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -294,7 +294,7 @@ export default function AdminUsersPage() {
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
               aria-label="Page suivante"
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-border bg-card disabled:opacity-40 hover:bg-muted/50"
             >
               <ChevronRight className="h-4 w-4" />
             </button>

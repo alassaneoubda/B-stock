@@ -57,7 +57,7 @@ export function DeleteProductButton({ productId, productName }: { productId: str
             <AlertDialogTrigger asChild>
                 <Button
                     variant="outline"
-                    className="rounded-md h-11 px-6 font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                    className="rounded-md h-11 px-6 font-bold text-destructive hover:text-destructive hover:bg-destructive/10"
                 >
                     <Trash2 className="h-4 w-4 mr-2" />
                     Supprimer
@@ -80,7 +80,7 @@ export function DeleteProductButton({ productId, productName }: { productId: str
                             e.preventDefault()
                             handleDelete()
                         }}
-                        className="bg-rose-600 hover:bg-rose-700"
+                        className="bg-destructive hover:bg-destructive"
                     >
                         {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                         Supprimer

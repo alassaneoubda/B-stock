@@ -159,23 +159,23 @@ export function ProductCatalogSetup() {
 
   return (
     <div className="space-y-4 pb-28">
-      <div className="rounded-xl border border-zinc-200/80 bg-white px-4 py-5 sm:px-6">
-        <h2 className="text-base font-semibold text-zinc-950">Configurez ce que vous vendez</h2>
-        <p className="mt-1 text-sm text-zinc-500 max-w-2xl">
+      <div className="rounded-xl border border-border bg-card px-4 py-5 sm:px-6">
+        <h2 className="text-base font-semibold text-foreground">Configurez ce que vous vendez</h2>
+        <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
           Cochez les articles de votre dépôt, ajustez marque / catégorie / unité si besoin,
           puis saisissez vos deux prix. Un clic charge tout le catalogue d’un coup.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {groups.map((group) => (
         <section key={group.category} className="space-y-2">
-          <h3 className="px-1 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+          <h3 className="px-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
             {group.category}
           </h3>
           <div className="space-y-2">
@@ -192,8 +192,8 @@ export function ProductCatalogSetup() {
         </section>
       ))}
 
-      <div className="rounded-xl border border-dashed border-zinc-200 bg-white px-4 py-4 text-center">
-        <p className="text-sm text-zinc-500">Un article n’est pas dans la liste ?</p>
+      <div className="rounded-xl border border-dashed border-border bg-card px-4 py-4 text-center">
+        <p className="text-sm text-muted-foreground">Un article n’est pas dans la liste ?</p>
         <Button variant="outline" size="sm" className="mt-2" asChild>
           <Link href="/dashboard/products/new">
             <Plus className="h-3.5 w-3.5 mr-1.5" />
@@ -202,10 +202,10 @@ export function ProductCatalogSetup() {
         </Button>
       </div>
 
-      <div className="fixed inset-x-0 bottom-16 z-30 border-t border-zinc-200 bg-white/95 px-4 py-3 md:bottom-0 md:left-[16rem]">
+      <div className="fixed inset-x-0 bottom-16 z-30 border-t border-border bg-card/95 px-4 py-3 md:bottom-0 md:left-[16rem]">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3">
-          <p className="text-sm text-zinc-500">
-            <span className="font-semibold text-zinc-950">{selectedCount}</span>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">{selectedCount}</span>
             {' '}produit{selectedCount > 1 ? 's' : ''} à charger
           </p>
           <Button
@@ -236,9 +236,9 @@ function CatalogRow({
   return (
     <div
       className={cn(
-        'rounded-xl border bg-white px-3 py-3 sm:px-4 transition-colors',
-        row.selected ? 'border-zinc-300' : 'border-zinc-200/80 opacity-[0.72]',
-        error && 'border-red-300',
+        'rounded-xl border bg-card px-3 py-3 sm:px-4 transition-colors',
+        row.selected ? 'border-border' : 'border-border opacity-[0.72]',
+        error && 'border-destructive/30',
       )}
     >
       <div className="flex items-start gap-3">
@@ -253,13 +253,13 @@ function CatalogRow({
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-zinc-950 truncate">{row.name}</p>
-              <p className="font-mono text-[11px] text-zinc-400">{row.sku}</p>
+              <p className="text-sm font-semibold text-foreground truncate">{row.name}</p>
+              <p className="font-mono text-[11px] text-muted-foreground/70">{row.sku}</p>
             </div>
             <span
               className={cn(
                 'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                row.selected ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-500',
+                row.selected ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground',
               )}
             >
               {row.selected ? 'Actif' : 'Ignoré'}
@@ -343,7 +343,7 @@ function CatalogRow({
             </Field>
           </div>
 
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
       </div>
     </div>
@@ -353,7 +353,7 @@ function CatalogRow({
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-1">
-      <Label className="text-[11px] text-zinc-400 font-medium">{label}</Label>
+      <Label className="text-[11px] text-muted-foreground/70 font-medium">{label}</Label>
       {children}
     </div>
   )

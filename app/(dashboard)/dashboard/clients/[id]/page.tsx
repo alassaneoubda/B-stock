@@ -171,20 +171,20 @@ export default async function ClientDetailPage({
             <main className="flex-1 p-4 lg:p-6 space-y-6">
                 {/* Total debt banner */}
                 {(creditUsed > 0 || packagingDebt > 0) && (
-                    <Card className="border-rose-200/60 bg-gradient-to-r from-rose-50 to-amber-50">
+                    <Card className="border-destructive/30 bg-gradient-to-r from-rose-50 to-amber-50">
                         <CardContent className="p-6">
                             <div className="grid grid-cols-3 gap-6">
                                 <div>
-                                    <p className="text-xs font-bold uppercase tracking-wider text-rose-400">Dette Produits</p>
-                                    <p className="text-2xl font-semibold text-rose-600">{formatCurrency(creditUsed)}</p>
+                                    <p className="text-xs font-bold uppercase tracking-wider text-destructive">Dette Produits</p>
+                                    <p className="text-2xl font-semibold text-destructive">{formatCurrency(creditUsed)}</p>
                                 </div>
                                 <div>
-                                    <p className="text-xs font-bold uppercase tracking-wider text-amber-400">Dette Emballages</p>
-                                    <p className="text-2xl font-semibold text-amber-600">{formatCurrency(packagingDebt)}</p>
+                                    <p className="text-xs font-bold uppercase tracking-wider text-warning-foreground">Dette Emballages</p>
+                                    <p className="text-2xl font-semibold text-warning-foreground">{formatCurrency(packagingDebt)}</p>
                                 </div>
                                 <div>
-                                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Dette Totale</p>
-                                    <p className="text-2xl font-semibold text-slate-950">{formatCurrency(creditUsed + packagingDebt)}</p>
+                                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Dette Totale</p>
+                                    <p className="text-2xl font-semibold text-foreground">{formatCurrency(creditUsed + packagingDebt)}</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -255,7 +255,7 @@ export default async function ClientDetailPage({
                                 <div className="grid grid-cols-3 gap-4">
                                     <div>
                                         <p className="text-xs text-muted-foreground">Solde</p>
-                                        <p className={`text-xl font-bold ${productLabel.tone === 'debt' ? 'text-red-600' : productLabel.tone === 'credit' ? 'text-emerald-600' : ''}`}>
+                                        <p className={`text-xl font-bold ${productLabel.tone === 'debt' ? 'text-destructive' : productLabel.tone === 'credit' ? 'text-success' : ''}`}>
                                             {productLabel.text}
                                         </p>
                                         <p className="text-xs text-muted-foreground mt-0.5">
@@ -294,7 +294,7 @@ export default async function ClientDetailPage({
                                 <div className="grid grid-cols-3 gap-4">
                                     <div>
                                         <p className="text-xs text-muted-foreground">Solde emballages</p>
-                                        <p className={`text-xl font-bold ${packagingLabel.tone === 'debt' ? 'text-amber-600' : packagingLabel.tone === 'credit' ? 'text-emerald-600' : ''}`}>
+                                        <p className={`text-xl font-bold ${packagingLabel.tone === 'debt' ? 'text-warning-foreground' : packagingLabel.tone === 'credit' ? 'text-success' : ''}`}>
                                             {packagingLabel.text}
                                         </p>
                                         <p className="text-xs text-muted-foreground mt-0.5">

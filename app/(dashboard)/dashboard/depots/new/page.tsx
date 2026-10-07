@@ -86,9 +86,9 @@ export default function NewDepotPage() {
                         </div>
                     )}
 
-                    <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-8 border-b border-slate-100">
-                            <CardTitle className="text-xl font-semibold text-slate-950">Nouveau dépôt</CardTitle>
+                    <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                        <CardHeader className="px-8 py-8 border-b border-border">
+                            <CardTitle className="text-xl font-semibold text-foreground">Nouveau dépôt</CardTitle>
                             <CardDescription>Informations générales de l'entrepôt</CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 space-y-6">
@@ -127,10 +127,10 @@ export default function NewDepotPage() {
                                 />
                             </div>
 
-                            <div className="space-y-4 pt-4 border-t border-slate-100">
+                            <div className="space-y-4 pt-4 border-t border-border">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <Label htmlFor="isMain" className="text-base text-slate-900 font-bold">Dépôt principal</Label>
+                                        <Label htmlFor="isMain" className="text-base text-foreground font-bold">Dépôt principal</Label>
                                         <p className="text-sm text-muted-foreground mt-1">
                                             Définir ce dépôt comme votre lieu de stockage principal.
                                         </p>
@@ -143,7 +143,7 @@ export default function NewDepotPage() {
                                     />
                                 </div>
                                 {isMain && (
-                                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 animate-in fade-in slide-in-from-top-2">
+                                    <div className="rounded-lg bg-warning-soft border border-warning/30 p-4 text-sm text-warning-foreground animate-in fade-in slide-in-from-top-2">
                                         Attention : En définissant ce dépôt comme principal, l'ancien dépôt principal perdra ce statut.
                                     </div>
                                 )}

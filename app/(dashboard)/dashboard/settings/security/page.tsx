@@ -86,13 +86,13 @@ export default function SecuritySettingsPage() {
                 </div>
 
                 <div className="max-w-2xl space-y-6">
-                    <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-8 border-b border-slate-100 flex flex-row items-center gap-4">
-                            <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                    <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                        <CardHeader className="px-8 py-8 border-b border-border flex flex-row items-center gap-4">
+                            <div className="h-12 w-12 rounded-full bg-brand-soft flex items-center justify-center text-brand-strong">
                                 <ShieldCheck className="h-6 w-6" aria-hidden="true" />
                             </div>
                             <div>
-                                <CardTitle className="text-xl font-semibold text-slate-950">Changer le mot de passe</CardTitle>
+                                <CardTitle className="text-xl font-semibold text-foreground">Changer le mot de passe</CardTitle>
                                 <CardDescription>
                                     Au moins 8 caractères, avec au moins une lettre et un chiffre. Après le changement,
                                     toutes vos sessions (sur tous vos appareils) sont fermées et vous devrez vous reconnecter.
@@ -113,7 +113,7 @@ export default function SecuritySettingsPage() {
                                         disabled={isLoading}
                                         placeholder="••••••••"
                                     />
-                                    <p id="current-hint" className="text-xs text-slate-500">
+                                    <p id="current-hint" className="text-xs text-muted-foreground">
                                         Laissez vide si vous vous connectez uniquement avec Google et n&apos;avez jamais défini de mot de passe.
                                     </p>
                                 </div>
@@ -148,7 +148,7 @@ export default function SecuritySettingsPage() {
                                     </div>
                                 </div>
                             </CardContent>
-                            <CardFooter className="px-8 py-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                            <CardFooter className="px-8 py-4 border-t border-border bg-muted/50 flex justify-end">
                                 <Button type="submit" disabled={isLoading || !passwords.newPass || !passwords.confirm}>
                                     {isLoading ? (
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />

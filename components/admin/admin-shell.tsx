@@ -48,16 +48,16 @@ export function AdminShell({
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="min-h-screen bg-zinc-100">
+    <div className="min-h-screen bg-muted">
       {/* Mobile top bar */}
-      <header className="lg:hidden sticky top-0 z-30 flex h-14 items-center justify-between bg-zinc-950 text-white px-4">
+      <header className="lg:hidden sticky top-0 z-30 flex h-14 items-center justify-between bg-primary text-white px-4">
         <div className="flex items-center gap-2.5">
           <BrandLogo href={false} height={44} />
-          <span className="text-[11px] text-zinc-500">Back office</span>
+          <span className="text-[11px] text-muted-foreground">Back office</span>
         </div>
         <button
           onClick={() => setOpen(true)}
-          className="rounded-lg p-2 hover:bg-white/10 transition-colors"
+          className="rounded-lg p-2 hover:bg-card/10 transition-colors"
           aria-label="Ouvrir le menu"
         >
           <Menu className="h-5 w-5" />
@@ -68,25 +68,25 @@ export function AdminShell({
       {open && (
         <div
           onClick={() => setOpen(false)}
-          className="lg:hidden fixed inset-0 z-40 bg-zinc-950/60 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-40 bg-primary/60 backdrop-blur-sm"
         />
       )}
 
       {/* Sidebar — drawer on mobile, fixed on desktop */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-zinc-950 text-white flex flex-col transition-transform duration-300 lg:w-60 lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 w-64 bg-primary text-white flex flex-col transition-transform duration-300 lg:w-60 lg:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="h-16 flex items-center justify-between gap-2.5 px-5 border-b border-white/10">
           <div className="flex min-w-0 flex-col gap-0.5">
             <BrandLogo href={false} height={48} />
-            <p className="text-[11px] text-zinc-500 pl-0.5">Back office</p>
+            <p className="text-[11px] text-muted-foreground pl-0.5">Back office</p>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="lg:hidden rounded-lg p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white transition-colors"
+            className="lg:hidden rounded-lg p-1.5 text-muted-foreground/70 hover:bg-card/10 hover:text-white transition-colors"
             aria-label="Fermer le menu"
           >
             <X className="h-5 w-5" />
@@ -108,8 +108,8 @@ export function AdminShell({
                 className={cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                   active
-                    ? 'bg-white text-zinc-950'
-                    : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                    ? 'bg-card text-foreground'
+                    : 'text-muted-foreground/70 hover:text-white hover:bg-card/10'
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -122,11 +122,11 @@ export function AdminShell({
         <div className="p-3 border-t border-white/10">
           <div className="px-3 py-2 mb-1">
             <p className="text-sm font-medium truncate">{adminName}</p>
-            <p className="text-[11px] text-zinc-500">Super-admin</p>
+            <p className="text-[11px] text-muted-foreground">Super-admin</p>
           </div>
           <button
             onClick={() => signOut({ callbackUrl: '/admin/login' })}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground/70 hover:text-white hover:bg-card/10 transition-colors"
           >
             <LogOut className="h-4 w-4" />
             Déconnexion

@@ -29,13 +29,13 @@ export default async function DashboardLayout({
   const settings = await getSettings()
   if (settings.maintenance_mode && !session.user.isPlatformAdmin && !session.user.impersonatedBy) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 p-6">
+      <div className="min-h-screen flex items-center justify-center bg-muted/50 p-6">
         <div className="max-w-md text-center">
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
-            <Wrench className="h-6 w-6 text-amber-600" />
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-xl bg-warning-soft">
+            <Wrench className="h-6 w-6 text-warning-foreground" />
           </div>
-          <h1 className="text-xl font-bold text-zinc-900 mb-2">Maintenance en cours</h1>
-          <p className="text-sm text-zinc-500">{settings.maintenance_message}</p>
+          <h1 className="text-xl font-bold text-foreground mb-2">Maintenance en cours</h1>
+          <p className="text-sm text-muted-foreground">{settings.maintenance_message}</p>
         </div>
       </div>
     )

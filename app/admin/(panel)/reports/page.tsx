@@ -100,14 +100,14 @@ export default function AdminReportsPage() {
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-950">Rapports</h1>
-          <p className="text-sm text-zinc-500">Analyses et exports de la plateforme</p>
+          <h1 className="text-2xl font-bold text-foreground">Rapports</h1>
+          <p className="text-sm text-muted-foreground">Analyses et exports de la plateforme</p>
         </div>
         <div className="flex items-center gap-2">
           <select
             value={months}
             onChange={(e) => setMonths(Number(e.target.value))}
-            className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+            className="h-9 rounded-lg border border-border bg-card px-3 text-sm"
             aria-label="Période"
           >
             <option value={6}>6 mois</option>
@@ -158,7 +158,7 @@ export default function AdminReportsPage() {
 
           {/* Exports */}
           <Card className="p-4 mb-6 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-zinc-700 mr-2">Exports CSV :</span>
+            <span className="text-sm font-medium text-foreground/80 mr-2">Exports CSV :</span>
             <ExportBtn label="Entreprises" busy={exporting === 'companies'} disabled={!!exporting} onClick={() => exportCsv('companies')} />
             <ExportBtn label="Utilisateurs" busy={exporting === 'users'} disabled={!!exporting} onClick={() => exportCsv('users')} />
             <ExportBtn label="Paiements" busy={exporting === 'payments'} disabled={!!exporting} onClick={() => exportCsv('payments')} />
@@ -172,7 +172,7 @@ export default function AdminReportsPage() {
 
           {/* Revenue chart */}
           <Card className="p-6 mb-6">
-            <h2 className="font-semibold text-zinc-900 mb-4">Revenus mensuels</h2>
+            <h2 className="font-semibold text-foreground mb-4">Revenus mensuels</h2>
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={r.revenueByMonth}>
                 <defs>
@@ -194,7 +194,7 @@ export default function AdminReportsPage() {
           <div className="grid lg:grid-cols-2 gap-6 mb-6">
             {/* Signups chart */}
             <Card className="p-6">
-              <h2 className="font-semibold text-zinc-900 mb-4">Nouvelles entreprises</h2>
+              <h2 className="font-semibold text-foreground mb-4">Nouvelles entreprises</h2>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={r.signupsByMonth}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -208,7 +208,7 @@ export default function AdminReportsPage() {
 
             {/* Plan distribution */}
             <Card className="p-6">
-              <h2 className="font-semibold text-zinc-900 mb-4">Répartition par plan</h2>
+              <h2 className="font-semibold text-foreground mb-4">Répartition par plan</h2>
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
                   <Pie
@@ -233,15 +233,15 @@ export default function AdminReportsPage() {
 
           {/* Revenue by plan table */}
           <Card className="overflow-hidden">
-            <div className="px-5 py-4 border-b border-zinc-100">
-              <h2 className="font-semibold text-zinc-900">Revenus par plan</h2>
+            <div className="px-5 py-4 border-b border-border">
+              <h2 className="font-semibold text-foreground">Revenus par plan</h2>
             </div>
             {r.revenueByPlan.length === 0 ? (
-              <div className="py-12 text-center text-sm text-zinc-400">Aucun revenu enregistré</div>
+              <div className="py-12 text-center text-sm text-muted-foreground/70">Aucun revenu enregistré</div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-100 text-left text-xs text-zinc-500 uppercase tracking-wide">
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
                     <th className="px-5 py-3 font-medium">Plan</th>
                     <th className="px-5 py-3 font-medium text-right">Transactions</th>
                     <th className="px-5 py-3 font-medium text-right">Revenu</th>
@@ -249,10 +249,10 @@ export default function AdminReportsPage() {
                 </thead>
                 <tbody>
                   {r.revenueByPlan.map((p) => (
-                    <tr key={p.plan} className="border-b border-zinc-50">
-                      <td className="px-5 py-3 text-zinc-800 font-medium">{p.plan}</td>
-                      <td className="px-5 py-3 text-right text-zinc-500">{num(p.transactions)}</td>
-                      <td className="px-5 py-3 text-right text-zinc-900 font-medium">{xof(p.revenue)}</td>
+                    <tr key={p.plan} className="border-b border-border">
+                      <td className="px-5 py-3 text-foreground font-medium">{p.plan}</td>
+                      <td className="px-5 py-3 text-right text-muted-foreground">{num(p.transactions)}</td>
+                      <td className="px-5 py-3 text-right text-foreground font-medium">{xof(p.revenue)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -278,12 +278,12 @@ function Kpi({
 }) {
   return (
     <Card className="p-5">
-      <div className="flex items-center gap-2 text-zinc-500 mb-2">
+      <div className="flex items-center gap-2 text-muted-foreground mb-2">
         <Icon className="h-4 w-4" />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
       </div>
-      <p className="text-2xl font-bold text-zinc-950">{value}</p>
-      {sub && <p className="text-xs text-zinc-400 mt-1">{sub}</p>}
+      <p className="text-2xl font-bold text-foreground">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground/70 mt-1">{sub}</p>}
     </Card>
   )
 }

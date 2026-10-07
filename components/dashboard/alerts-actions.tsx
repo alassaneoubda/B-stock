@@ -43,7 +43,7 @@ export function GenerateAlertsButton() {
                 onClick={handleGenerate}
                 disabled={loading}
                 variant="outline"
-                className="rounded-2xl h-11 px-6 border-slate-200 font-bold hover:bg-white hover:shadow-md transition-all"
+                className="rounded-xl h-11 px-6 border-border font-bold hover:bg-card hover:shadow-md transition-all"
             >
                 {loading ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -85,7 +85,7 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
             onClick={handleMarkAll}
             disabled={loading}
             variant="ghost"
-            className="rounded-2xl h-11 px-6 font-bold text-blue-600 hover:bg-blue-50 transition-all"
+            className="rounded-xl h-11 px-6 font-bold text-brand-strong hover:bg-brand-soft transition-all"
         >
             {loading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -126,7 +126,7 @@ export function MarkAlertReadButton({ alertId }: { alertId: string }) {
             size="sm"
             onClick={handleMark}
             disabled={loading}
-            className="h-8 rounded-xl text-[10px] font-semibold uppercase tracking-wider text-slate-400 hover:text-blue-600 transition-colors"
+            className="h-8 rounded-xl text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-brand-strong transition-colors"
         >
             {loading && <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />}
             Marquer comme lu

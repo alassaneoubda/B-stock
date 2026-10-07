@@ -16,7 +16,7 @@ export function balanceLabel(value: unknown): { text: string; tone: 'debt' | 'cr
 export function BalanceText({
   value,
   className,
-  debtClassName = 'text-red-600',
+  debtClassName = 'text-destructive',
 }: {
   value: unknown
   className?: string
@@ -27,7 +27,7 @@ export function BalanceText({
   return (
     <span
       className={cn(
-        tone === 'debt' ? debtClassName : tone === 'credit' ? 'text-emerald-600' : 'text-zinc-500',
+        tone === 'debt' ? debtClassName : tone === 'credit' ? 'text-success' : 'text-muted-foreground',
         className
       )}
     >

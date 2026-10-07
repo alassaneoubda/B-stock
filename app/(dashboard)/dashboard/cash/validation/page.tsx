@@ -89,7 +89,7 @@ export default function CashValidationPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Validation des Mouvements de Caisse" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState title="Impossible de charger les mouvements" onRetry={fetchMovements} />
@@ -99,7 +99,7 @@ export default function CashValidationPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Validation des Mouvements de Caisse" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
@@ -135,12 +135,12 @@ export default function CashValidationPage() {
                 <TableBody>
                   {movements.map((movement) => (
                     <TableRow key={movement.id}>
-                      <TableCell className="text-sm text-zinc-500">
+                      <TableCell className="text-sm text-muted-foreground">
                         {formatDateTime(movement.created_at)}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={
-                          movement.movement_type === 'cash_in' ? 'border-emerald-200 text-emerald-700' : 'border-red-200 text-red-700'
+                          movement.movement_type === 'cash_in' ? 'border-success/30 text-success' : 'border-destructive/30 text-destructive'
                         }>
                           {movement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'}
                         </Badge>
@@ -149,13 +149,13 @@ export default function CashValidationPage() {
                       <TableCell className="text-sm max-w-[200px] truncate" title={movement.description || ''}>
                         {movement.description || '-'}
                       </TableCell>
-                      <TableCell className="text-sm text-zinc-500">{movement.created_by_name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{movement.created_by_name}</TableCell>
                       <TableCell className={`text-right text-sm font-medium ${
-                        movement.movement_type === 'cash_in' ? 'text-emerald-600' : 'text-red-600'
+                        movement.movement_type === 'cash_in' ? 'text-success' : 'text-destructive'
                       }`}>
                         {movement.movement_type === 'cash_in' ? '+' : '-'}{fmt(Number(movement.amount))}
                       </TableCell>
-                      <TableCell className="text-sm text-zinc-500">
+                      <TableCell className="text-sm text-muted-foreground">
                         {movement.reference_type && movement.reference_id
                           ? `${movement.reference_type} #${movement.reference_id.slice(0, 8)}`
                           : '-'
@@ -186,28 +186,28 @@ export default function CashValidationPage() {
             </DialogHeader>
             {selectedMovement && (
               <div className="space-y-4 py-4">
-                <div className="bg-zinc-50 rounded-lg p-3 space-y-2 text-sm">
+                <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Type</span>
-                    <span className={selectedMovement.movement_type === 'cash_in' ? 'text-emerald-600' : 'text-red-600'}>
+                    <span className="text-muted-foreground">Type</span>
+                    <span className={selectedMovement.movement_type === 'cash_in' ? 'text-success' : 'text-destructive'}>
                       {selectedMovement.movement_type === 'cash_in' ? 'Entrée' : 'Sortie'} de {fmt(Number(selectedMovement.amount))}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Catégorie</span>
+                    <span className="text-muted-foreground">Catégorie</span>
                     <span>{categoryLabels[selectedMovement.category] || selectedMovement.category}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Par</span>
+                    <span className="text-muted-foreground">Par</span>
                     <span>{selectedMovement.created_by_name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-500">Date</span>
+                    <span className="text-muted-foreground">Date</span>
                     <span>{formatDateTime(selectedMovement.created_at)}</span>
                   </div>
                   {selectedMovement.description && (
                     <div className="flex justify-between">
-                      <span className="text-zinc-500">Description</span>
+                      <span className="text-muted-foreground">Description</span>
                       <span>{selectedMovement.description}</span>
                     </div>
                   )}
@@ -236,7 +236,7 @@ export default function CashValidationPage() {
               <Button
                 onClick={() => selectedMovement && handleValidate(selectedMovement, true)}
                 disabled={validating !== null}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="bg-success hover:bg-success"
               >
                 {validating === selectedMovement?.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
                 Approuver

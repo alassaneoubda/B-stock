@@ -223,24 +223,24 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
 
                 <div className="max-w-4xl space-y-8">
                     {lockedReason && (
-                        <p className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{lockedReason}</p>
+                        <p className="rounded-md bg-warning-soft px-4 py-3 text-sm text-warning-foreground">{lockedReason}</p>
                     )}
                     <div className="grid gap-8 md:grid-cols-3">
-                        <Card className="md:col-span-1 rounded-lg border-slate-200/60 shadow-sm overflow-hidden h-fit">
-                            <CardHeader className="px-8 py-8 border-b border-slate-100">
-                                <CardTitle className="text-lg font-semibold text-slate-950">Infos utilisateur</CardTitle>
+                        <Card className="md:col-span-1 rounded-lg border-border shadow-sm overflow-hidden h-fit">
+                            <CardHeader className="px-8 py-8 border-b border-border">
+                                <CardTitle className="text-lg font-semibold text-foreground">Infos utilisateur</CardTitle>
                             </CardHeader>
                             <CardContent className="p-8 space-y-4">
                                 <div>
-                                    <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Email</p>
-                                    <p className="font-bold text-slate-950 break-all">{user.email}</p>
+                                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Email</p>
+                                    <p className="font-bold text-foreground break-all">{user.email}</p>
                                 </div>
                                 <div>
-                                    <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Dernière connexion</p>
-                                    <p className="text-sm text-slate-700">{user.last_login_at ? formatDateTime(user.last_login_at) : 'Jamais'}</p>
+                                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Dernière connexion</p>
+                                    <p className="text-sm text-foreground/80">{user.last_login_at ? formatDateTime(user.last_login_at) : 'Jamais'}</p>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="user-role" className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Rôle</Label>
+                                    <Label htmlFor="user-role" className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Rôle</Label>
                                     {canEditAccess ? (
                                         <Select value={role} onValueChange={(value) => setRole(value as AssignableRole)} disabled={isSaving}>
                                             <SelectTrigger id="user-role">
@@ -253,22 +253,22 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                             </SelectContent>
                                         </Select>
                                     ) : (
-                                        <p id="user-role" className="font-bold text-slate-950">{ROLE_LABELS[user.role] ?? user.role}</p>
+                                        <p id="user-role" className="font-bold text-foreground">{ROLE_LABELS[user.role] ?? user.role}</p>
                                     )}
-                                    <p className="text-xs text-slate-500">Le rôle détermine les pages et actions réellement autorisées.</p>
+                                    <p className="text-xs text-muted-foreground">Le rôle détermine les pages et actions réellement autorisées.</p>
                                 </div>
                                 {canEditAccess && (
                                     <div className="flex items-center justify-between gap-3 pt-2">
                                         <div>
-                                            <Label htmlFor="user-active" className="text-sm font-semibold text-slate-900">Compte actif</Label>
-                                            <p className="text-xs text-slate-500">Un compte désactivé ne peut plus se connecter.</p>
+                                            <Label htmlFor="user-active" className="text-sm font-semibold text-foreground">Compte actif</Label>
+                                            <p className="text-xs text-muted-foreground">Un compte désactivé ne peut plus se connecter.</p>
                                         </div>
                                         <Switch id="user-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSaving} />
                                     </div>
                                 )}
                                 {canResetPassword && (
-                                    <div className="pt-4 border-t border-slate-100">
-                                        <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Sécurité</p>
+                                    <div className="pt-4 border-t border-border">
+                                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Sécurité</p>
                                         <Button
                                             variant="outline"
                                             className="w-full mt-2 rounded-md"
@@ -282,7 +282,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                             )}
                                             Réinitialiser le mot de passe
                                         </Button>
-                                        <p className="text-xs text-slate-500 mt-2">
+                                        <p className="text-xs text-muted-foreground mt-2">
                                             Un mot de passe temporaire sera généré et affiché une seule fois.
                                         </p>
                                     </div>
@@ -290,12 +290,12 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                             </CardContent>
                         </Card>
 
-                        <Card className="md:col-span-2 rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                            <CardHeader className="px-8 py-8 border-b border-slate-100">
+                        <Card className="md:col-span-2 rounded-lg border-border shadow-sm overflow-hidden">
+                            <CardHeader className="px-8 py-8 border-b border-border">
                                 <div className="flex items-center justify-between gap-4">
                                     <div>
-                                        <CardTitle className="text-xl font-semibold text-slate-950 flex items-center gap-2">
-                                            <ShieldCheck className="h-5 w-5 text-blue-600" aria-hidden="true" />
+                                        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
+                                            <ShieldCheck className="h-5 w-5 text-brand-strong" aria-hidden="true" />
                                             Rubriques du menu
                                         </CardTitle>
                                         <CardDescription className="mt-1">
@@ -311,7 +311,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 </div>
                             </CardHeader>
                             {isOwnerAccount ? (
-                                <CardContent className="p-8 text-sm text-slate-600">
+                                <CardContent className="p-8 text-sm text-muted-foreground">
                                     Le propriétaire voit toutes les rubriques.
                                 </CardContent>
                             ) : (
@@ -323,8 +323,8 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                                 key={module.id}
                                                 htmlFor={`module-${module.id}`}
                                                 className={`flex items-center space-x-3 p-4 rounded-md border transition-colors ${canEditModules ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} ${checked
-                                                    ? 'bg-blue-50 border-blue-200'
-                                                    : 'bg-slate-50 border-slate-100 hover:border-slate-200'
+                                                    ? 'bg-brand-soft border-brand/40'
+                                                    : 'bg-muted/50 border-border hover:border-border'
                                                     }`}
                                             >
                                                 <Checkbox
@@ -334,7 +334,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                                     onCheckedChange={() => togglePermission(module.id)}
                                                     className="h-5 w-5 rounded-lg data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                                                 />
-                                                <span className="font-bold text-slate-700 flex-1 text-sm">
+                                                <span className="font-bold text-foreground/80 flex-1 text-sm">
                                                     {module.label}
                                                 </span>
                                             </label>
@@ -343,13 +343,13 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 </CardContent>
                             )}
                             {(canEditModules || canEditAccess) && (
-                                <CardFooter className="px-8 py-6 border-t border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
-                                    <p className="text-xs text-slate-500">
+                                <CardFooter className="px-8 py-6 border-t border-border bg-muted/30 flex flex-wrap items-center justify-between gap-3">
+                                    <p className="text-xs text-muted-foreground">
                                         Après un changement de rôle ou de rubriques, l&apos;utilisateur est déconnecté.
                                     </p>
                                     <Button
                                         onClick={onSave}
-                                        className="rounded-md h-12 px-8 bg-blue-600 hover:bg-blue-700 font-semibold shadow-lg shadow-blue-500/20"
+                                        className="rounded-md h-12 px-8 bg-primary hover:bg-primary font-semibold shadow-lg shadow-blue-500/20"
                                         disabled={isSaving}
                                     >
                                         {isSaving ? (
@@ -379,7 +379,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                             <AlertDialogCancel disabled={isSaving}>Annuler</AlertDialogCancel>
                             <AlertDialogAction
                                 disabled={isSaving}
-                                className="bg-red-600 hover:bg-red-700"
+                                className="bg-destructive hover:bg-destructive"
                                 onClick={(e) => { e.preventDefault(); save() }}
                             >
                                 {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />}
@@ -422,7 +422,7 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 L&apos;utilisateur pourra se connecter avec, puis le changer dans « Sécurité ».
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="flex items-center gap-2 rounded-lg border bg-slate-50 p-3">
+                        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-3">
                             <code className="flex-1 font-mono text-sm break-all select-all">{tempPassword}</code>
                             <Button
                                 variant="outline"
@@ -431,10 +431,10 @@ export default function EditUserPage({ params }: { params: Promise<{ id: string 
                                 onClick={copyTempPassword}
                                 aria-label={copied ? 'Mot de passe copié' : 'Copier le mot de passe'}
                             >
-                                {copied ? <Check className="h-4 w-4 text-emerald-600" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+                                {copied ? <Check className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
                             </Button>
                         </div>
-                        <p className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+                        <p className="flex items-start gap-2 rounded-md bg-warning-soft p-3 text-sm text-warning-foreground">
                             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
                             Ce mot de passe n&apos;est affiché qu&apos;une seule fois. Notez-le ou copiez-le avant de fermer.
                         </p>

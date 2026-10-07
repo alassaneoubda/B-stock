@@ -14,21 +14,21 @@ export default function ProfilePage() {
     const user = session?.user
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Mon profil"
                 description="Informations de votre compte"
             />
             <main className="flex-1 p-4 lg:p-6 ">
-                <Card className="rounded-lg border-slate-200/60 shadow-sm max-w-2xl">
-                    <CardHeader className="px-8 py-8 border-b border-slate-100">
+                <Card className="rounded-lg border-border shadow-sm max-w-2xl">
+                    <CardHeader className="px-8 py-8 border-b border-border">
                         <div className="flex items-center gap-6">
-                            <div className="h-20 w-20 rounded-lg bg-blue-600 flex items-center justify-center text-white text-3xl font-semibold shadow-md shadow-blue-500/20">
+                            <div className="h-20 w-20 rounded-lg bg-primary flex items-center justify-center text-white text-3xl font-semibold shadow-md shadow-blue-500/20">
                                 {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
                             </div>
                             <div>
-                                <CardTitle className="text-2xl font-semibold text-slate-950">{user?.name || 'Utilisateur'}</CardTitle>
-                                <Badge className="mt-2 rounded-xl px-4 py-1 bg-blue-50 text-blue-600 border-none font-semibold text-[10px] uppercase tracking-wider">
+                                <CardTitle className="text-2xl font-semibold text-foreground">{user?.name || 'Utilisateur'}</CardTitle>
+                                <Badge className="mt-2 rounded-xl px-4 py-1 bg-brand-soft text-brand-strong border-none font-semibold text-[10px] uppercase tracking-wider">
                                     <Shield className="h-3 w-3 mr-1" />
                                     {roleLabels[user?.role || ''] || 'Utilisateur'}
                                 </Badge>
@@ -36,25 +36,25 @@ export default function ProfilePage() {
                         </div>
                     </CardHeader>
                     <CardContent className="px-8 py-8 space-y-6">
-                        <div className="flex items-center gap-4 p-4 rounded-md bg-slate-50">
-                            <Mail className="h-5 w-5 text-slate-400" />
+                        <div className="flex items-center gap-4 p-4 rounded-md bg-muted/50">
+                            <Mail className="h-5 w-5 text-muted-foreground/70" />
                             <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Email</p>
-                                <p className="font-bold text-slate-950">{user?.email}</p>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Email</p>
+                                <p className="font-bold text-foreground">{user?.email}</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-4 p-4 rounded-md bg-slate-50">
-                            <Building2 className="h-5 w-5 text-slate-400" />
+                        <div className="flex items-center gap-4 p-4 rounded-md bg-muted/50">
+                            <Building2 className="h-5 w-5 text-muted-foreground/70" />
                             <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Entreprise</p>
-                                <p className="font-bold text-slate-950">{user?.companyName || 'N/A'}</p>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Entreprise</p>
+                                <p className="font-bold text-foreground">{user?.companyName || 'N/A'}</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-4 p-4 rounded-md bg-slate-50">
-                            <Shield className="h-5 w-5 text-slate-400" />
+                        <div className="flex items-center gap-4 p-4 rounded-md bg-muted/50">
+                            <Shield className="h-5 w-5 text-muted-foreground/70" />
                             <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Rôle</p>
-                                <p className="font-bold text-slate-950">{roleLabels[user?.role || ''] || user?.role}</p>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Rôle</p>
+                                <p className="font-bold text-foreground">{roleLabels[user?.role || ''] || user?.role}</p>
                             </div>
                         </div>
                     </CardContent>

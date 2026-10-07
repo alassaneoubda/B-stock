@@ -78,7 +78,7 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
     return (
         <Dialog open={open} onOpenChange={(v) => { if (loading) return; setOpen(v); if (v) { setAmount(0); setError(null) } }}>
             <DialogTrigger asChild>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+                <Button className="bg-success hover:bg-success text-white font-bold">
                     <Banknote className="h-4 w-4 mr-2" />
                     Encaisser une dette
                 </Button>
@@ -93,18 +93,18 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
 
                     <div className="space-y-5 pt-2">
                         {/* Current debts summary */}
-                        <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-muted/50 border border-border">
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Produits</p>
-                                <p className="text-lg font-black text-rose-600">{formatCurrency(productDebt)}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Produits</p>
+                                <p className="text-lg font-black text-destructive">{formatCurrency(productDebt)}</p>
                             </div>
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Emballages</p>
-                                <p className="text-lg font-black text-amber-600">{formatCurrency(packagingDebt)}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Emballages</p>
+                                <p className="text-lg font-black text-warning-foreground">{formatCurrency(packagingDebt)}</p>
                             </div>
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total</p>
-                                <p className="text-lg font-black text-slate-950">{formatCurrency(totalDebt)}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Total</p>
+                                <p className="text-lg font-black text-foreground">{formatCurrency(totalDebt)}</p>
                             </div>
                         </div>
 
@@ -118,8 +118,8 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                                         type="button"
                                         onClick={() => setPaymentMethod(value)}
                                         className={`flex items-center gap-2 p-3 rounded-lg border-2 text-sm font-medium transition-all ${paymentMethod === value
-                                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                                            : 'border-slate-200 hover:border-slate-300'
+                                            ? 'border-success/30 bg-success-soft text-success'
+                                            : 'border-border hover:border-border'
                                             }`}
                                     >
                                         <Icon className="h-4 w-4" />
@@ -146,7 +146,7 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                                     <button
                                         type="button"
                                         onClick={() => setAmount(productDebt)}
-                                        className="text-xs px-3 py-1 rounded-full bg-rose-50 text-rose-600 font-bold hover:bg-rose-100 transition-colors"
+                                        className="text-xs px-3 py-1 rounded-full bg-destructive/10 text-destructive font-bold hover:bg-destructive/10 transition-colors"
                                     >
                                         Solder produits ({formatCurrency(productDebt)})
                                     </button>
@@ -154,7 +154,7 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                                 <button
                                     type="button"
                                     onClick={() => setAmount(totalDebt)}
-                                    className="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition-colors"
+                                    className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground font-bold hover:bg-muted transition-colors"
                                 >
                                     Tout solder ({formatCurrency(totalDebt)})
                                 </button>
@@ -163,15 +163,15 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
 
                         {/* Allocation preview */}
                         {amount > 0 && (
-                            <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 space-y-2">
-                                <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">Répartition du paiement</p>
+                            <div className="p-4 rounded-xl bg-brand-soft border border-brand/40 space-y-2">
+                                <p className="text-xs font-bold text-brand-strong uppercase tracking-widest">Répartition du paiement</p>
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-slate-600">Produits</span>
-                                    <span className="font-bold text-slate-950">{formatCurrency(previewProducts)}</span>
+                                    <span className="text-muted-foreground">Produits</span>
+                                    <span className="font-bold text-foreground">{formatCurrency(previewProducts)}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
-                                    <span className="text-slate-600">Emballages</span>
-                                    <span className="font-bold text-slate-950">{formatCurrency(previewPackaging)}</span>
+                                    <span className="text-muted-foreground">Emballages</span>
+                                    <span className="font-bold text-foreground">{formatCurrency(previewPackaging)}</span>
                                 </div>
                             </div>
                         )}
@@ -200,13 +200,13 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                         </div>
 
                         {amount > totalDebt && (
-                            <p className="text-sm text-rose-600">
+                            <p className="text-sm text-destructive">
                                 Le montant dépasse la dette totale ({formatCurrency(totalDebt)}).
                             </p>
                         )}
 
                         {error && (
-                            <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                            <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
                                 <span>{error}</span>
                             </div>
@@ -216,7 +216,7 @@ export function CollectDebtDialog({ clientId, clientName, productDebt, packaging
                         <Button
                             onClick={handleSubmit}
                             disabled={loading || amount <= 0 || amount > totalDebt}
-                            className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 font-bold text-base"
+                            className="w-full h-12 bg-success hover:bg-success font-bold text-base"
                         >
                             {loading ? (
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />

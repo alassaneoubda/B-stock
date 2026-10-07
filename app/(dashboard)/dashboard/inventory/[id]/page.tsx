@@ -142,7 +142,7 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
 
   if (loadError || !session) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Inventaire" />
         <main className="flex-1 p-4 lg:p-6 max-w-[1400px] mx-auto w-full">
           {!loadError || loadError.status === 404 ? (
@@ -163,7 +163,7 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
   const isOpen = session.status === 'in_progress'
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title={`Inventaire — ${session.session_number}`} />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
@@ -172,15 +172,15 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <ClipboardList className="h-5 w-5 text-blue-600" aria-hidden="true" />
+                <div className="h-10 w-10 rounded-lg bg-brand-soft flex items-center justify-center">
+                  <ClipboardList className="h-5 w-5 text-brand-strong" aria-hidden="true" />
                 </div>
                 <div>
-                  <p className="font-semibold text-zinc-950">{session.session_number}</p>
-                  <p className="text-sm text-zinc-500">
+                  <p className="font-semibold text-foreground">{session.session_number}</p>
+                  <p className="text-sm text-muted-foreground">
                     {session.depot_name} — {session.inventory_type === 'full' ? 'Complet' : session.inventory_type === 'partial' ? 'Partiel' : 'Contrôle ponctuel'}
                   </p>
-                  <p className="text-xs text-zinc-400">
+                  <p className="text-xs text-muted-foreground/70">
                     Par {session.started_by_name} le {formatDateShort(session.started_at)}
                   </p>
                 </div>
@@ -209,21 +209,21 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
 
             {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
-              <div className="bg-white rounded-lg border p-3">
-                <div className="text-xs text-zinc-500 mb-1">Total articles</div>
-                <div className="text-lg font-bold text-zinc-950">{formatNumber(session.total_items)}</div>
+              <div className="bg-card rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground mb-1">Total articles</div>
+                <div className="text-lg font-bold text-foreground">{formatNumber(session.total_items)}</div>
               </div>
-              <div className="bg-white rounded-lg border p-3">
-                <div className="text-xs text-zinc-500 mb-1">Comptés</div>
-                <div className="text-lg font-bold text-blue-600">{formatNumber(countedCount)}</div>
+              <div className="bg-card rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground mb-1">Comptés</div>
+                <div className="text-lg font-bold text-brand-strong">{formatNumber(countedCount)}</div>
               </div>
-              <div className="bg-white rounded-lg border p-3">
-                <div className="text-xs text-zinc-500 mb-1">Écarts</div>
-                <div className="text-lg font-bold text-amber-600">{formatNumber(itemsWithVariance.length)}</div>
+              <div className="bg-card rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground mb-1">Écarts</div>
+                <div className="text-lg font-bold text-warning-foreground">{formatNumber(itemsWithVariance.length)}</div>
               </div>
-              <div className="bg-white rounded-lg border p-3">
-                <div className="text-xs text-zinc-500 mb-1">Valeur écarts</div>
-                <div className={`text-lg font-bold ${totalVarianceValue < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+              <div className="bg-card rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground mb-1">Valeur écarts</div>
+                <div className={`text-lg font-bold ${totalVarianceValue < 0 ? 'text-destructive' : 'text-success'}`}>
                   {formatSignedMoney(totalVarianceValue)}
                 </div>
               </div>
@@ -266,7 +266,7 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
                       <TableRow key={item.id}>
                         <TableCell className="text-sm">{name}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={item.item_type === 'product' ? 'border-blue-200 text-blue-700' : 'border-purple-200 text-purple-700'}>
+                          <Badge variant="outline" className={item.item_type === 'product' ? 'border-brand/40 text-brand-strong' : 'border-info/30 text-info'}>
                             {item.item_type === 'product' ? 'Produit' : 'Emballage'}
                           </Badge>
                         </TableCell>
@@ -294,10 +294,10 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
                             <span className="text-sm">{item.counted_quantity != null ? formatNumber(item.counted_quantity) : '-'}</span>
                           )}
                         </TableCell>
-                        <TableCell className={`text-center text-sm font-medium ${variance < 0 ? 'text-red-600' : variance > 0 ? 'text-emerald-600' : ''}`}>
+                        <TableCell className={`text-center text-sm font-medium ${variance < 0 ? 'text-destructive' : variance > 0 ? 'text-success' : ''}`}>
                           {item.counted_quantity != null ? (variance > 0 ? '+' : '') + formatNumber(variance) : '-'}
                         </TableCell>
-                        <TableCell className={`text-right text-sm ${varianceValue < 0 ? 'text-red-600' : varianceValue > 0 ? 'text-emerald-600' : ''}`}>
+                        <TableCell className={`text-right text-sm ${varianceValue < 0 ? 'text-destructive' : varianceValue > 0 ? 'text-success' : ''}`}>
                           {item.counted_quantity != null ? formatSignedMoney(varianceValue) : '-'}
                         </TableCell>
                         <TableCell>
@@ -310,7 +310,7 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
                               placeholder="Notes..."
                             />
                           ) : (
-                            <span className="text-xs text-zinc-500">{item.notes || '-'}</span>
+                            <span className="text-xs text-muted-foreground">{item.notes || '-'}</span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -337,11 +337,11 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4">
-              <div className="bg-zinc-50 rounded-lg p-3 space-y-2 text-sm">
+              <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-sm">
                 <div className="flex justify-between"><span>Articles totaux</span><span className="font-medium">{formatNumber(session.total_items)}</span></div>
                 <div className="flex justify-between"><span>Articles comptés</span><span className="font-medium">{formatNumber(countedCount)}</span></div>
-                <div className="flex justify-between text-amber-600"><span>Lignes avec écart</span><span className="font-medium">{formatNumber(itemsWithVariance.length)}</span></div>
-                <div className="flex justify-between"><span>Valeur totale écarts</span><span className={`font-medium ${totalVarianceValue < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatSignedMoney(totalVarianceValue)}</span></div>
+                <div className="flex justify-between text-warning-foreground"><span>Lignes avec écart</span><span className="font-medium">{formatNumber(itemsWithVariance.length)}</span></div>
+                <div className="flex justify-between"><span>Valeur totale écarts</span><span className={`font-medium ${totalVarianceValue < 0 ? 'text-destructive' : 'text-success'}`}>{formatSignedMoney(totalVarianceValue)}</span></div>
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -349,7 +349,7 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
                   id="apply"
                   checked={applyAdjustments}
                   onChange={(e) => setApplyAdjustments(e.target.checked)}
-                  className="rounded border-zinc-300"
+                  className="rounded border-border"
                 />
                 <Label htmlFor="apply" className="text-sm">Appliquer les ajustements au stock</Label>
               </div>

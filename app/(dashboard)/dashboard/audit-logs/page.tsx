@@ -81,7 +81,7 @@ export default function AuditLogsPage() {
     : logs
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Journal d'Audit" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
@@ -90,7 +90,7 @@ export default function AuditLogsPage() {
           <CardContent className="p-4">
             <div className="flex flex-col lg:flex-row gap-4">
               <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" aria-hidden="true" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
                 <Input
                   placeholder="Rechercher par utilisateur, entité, action..."
                   aria-label="Rechercher dans le journal"
@@ -173,16 +173,16 @@ export default function AuditLogsPage() {
                 <TableBody>
                   {filtered.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell className="text-sm text-zinc-500 whitespace-nowrap">
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {formatDateTime(log.created_at)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                          <User className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
                           <div>
                             <div className="text-sm font-medium">{log.user_name || 'Système'}</div>
                             {log.user_role && (
-                              <div className="text-xs text-zinc-500">
+                              <div className="text-xs text-muted-foreground">
                                 {ROLE_LABELS[log.user_role as UserRole] || log.user_role}
                               </div>
                             )}
@@ -190,17 +190,17 @@ export default function AuditLogsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="border-zinc-200 text-zinc-700">
+                        <Badge variant="outline" className="border-border text-foreground/80">
                           {actionLabels[log.action] || log.action}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                          <FileText className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
                           <span className="text-sm">{entityLabels[log.entity_type] || log.entity_type}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-zinc-600 max-w-[200px] truncate">
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
                         {log.details ? (
                           <span title={JSON.stringify(log.details)}>
                             {typeof log.details === 'object'
@@ -209,8 +209,8 @@ export default function AuditLogsPage() {
                           </span>
                         ) : '—'}
                       </TableCell>
-                      <TableCell className="text-sm text-zinc-500">{log.ip_address || '—'}</TableCell>
-                      <TableCell className="text-sm text-zinc-500 max-w-[150px] truncate" title={log.user_agent || ''}>
+                      <TableCell className="text-sm text-muted-foreground">{log.ip_address || '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate" title={log.user_agent || ''}>
                         {log.user_agent ? log.user_agent.split(' ')[0] : '—'}
                       </TableCell>
                     </TableRow>

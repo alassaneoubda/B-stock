@@ -122,12 +122,12 @@ async function getRecentMovements(productId: string): Promise<Movement[]> {
 
 
 const movementTypeLabels: Record<string, { label: string; color: string }> = {
-    purchase: { label: 'Achat', color: 'bg-emerald-50 text-emerald-600' },
-    sale: { label: 'Vente', color: 'bg-blue-50 text-blue-600' },
-    return: { label: 'Retour', color: 'bg-amber-50 text-amber-600' },
-    damage: { label: 'Casse', color: 'bg-rose-50 text-rose-600' },
-    adjustment: { label: 'Ajustement', color: 'bg-slate-100 text-slate-600' },
-    transfer: { label: 'Transfert', color: 'bg-indigo-50 text-indigo-600' },
+    purchase: { label: 'Achat', color: 'bg-success-soft text-success' },
+    sale: { label: 'Vente', color: 'bg-brand-soft text-brand-strong' },
+    return: { label: 'Retour', color: 'bg-warning-soft text-warning-foreground' },
+    damage: { label: 'Casse', color: 'bg-destructive/10 text-destructive' },
+    adjustment: { label: 'Ajustement', color: 'bg-muted text-muted-foreground' },
+    transfer: { label: 'Transfert', color: 'bg-info-soft text-info' },
 }
 
 export default async function ProductDetailPage({
@@ -162,33 +162,33 @@ export default async function ProductDetailPage({
             value: `${formatNumber(totalStock)} ${product.base_unit}`,
             description: `${stock.length} emplacement${stock.length > 1 ? 's' : ''}`,
             icon: Warehouse,
-            color: totalStock < 10 ? 'bg-rose-500/10 text-rose-600' : 'bg-emerald-500/10 text-emerald-600',
+            color: totalStock < 10 ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success',
         },
         {
             title: 'Variantes',
             value: variants.length,
             description: 'Formats disponibles',
             icon: BoxesIcon,
-            color: 'bg-blue-500/10 text-blue-600',
+            color: 'bg-primary/10 text-brand-strong',
         },
         {
             title: 'Prix de Vente',
             value: formatMoney(product.selling_price),
             description: `Achat: ${formatMoney(product.purchase_price)}`,
             icon: Tag,
-            color: 'bg-indigo-500/10 text-indigo-600',
+            color: 'bg-info/10 text-info',
         },
         {
             title: 'Marge',
             value: formatMoney(margin),
             description: `${marginPct}% de marge`,
             icon: TrendingUp,
-            color: margin > 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600',
+            color: margin > 0 ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive',
         },
     ]
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title={product.name}
                 description={`${product.category || 'Non classé'} ${product.brand ? `— ${product.brand}` : ''} ${product.sku ? `(${product.sku})` : ''}`}
@@ -201,7 +201,7 @@ export default async function ProductDetailPage({
                                 Retour
                             </Link>
                         </Button>
-                        <Button asChild className="rounded-md h-11 px-6 bg-blue-600 hover:bg-blue-700 transition-all active:scale-95 font-bold">
+                        <Button asChild className="rounded-md h-11 px-6 bg-primary hover:bg-primary transition-all active:scale-95 font-bold">
                             <Link href={`/dashboard/products/${id}/edit`}>
                                 <Edit className="h-4 w-4 mr-2" />
                                 Modifier
@@ -214,11 +214,11 @@ export default async function ProductDetailPage({
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
                 {/* Status */}
                 <div className="flex items-center gap-3">
-                    <Badge className={`rounded-full px-4 py-1 font-semibold uppercase text-[10px] tracking-wider ${product.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'} border-none shadow-none`}>
+                    <Badge className={`rounded-full px-4 py-1 font-semibold uppercase text-[10px] tracking-wider ${product.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'} border-none shadow-none`}>
                         {product.is_active ? 'Actif' : 'Masqué'}
                     </Badge>
                     {product.description && (
-                        <span className="text-sm text-slate-500">{product.description}</span>
+                        <span className="text-sm text-muted-foreground">{product.description}</span>
                     )}
                 </div>
 
@@ -227,27 +227,27 @@ export default async function ProductDetailPage({
                     {statsData.map((stat) => (
                         <div
                             key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
+                            className="group relative overflow-hidden rounded-lg bg-card p-8 shadow-sm border border-border hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
                         >
                             <div className="relative z-10 flex flex-col gap-6">
                                 <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
                                     <stat.icon className="h-7 w-7" />
                                 </div>
                                 <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-2xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
-                                    <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">{stat.title}</p>
+                                    <div className="text-2xl font-semibold text-foreground tracking-tight">{stat.value}</div>
+                                    <p className="text-sm font-bold text-muted-foreground/70 mt-2">{stat.description}</p>
                                 </div>
                             </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
+                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-muted/50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
                         </div>
                     ))}
                 </div>
 
                 {/* Low stock alert */}
                 {lowStockItems.length > 0 && (
-                    <div className="rounded-md bg-rose-50 border border-rose-200/50 p-6">
-                        <p className="text-sm font-semibold text-rose-600">
+                    <div className="rounded-md bg-destructive/10 border border-destructive/30 p-6">
+                        <p className="text-sm font-semibold text-destructive">
                             Stock critique dans {lowStockItems.length} emplacement{lowStockItems.length > 1 ? 's' : ''} :
                             {lowStockItems.map(s => ` ${s.depot_name} (${formatNumber(s.quantity)})`).join(',')}
                         </p>
@@ -256,40 +256,40 @@ export default async function ProductDetailPage({
 
                 <div className="grid gap-6 lg:grid-cols-2">
                     {/* Variants */}
-                    <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                        <div className="px-8 py-6 border-b border-slate-100">
-                            <h3 className="text-xl font-semibold text-slate-950 tracking-tight">Variantes / Formats</h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Emballages et prix par format</p>
+                    <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden">
+                        <div className="px-8 py-6 border-b border-border">
+                            <h3 className="text-xl font-semibold text-foreground tracking-tight">Variantes / Formats</h3>
+                            <p className="text-sm font-medium text-muted-foreground/70 mt-1">Emballages et prix par format</p>
                         </div>
                         <div className="p-2">
                             {variants.length === 0 ? (
                                 <div className="text-center py-12">
-                                    <Package className="h-10 w-10 mx-auto text-slate-300" />
-                                    <p className="text-sm text-slate-400 mt-3">Aucune variante configurée</p>
+                                    <Package className="h-10 w-10 mx-auto text-muted-foreground/70" />
+                                    <p className="text-sm text-muted-foreground/70 mt-3">Aucune variante configurée</p>
                                 </div>
                             ) : (
                                 <Table>
-                                    <TableHeader className="bg-slate-50/50">
+                                    <TableHeader className="bg-muted/30">
                                         <TableRow className="border-none hover:bg-transparent">
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-6">Emballage</TableHead>
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Prix Vente</TableHead>
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Consigne</TableHead>
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right pr-6">Code-barres</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-6">Emballage</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Prix Vente</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Consigne</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right pr-6">Code-barres</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {variants.map((v) => (
-                                            <TableRow key={v.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                            <TableRow key={v.id} className="border-b border-border hover:bg-muted/30">
                                                 <TableCell className="py-4 pl-6">
                                                     <div>
-                                                        <p className="font-semibold text-slate-950 text-sm">{v.packaging_name}</p>
-                                                        <p className="text-[11px] text-slate-400 font-bold">{v.units_per_case} unité{v.units_per_case > 1 ? 's' : ''}/casier</p>
+                                                        <p className="font-semibold text-foreground text-sm">{v.packaging_name}</p>
+                                                        <p className="text-[11px] text-muted-foreground/70 font-bold">{v.units_per_case} unité{v.units_per_case > 1 ? 's' : ''}/casier</p>
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="py-4 text-right font-semibold text-slate-950">{formatMoney(v.price)}</TableCell>
-                                                <TableCell className="py-4 text-right text-slate-500 font-bold">{formatMoney(v.deposit_price)}</TableCell>
+                                                <TableCell className="py-4 text-right font-semibold text-foreground">{formatMoney(v.price)}</TableCell>
+                                                <TableCell className="py-4 text-right text-muted-foreground font-bold">{formatMoney(v.deposit_price)}</TableCell>
                                                 <TableCell className="py-4 text-right pr-6">
-                                                    <span className="font-mono text-xs text-slate-400">{v.barcode || '—'}</span>
+                                                    <span className="font-mono text-xs text-muted-foreground/70">{v.barcode || '—'}</span>
                                                 </TableCell>
                                             </TableRow>
                                         ))}
@@ -300,39 +300,39 @@ export default async function ProductDetailPage({
                     </div>
 
                     {/* Stock per depot */}
-                    <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                        <div className="px-8 py-6 border-b border-slate-100">
-                            <h3 className="text-xl font-semibold text-slate-950 tracking-tight">Stock par Dépôt</h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Quantités disponibles</p>
+                    <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden">
+                        <div className="px-8 py-6 border-b border-border">
+                            <h3 className="text-xl font-semibold text-foreground tracking-tight">Stock par Dépôt</h3>
+                            <p className="text-sm font-medium text-muted-foreground/70 mt-1">Quantités disponibles</p>
                         </div>
                         <div className="p-2">
                             {stock.length === 0 ? (
                                 <div className="text-center py-12">
-                                    <Warehouse className="h-10 w-10 mx-auto text-slate-300" />
-                                    <p className="text-sm text-slate-400 mt-3">Aucun stock enregistré</p>
+                                    <Warehouse className="h-10 w-10 mx-auto text-muted-foreground/70" />
+                                    <p className="text-sm text-muted-foreground/70 mt-3">Aucun stock enregistré</p>
                                 </div>
                             ) : (
                                 <Table>
-                                    <TableHeader className="bg-slate-50/50">
+                                    <TableHeader className="bg-muted/30">
                                         <TableRow className="border-none hover:bg-transparent">
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-6">Dépôt</TableHead>
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Quantité</TableHead>
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Seuil Alerte</TableHead>
-                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right pr-6">Lot</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-6">Dépôt</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Quantité</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Seuil Alerte</TableHead>
+                                            <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right pr-6">Lot</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {stock.map((s) => {
                                             const isLow = Number(s.quantity) <= Number(s.min_stock_alert)
                                             return (
-                                                <TableRow key={s.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                                    <TableCell className="py-4 pl-6 font-semibold text-slate-950 text-sm">{s.depot_name}</TableCell>
-                                                    <TableCell className={`py-4 text-right font-semibold text-base ${isLow ? 'text-rose-600' : 'text-slate-950'}`}>
+                                                <TableRow key={s.id} className="border-b border-border hover:bg-muted/30">
+                                                    <TableCell className="py-4 pl-6 font-semibold text-foreground text-sm">{s.depot_name}</TableCell>
+                                                    <TableCell className={`py-4 text-right font-semibold text-base ${isLow ? 'text-destructive' : 'text-foreground'}`}>
                                                         {formatNumber(s.quantity)}
                                                     </TableCell>
-                                                    <TableCell className="py-4 text-right text-slate-400 font-bold">{formatNumber(s.min_stock_alert)}</TableCell>
+                                                    <TableCell className="py-4 text-right text-muted-foreground/70 font-bold">{formatNumber(s.min_stock_alert)}</TableCell>
                                                     <TableCell className="py-4 text-right pr-6">
-                                                        <span className="font-mono text-xs text-slate-400">{s.lot_number || '—'}</span>
+                                                        <span className="font-mono text-xs text-muted-foreground/70">{s.lot_number || '—'}</span>
                                                     </TableCell>
                                                 </TableRow>
                                             )
@@ -345,39 +345,39 @@ export default async function ProductDetailPage({
                 </div>
 
                 {/* Recent movements */}
-                <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
+                <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden">
+                    <div className="px-8 py-6 border-b border-border flex items-center justify-between">
                         <div>
-                            <h3 className="text-xl font-semibold text-slate-950 tracking-tight flex items-center gap-2">
-                                <BarChart3 className="h-5 w-5 text-slate-400" />
+                            <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-2">
+                                <BarChart3 className="h-5 w-5 text-muted-foreground/70" />
                                 Mouvements Récents
                             </h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Historique des 20 derniers mouvements</p>
+                            <p className="text-sm font-medium text-muted-foreground/70 mt-1">Historique des 20 derniers mouvements</p>
                         </div>
                     </div>
                     <div className="p-2">
                         {movements.length === 0 ? (
                             <div className="text-center py-12">
-                                <BarChart3 className="h-10 w-10 mx-auto text-slate-300" />
-                                <p className="text-sm text-slate-400 mt-3">Aucun mouvement enregistré</p>
+                                <BarChart3 className="h-10 w-10 mx-auto text-muted-foreground/70" />
+                                <p className="text-sm text-muted-foreground/70 mt-3">Aucun mouvement enregistré</p>
                             </div>
                         ) : (
                             <Table>
-                                <TableHeader className="bg-slate-50/50">
+                                <TableHeader className="bg-muted/30">
                                     <TableRow className="border-none hover:bg-transparent">
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-6">Date</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Type</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Quantité</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Dépôt</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pr-6">Par</TableHead>
+                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-6">Date</TableHead>
+                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Type</TableHead>
+                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-right">Quantité</TableHead>
+                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Dépôt</TableHead>
+                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pr-6">Par</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {movements.map((m) => {
-                                        const typeInfo = movementTypeLabels[m.movement_type] || { label: m.movement_type, color: 'bg-slate-100 text-slate-600' }
+                                        const typeInfo = movementTypeLabels[m.movement_type] || { label: m.movement_type, color: 'bg-muted text-muted-foreground' }
                                         return (
-                                            <TableRow key={m.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                                <TableCell className="py-4 pl-6 text-sm text-slate-500 font-bold">
+                                            <TableRow key={m.id} className="border-b border-border hover:bg-muted/30">
+                                                <TableCell className="py-4 pl-6 text-sm text-muted-foreground font-bold">
                                                     {formatDateShort(m.created_at)}
                                                 </TableCell>
                                                 <TableCell className="py-4">
@@ -385,11 +385,11 @@ export default async function ProductDetailPage({
                                                         {typeInfo.label}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell className={`py-4 text-right font-semibold text-base ${Number(m.quantity) > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                <TableCell className={`py-4 text-right font-semibold text-base ${Number(m.quantity) > 0 ? 'text-success' : 'text-destructive'}`}>
                                                     {Number(m.quantity) > 0 ? '+' : ''}{formatNumber(m.quantity)}
                                                 </TableCell>
-                                                <TableCell className="py-4 font-bold text-slate-700 text-sm">{m.depot_name}</TableCell>
-                                                <TableCell className="py-4 pr-6 text-sm text-slate-400">{m.created_by_name || '—'}</TableCell>
+                                                <TableCell className="py-4 font-bold text-foreground/80 text-sm">{m.depot_name}</TableCell>
+                                                <TableCell className="py-4 pr-6 text-sm text-muted-foreground/70">{m.created_by_name || '—'}</TableCell>
                                             </TableRow>
                                         )
                                     })}

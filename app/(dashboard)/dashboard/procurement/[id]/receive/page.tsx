@@ -216,7 +216,7 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
 
     if (loadError || !order) {
         return (
-            <div className="flex flex-col min-h-screen bg-zinc-50/50">
+            <div className="flex flex-col min-h-screen bg-muted/30">
                 <DashboardHeader title="Décharger & Réceptionner" description="Réception de commande fournisseur" />
                 <main className="flex-1 p-4 lg:p-6 max-w-5xl mx-auto w-full space-y-4">
                     <ErrorState
@@ -246,7 +246,7 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
     )
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Décharger & Réceptionner"
                 description={`Pointage de la commande ${order.order_number}`}
@@ -254,20 +254,20 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
 
             <main className="flex-1 p-4 lg:p-6 max-w-5xl mx-auto w-full ">
                 <div className="mb-6 flex items-center justify-between">
-                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-slate-200">
+                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-border">
                         <Link href={`/dashboard/procurement/${id}`}>
                             <ArrowLeft className="h-4 w-4 mr-2" /> Retour au détail
                         </Link>
                     </Button>
-                    <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-md border border-blue-100">
-                        <ArchiveRestore className="h-4 w-4 text-blue-600" />
-                        <span className="text-sm font-semibold text-blue-700 tracking-tight uppercase tracking-wider text-[10px]">Réception de stock</span>
+                    <div className="flex items-center gap-2 px-4 py-2 bg-brand-soft rounded-md border border-brand/40">
+                        <ArchiveRestore className="h-4 w-4 text-brand-strong" />
+                        <span className="text-sm font-semibold text-brand-strong tracking-tight uppercase tracking-wider text-[10px]">Réception de stock</span>
                     </div>
                 </div>
 
                 <form onSubmit={handleSubmit(onValidate)} className="space-y-6" noValidate>
                     {!isReceivable && (
-                        <div role="status" className="p-4 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-sm font-bold flex items-center gap-2">
+                        <div role="status" className="p-4 rounded-md bg-warning-soft border border-warning/30 text-warning-foreground text-sm font-bold flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4" />
                             {order.status === 'received'
                                 ? 'Cette commande a déjà été entièrement réceptionnée.'
@@ -288,40 +288,40 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                             const error = lineError(current)
                             const isClosed = field.remaining === 0
                             return (
-                            <Card key={field.id} className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden hover:shadow-lg transition-all duration-300">
+                            <Card key={field.id} className="rounded-lg border-border shadow-sm overflow-hidden hover:shadow-lg transition-all duration-300">
                                 <CardContent className="p-8">
                                     <div className="flex flex-col md:flex-row gap-8">
                                         {/* Product Info */}
                                         <div className="md:w-1/3 space-y-4">
                                             <div className="flex items-start gap-4">
-                                                <div className="h-12 w-12 rounded-md bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                                                <div className="h-12 w-12 rounded-md bg-muted flex items-center justify-center text-muted-foreground shrink-0">
                                                     <Package className="h-6 w-6" />
                                                 </div>
                                                 <div className="flex flex-col gap-1">
-                                                    <span className="font-semibold text-lg text-slate-950 leading-tight">{field.productName}</span>
+                                                    <span className="font-semibold text-lg text-foreground leading-tight">{field.productName}</span>
                                                     {field.packagingName && (
-                                                        <span className="inline-flex px-2.5 py-1 rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-fit">
+                                                        <span className="inline-flex px-2.5 py-1 rounded-lg bg-muted text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-fit">
                                                             {field.packagingName}
                                                         </span>
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="p-4 rounded-md bg-amber-50/50 border border-amber-100/50 space-y-1.5">
+                                            <div className="p-4 rounded-md bg-warning-soft border border-warning/30 space-y-1.5">
                                                 <div className="flex justify-between items-center text-sm">
-                                                    <span className="font-bold text-amber-700 uppercase tracking-wider text-[10px]">Quantité commandée :</span>
-                                                    <span className="font-semibold text-amber-900">{formatNumber(field.quantityOrdered)}</span>
+                                                    <span className="font-bold text-warning-foreground uppercase tracking-wider text-[10px]">Quantité commandée :</span>
+                                                    <span className="font-semibold text-warning-foreground">{formatNumber(field.quantityOrdered)}</span>
                                                 </div>
                                                 {(field.alreadyReceived > 0 || field.alreadyDamaged > 0) && (
                                                     <div className="flex justify-between items-center text-sm">
-                                                        <span className="font-bold text-amber-700 uppercase tracking-wider text-[10px]">Déjà traité :</span>
-                                                        <span className="font-semibold text-amber-900">
+                                                        <span className="font-bold text-warning-foreground uppercase tracking-wider text-[10px]">Déjà traité :</span>
+                                                        <span className="font-semibold text-warning-foreground">
                                                             {formatNumber(field.alreadyReceived)} reçu(s) · {formatNumber(field.alreadyDamaged)} casse
                                                         </span>
                                                     </div>
                                                 )}
                                                 <div className="flex justify-between items-center text-sm">
-                                                    <span className="font-bold text-amber-700 uppercase tracking-wider text-[10px]">Reste à réceptionner :</span>
-                                                    <span className="font-semibold text-amber-900">{formatNumber(field.remaining)}</span>
+                                                    <span className="font-bold text-warning-foreground uppercase tracking-wider text-[10px]">Reste à réceptionner :</span>
+                                                    <span className="font-semibold text-warning-foreground">{formatNumber(field.remaining)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -329,14 +329,14 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                                         {/* Inputs */}
                                         <div className="flex-1 space-y-4">
                                             {isClosed ? (
-                                                <div className="p-4 rounded-md bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm font-semibold flex items-center gap-2">
+                                                <div className="p-4 rounded-md bg-success-soft border border-success/30 text-success text-sm font-semibold flex items-center gap-2">
                                                     <CheckCircle2 className="h-4 w-4" />
                                                     Ligne entièrement réceptionnée
                                                 </div>
                                             ) : (
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                                 <div className="space-y-2">
-                                                    <Label htmlFor={`received-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Quantité Reçue *</Label>
+                                                    <Label htmlFor={`received-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Quantité Reçue *</Label>
                                                     <div className="flex items-center gap-3">
                                                         <Input
                                                             id={`received-${index}`}
@@ -352,7 +352,7 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                                                     </div>
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <Label htmlFor={`damaged-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Casse / Manquants</Label>
+                                                    <Label htmlFor={`damaged-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Casse / Manquants</Label>
                                                     <Input
                                                         id={`damaged-${index}`}
                                                         type="number"
@@ -361,12 +361,12 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                                                         step={1}
                                                         aria-invalid={error ? true : undefined}
                                                         {...register(`items.${index}.quantityDamaged`)}
-                                                        className="h-12 rounded-xl border-dashed bg-rose-50/20 text-rose-600 font-bold"
+                                                        className="h-12 rounded-xl border-dashed bg-destructive/10 text-destructive font-bold"
                                                         placeholder="0"
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <Label htmlFor={`lot-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">N° Lot (Optionnel)</Label>
+                                                    <Label htmlFor={`lot-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">N° Lot (Optionnel)</Label>
                                                     <Input
                                                         id={`lot-${index}`}
                                                         {...register(`items.${index}.lotNumber`)}
@@ -375,7 +375,7 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <Label htmlFor={`expiry-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Date Péremption</Label>
+                                                    <Label htmlFor={`expiry-${index}`} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Date Péremption</Label>
                                                     <Input
                                                         id={`expiry-${index}`}
                                                         type="date"
@@ -400,10 +400,10 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                     </div>
 
                     <div className="flex items-center justify-end gap-4 pt-6">
-                        <Button variant="outline" type="button" asChild className="rounded-md h-14 px-8 border-slate-200 font-bold">
+                        <Button variant="outline" type="button" asChild className="rounded-md h-14 px-8 border-border font-bold">
                             <Link href={`/dashboard/procurement/${id}`}>Annuler</Link>
                         </Button>
-                        <Button type="submit" disabled={isLoading || !isReceivable} className="rounded-md h-14 px-10 bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 font-semibold text-lg group">
+                        <Button type="submit" disabled={isLoading || !isReceivable} className="rounded-md h-14 px-10 bg-success hover:bg-success shadow-md shadow-emerald-500/20 font-semibold text-lg group">
                             {isLoading ? (
                                 <Loader2 className="h-5 w-5 mr-2 animate-spin" />
                             ) : (
@@ -444,7 +444,7 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                         <AlertDialogCancel disabled={isLoading}>Annuler</AlertDialogCancel>
                         <AlertDialogAction
                             disabled={isLoading}
-                            className="bg-emerald-600 hover:bg-emerald-700"
+                            className="bg-success hover:bg-success"
                             onClick={(e) => {
                                 e.preventDefault()
                                 confirmSubmit()

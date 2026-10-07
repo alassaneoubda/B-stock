@@ -69,26 +69,26 @@ export default async function ProductsPage() {
       value: formatNumber(products.length),
       description: "Articles référencés",
       icon: Package,
-      color: "bg-blue-500/10 text-blue-600",
+      color: "bg-primary/10 text-brand-strong",
     },
     {
       title: "Produits actifs",
       value: formatNumber(products.filter(p => p.is_active).length),
       description: "En vente actuellement",
       icon: Check,
-      color: "bg-emerald-500/10 text-emerald-600",
+      color: "bg-success/10 text-success",
     },
     {
       title: "Articles en stock",
       value: formatNumber(products.reduce((acc, p) => acc + Number(p.total_stock), 0)),
       description: "Quantité cumulée",
       icon: TrendingUp,
-      color: "bg-indigo-500/10 text-indigo-600",
+      color: "bg-info/10 text-info",
     }
   ]
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader
         title="Produits"
         actions={
@@ -109,21 +109,21 @@ export default async function ProductsPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {statsData.map((stat) => (
-            <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
+            <div key={stat.title} className="bg-card rounded-lg border border-border p-4">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
-                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
+                <span className="text-xs font-medium text-muted-foreground">{stat.title}</span>
+                <stat.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
               </div>
-              <p className="text-xl font-bold text-zinc-950 tracking-tight">{stat.value}</p>
-              <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
+              <p className="text-xl font-bold text-foreground tracking-tight">{stat.value}</p>
+              <p className="text-xs text-muted-foreground mt-1">{stat.description}</p>
             </div>
           ))}
         </div>
 
         {/* Products Table */}
-        <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
-          <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between gap-4">
-            <h3 className="text-sm font-semibold text-zinc-950">Catalogue</h3>
+        <div className="bg-card rounded-lg border border-border overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-4">
+            <h3 className="text-sm font-semibold text-foreground">Catalogue</h3>
           </div>
 
               {/* Desktop table */}
@@ -131,12 +131,12 @@ export default async function ProductsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-xs font-medium text-zinc-500 pl-4">Produit</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500">SKU</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500">Catégorie</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Prix de vente</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Stock</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500">État</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground pl-4">Produit</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground">SKU</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground">Catégorie</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground text-right">Prix de vente</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground text-right">Stock</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground">État</TableHead>
                       <TableHead className="pr-4"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -145,35 +145,35 @@ export default async function ProductsPage() {
                       <TableRow key={product.id} className="group">
                         <TableCell className="pl-4">
                           <div>
-                            <p className="text-sm font-medium text-zinc-950">{product.name}</p>
-                            <p className="text-xs text-zinc-400">
+                            <p className="text-sm font-medium text-foreground">{product.name}</p>
+                            <p className="text-xs text-muted-foreground/70">
                               {product.variants_count} variante{Number(product.variants_count) > 1 ? 's' : ''}
                             </p>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className="font-mono text-xs text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+                          <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
                             {product.sku}
                           </span>
                         </TableCell>
                         <TableCell>
-                          <span className="text-sm text-zinc-500">{product.category || '—'}</span>
+                          <span className="text-sm text-muted-foreground">{product.category || '—'}</span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className="text-sm font-semibold text-zinc-950">
+                          <span className="text-sm font-semibold text-foreground">
                             {formatMoney(product.selling_price)}
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className={`text-sm font-medium ${Number(product.total_stock) < 10 ? 'text-red-600' : 'text-zinc-950'}`}>
+                          <span className={`text-sm font-medium ${Number(product.total_stock) < 10 ? 'text-destructive' : 'text-foreground'}`}>
                             {formatNumber(product.total_stock)} {product.base_unit || 'unit'}
                           </span>
                           {Number(product.total_stock) < 10 && (
-                            <p className="text-[10px] text-red-500">Stock bas</p>
+                            <p className="text-[10px] text-destructive">Stock bas</p>
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge className={`text-[10px] font-medium ${product.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
+                          <Badge className={`text-[10px] font-medium ${product.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'} border-none`}>
                             {product.is_active ? 'Actif' : 'Masqué'}
                           </Badge>
                         </TableCell>
@@ -181,19 +181,19 @@ export default async function ProductsPage() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour ${product.name}`}>
-                                <MoreHorizontal className="h-4 w-4 text-zinc-400" />
+                                <MoreHorizontal className="h-4 w-4 text-muted-foreground/70" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-48">
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/products/${product.id}`} className="flex items-center gap-2">
-                                  <Eye className="h-4 w-4 text-zinc-500" />
+                                  <Eye className="h-4 w-4 text-muted-foreground" />
                                   <span className="text-sm">Fiche produit</span>
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/products/${product.id}/edit`} className="flex items-center gap-2">
-                                  <Edit className="h-4 w-4 text-zinc-500" />
+                                  <Edit className="h-4 w-4 text-muted-foreground" />
                                   <span className="text-sm">Modifier</span>
                                 </Link>
                               </DropdownMenuItem>
@@ -207,29 +207,29 @@ export default async function ProductsPage() {
               </div>
 
               {/* Mobile cards */}
-              <div className="md:hidden divide-y divide-zinc-100">
+              <div className="md:hidden divide-y divide-border">
                 {products.map((product) => (
                   <Link
                     key={product.id}
                     href={`/dashboard/products/${product.id}`}
-                    className="block p-4 active:bg-zinc-50 transition-colors"
+                    className="block p-4 active:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-start justify-between mb-1.5">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-zinc-950 truncate">{product.name}</p>
-                        <p className="text-xs text-zinc-400 font-mono">{product.sku}</p>
+                        <p className="text-sm font-semibold text-foreground truncate">{product.name}</p>
+                        <p className="text-xs text-muted-foreground/70 font-mono">{product.sku}</p>
                       </div>
-                      <Badge className={`text-[10px] font-medium ml-2 shrink-0 ${product.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
+                      <Badge className={`text-[10px] font-medium ml-2 shrink-0 ${product.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'} border-none`}>
                         {product.is_active ? 'Actif' : 'Masqué'}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-zinc-400">{product.category || 'Sans catégorie'}</span>
+                      <span className="text-xs text-muted-foreground/70">{product.category || 'Sans catégorie'}</span>
                       <div className="flex items-center gap-3">
-                        <span className={`text-xs font-medium ${Number(product.total_stock) < 10 ? 'text-red-600' : 'text-zinc-600'}`}>
+                        <span className={`text-xs font-medium ${Number(product.total_stock) < 10 ? 'text-destructive' : 'text-muted-foreground'}`}>
                           {formatNumber(product.total_stock)} {product.base_unit || 'unit'}
                         </span>
-                        <span className="text-sm font-bold text-zinc-950">
+                        <span className="text-sm font-bold text-foreground">
                           {formatMoney(product.selling_price)}
                         </span>
                       </div>

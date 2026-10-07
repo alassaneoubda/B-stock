@@ -175,7 +175,7 @@ export default function NewReturnPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Nouveau Retour" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState title="Impossible de charger le formulaire" onRetry={loadData} />
@@ -185,7 +185,7 @@ export default function NewReturnPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Nouveau Retour" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1000px] mx-auto w-full">
         <Button variant="ghost" onClick={() => router.back()} className="w-fit">
@@ -258,7 +258,7 @@ export default function NewReturnPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-zinc-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Avec une vente d&apos;origine, le prix de cette vente est appliqué et la quantité est limitée à ce qui a été vendu.
                   </p>
                 </div>
@@ -296,7 +296,7 @@ export default function NewReturnPage() {
                   </SelectContent>
                 </Select>
                 {newItemId && (
-                  <p className="text-xs text-zinc-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Prix indicatif : {formatMoney(indicativePrice(newItemType, newItemId))}
                   </p>
                 )}
@@ -322,7 +322,7 @@ export default function NewReturnPage() {
                   <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
                       <div className="font-medium">{item.product_name || item.packaging_name}</div>
-                      <div className="text-sm text-zinc-500">
+                      <div className="text-sm text-muted-foreground">
                         Qté : {formatNumber(item.quantity)} • Prix indicatif : {formatMoney(item.unit_price)}
                         {item.reason ? ` • ${item.reason}` : ''}
                       </div>
@@ -338,7 +338,7 @@ export default function NewReturnPage() {
                   </div>
                 ))}
                 <div className="flex justify-between text-sm pt-2">
-                  <span className="text-zinc-500">Total estimé (le montant final est calculé par le serveur)</span>
+                  <span className="text-muted-foreground">Total estimé (le montant final est calculé par le serveur)</span>
                   <span className="font-semibold">{formatMoney(estimatedTotal)}</span>
                 </div>
               </div>

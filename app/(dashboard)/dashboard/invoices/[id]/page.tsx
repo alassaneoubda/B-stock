@@ -59,11 +59,11 @@ type InvoiceDetail = {
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-  paid: { label: 'Payée', color: 'bg-emerald-50 text-emerald-700' },
-  partial: { label: 'Partielle', color: 'bg-amber-50 text-amber-700' },
-  draft: { label: 'Brouillon', color: 'bg-zinc-100 text-zinc-600' },
-  sent: { label: 'Envoyée', color: 'bg-blue-50 text-blue-700' },
-  cancelled: { label: 'Annulée', color: 'bg-red-50 text-red-600' },
+  paid: { label: 'Payée', color: 'bg-success-soft text-success' },
+  partial: { label: 'Partielle', color: 'bg-warning-soft text-warning-foreground' },
+  draft: { label: 'Brouillon', color: 'bg-muted text-muted-foreground' },
+  sent: { label: 'Envoyée', color: 'bg-brand-soft text-brand-strong' },
+  cancelled: { label: 'Annulée', color: 'bg-destructive/10 text-destructive' },
 }
 
 const formatCurrency = formatMoney
@@ -178,12 +178,12 @@ export default function InvoiceDetailPage() {
 
   if (isGenerating) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Facture" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-zinc-400 mx-auto mb-3" />
-            <p className="text-sm text-zinc-500">Génération de la facture...</p>
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/70 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">Génération de la facture...</p>
           </div>
         </div>
       </div>
@@ -196,7 +196,7 @@ export default function InvoiceDetailPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Facture" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState title="Impossible de charger la facture" description={loadError} onRetry={fetchInvoice} />
@@ -207,13 +207,13 @@ export default function InvoiceDetailPage() {
 
   if (!invoice) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Facture" />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <FileText className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
-            <h3 className="text-sm font-semibold text-zinc-950 mb-1">Facture non trouvée</h3>
-            <p className="text-sm text-zinc-500 mb-4">La facture demandée n&apos;existe pas.</p>
+            <FileText className="h-12 w-12 text-muted-foreground/70 mx-auto mb-3" />
+            <h3 className="text-sm font-semibold text-foreground mb-1">Facture non trouvée</h3>
+            <p className="text-sm text-muted-foreground mb-4">La facture demandée n&apos;existe pas.</p>
             <Button size="sm" asChild>
               <Link href="/dashboard/invoices">Retour aux factures</Link>
             </Button>
@@ -223,7 +223,7 @@ export default function InvoiceDetailPage() {
     )
   }
 
-  const status = statusConfig[invoice.status] || { label: invoice.status, color: 'bg-zinc-100 text-zinc-600' }
+  const status = statusConfig[invoice.status] || { label: invoice.status, color: 'bg-muted text-muted-foreground' }
   const partyName = invoice.type === 'client' ? invoice.client_name : invoice.supplier_name
   const partyPhone = invoice.type === 'client' ? invoice.client_phone : invoice.supplier_phone
   const partyAddress = invoice.type === 'client' ? invoice.client_address : invoice.supplier_address
@@ -235,7 +235,7 @@ export default function InvoiceDetailPage() {
   const packagingItems = invoice.items?.filter(i => i.item_type === 'packaging') || []
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       {/* Header - hidden on print */}
       <div className="no-print">
         <DashboardHeader
@@ -250,13 +250,13 @@ export default function InvoiceDetailPage() {
               </Button>
               {canAct && (
                 isPaidOrPartial ? (
-                  <Button variant="outline" size="sm" className="h-8 text-xs text-red-600" onClick={() => setConfirmAction('cancel')}>
+                  <Button variant="outline" size="sm" className="h-8 text-xs text-destructive" onClick={() => setConfirmAction('cancel')}>
                     <Ban className="h-3.5 w-3.5 mr-1" />
                     <span className="hidden sm:inline">Annuler la facture</span>
                     <span className="sm:hidden">Annuler</span>
                   </Button>
                 ) : (
-                  <Button variant="outline" size="sm" className="h-8 text-xs text-red-600" onClick={() => setConfirmAction('delete')}>
+                  <Button variant="outline" size="sm" className="h-8 text-xs text-destructive" onClick={() => setConfirmAction('delete')}>
                     <Trash2 className="h-3.5 w-3.5 mr-1" />
                     Supprimer
                   </Button>
@@ -276,39 +276,39 @@ export default function InvoiceDetailPage() {
         {/* Invoice Document */}
         <div
           ref={printRef}
-          className="bg-white rounded-lg border border-zinc-200/80 max-w-3xl mx-auto print:border-none print:shadow-none print:max-w-none"
+          className="bg-card rounded-lg border border-border max-w-3xl mx-auto print:border-none print:shadow-none print:max-w-none"
         >
           {/* Invoice Header */}
-          <div className="p-6 sm:p-8 border-b border-zinc-100 print:p-8">
+          <div className="p-6 sm:p-8 border-b border-border print:p-8">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 rounded-lg bg-zinc-950 flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
                     <span className="text-white text-lg font-bold">B</span>
                   </div>
                   <div>
-                    <h1 className="text-lg font-bold text-zinc-950">
+                    <h1 className="text-lg font-bold text-foreground">
                       {invoice.company_name || 'B-Stock'}
                     </h1>
                     {invoice.company_address && (
-                      <p className="text-xs text-zinc-500">{invoice.company_address}</p>
+                      <p className="text-xs text-muted-foreground">{invoice.company_address}</p>
                     )}
                   </div>
                 </div>
                 {invoice.company_phone && (
-                  <p className="text-xs text-zinc-500">Tél: {invoice.company_phone}</p>
+                  <p className="text-xs text-muted-foreground">Tél: {invoice.company_phone}</p>
                 )}
                 {invoice.company_email && (
-                  <p className="text-xs text-zinc-500">Email: {invoice.company_email}</p>
+                  <p className="text-xs text-muted-foreground">Email: {invoice.company_email}</p>
                 )}
               </div>
 
               <div className="text-left sm:text-right">
-                <h2 className="text-2xl font-bold text-zinc-950 tracking-tight">FACTURE</h2>
-                <p className="text-sm font-mono font-medium text-blue-600 mt-1">
+                <h2 className="text-2xl font-bold text-foreground tracking-tight">FACTURE</h2>
+                <p className="text-sm font-mono font-medium text-brand-strong mt-1">
                   {invoice.invoice_number}
                 </p>
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Date: {formatDateShort(invoice.created_at)}
                 </p>
                 <Badge className={`mt-2 text-xs font-medium ${status.color} border-none no-print`}>
@@ -319,31 +319,31 @@ export default function InvoiceDetailPage() {
           </div>
 
           {/* Client/Supplier Info */}
-          <div className="p-6 sm:p-8 border-b border-zinc-100 print:p-8">
+          <div className="p-6 sm:p-8 border-b border-border print:p-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-2">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-2">
                   {invoice.type === 'client' ? 'Facturé à' : 'Fournisseur'}
                 </p>
-                <p className="text-sm font-semibold text-zinc-950">{partyName || '—'}</p>
-                {partyPhone && <p className="text-xs text-zinc-500 mt-0.5">Tél: {partyPhone}</p>}
-                {partyAddress && <p className="text-xs text-zinc-500 mt-0.5">{partyAddress}</p>}
-                {partyEmail && <p className="text-xs text-zinc-500 mt-0.5">{partyEmail}</p>}
+                <p className="text-sm font-semibold text-foreground">{partyName || '—'}</p>
+                {partyPhone && <p className="text-xs text-muted-foreground mt-0.5">Tél: {partyPhone}</p>}
+                {partyAddress && <p className="text-xs text-muted-foreground mt-0.5">{partyAddress}</p>}
+                {partyEmail && <p className="text-xs text-muted-foreground mt-0.5">{partyEmail}</p>}
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-2">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-2">
                   Détails
                 </p>
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
-                    <span className="text-zinc-500">Type</span>
-                    <span className="font-medium text-zinc-700">
+                    <span className="text-muted-foreground">Type</span>
+                    <span className="font-medium text-foreground/80">
                       {invoice.type === 'client' ? 'Facture client' : 'Facture fournisseur'}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-zinc-500">Statut</span>
-                    <span className="font-medium text-zinc-700">{status.label}</span>
+                    <span className="text-muted-foreground">Statut</span>
+                    <span className="font-medium text-foreground/80">{status.label}</span>
                   </div>
                 </div>
               </div>
@@ -354,29 +354,29 @@ export default function InvoiceDetailPage() {
           <div className="p-6 sm:p-8 print:p-8">
             {productItems.length > 0 && (
               <div className="mb-6">
-                <h3 className="text-xs font-semibold text-zinc-950 uppercase tracking-wider mb-3">Produits</h3>
-                <div className="border border-zinc-200 rounded-lg overflow-hidden">
+                <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Produits</h3>
+                <div className="border border-border rounded-lg overflow-hidden">
                   <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-zinc-50 border-b border-zinc-200">
-                        <th className="text-left text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Description</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Qté</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Total</th>
+                      <tr className="bg-muted/50 border-b border-border">
+                        <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Description</th>
+                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Qté</th>
+                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
+                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Total</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100">
+                    <tbody className="divide-y divide-border">
                       {productItems.map((item) => (
                         <tr key={item.id}>
-                          <td className="px-4 py-2.5 text-sm text-zinc-900">
+                          <td className="px-4 py-2.5 text-sm text-foreground">
                             {item.product_name || item.description || 'Produit'}
                           </td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{formatNumber(item.quantity)}</td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right hidden sm:table-cell">
+                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right">{formatNumber(item.quantity)}</td>
+                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right hidden sm:table-cell">
                             {formatCurrency(Number(item.unit_price))}
                           </td>
-                          <td className="px-4 py-2.5 text-sm font-medium text-zinc-900 text-right">
+                          <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
                             {formatCurrency(Number(item.total_price))}
                           </td>
                         </tr>
@@ -390,29 +390,29 @@ export default function InvoiceDetailPage() {
 
             {packagingItems.length > 0 && (
               <div className="mb-6">
-                <h3 className="text-xs font-semibold text-zinc-950 uppercase tracking-wider mb-3">Emballages</h3>
-                <div className="border border-zinc-200 rounded-lg overflow-hidden">
+                <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Emballages</h3>
+                <div className="border border-border rounded-lg overflow-hidden">
                   <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-zinc-50 border-b border-zinc-200">
-                        <th className="text-left text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Description</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Qté</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Total</th>
+                      <tr className="bg-muted/50 border-b border-border">
+                        <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Description</th>
+                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Qté</th>
+                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
+                        <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-4 py-2">Total</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100">
+                    <tbody className="divide-y divide-border">
                       {packagingItems.map((item) => (
                         <tr key={item.id}>
-                          <td className="px-4 py-2.5 text-sm text-zinc-900">
+                          <td className="px-4 py-2.5 text-sm text-foreground">
                             {item.product_name || item.description || 'Emballage'}
                           </td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{formatNumber(item.quantity)}</td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right hidden sm:table-cell">
+                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right">{formatNumber(item.quantity)}</td>
+                          <td className="px-4 py-2.5 text-sm text-muted-foreground text-right hidden sm:table-cell">
                             {formatCurrency(Number(item.unit_price))}
                           </td>
-                          <td className="px-4 py-2.5 text-sm font-medium text-zinc-900 text-right">
+                          <td className="px-4 py-2.5 text-sm font-medium text-foreground text-right">
                             {formatCurrency(Number(item.total_price))}
                           </td>
                         </tr>
@@ -426,23 +426,23 @@ export default function InvoiceDetailPage() {
 
             {/* Totals */}
             <div className="flex justify-end">
-              <div className="w-full sm:w-72 space-y-2 pt-4 border-t border-zinc-200">
+              <div className="w-full sm:w-72 space-y-2 pt-4 border-t border-border">
                 <div className="flex justify-between text-sm">
-                  <span className="text-zinc-500">Total HT</span>
-                  <span className="font-medium text-zinc-900">{formatCurrency(Number(invoice.total_amount))}</span>
+                  <span className="text-muted-foreground">Total HT</span>
+                  <span className="font-medium text-foreground">{formatCurrency(Number(invoice.total_amount))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-zinc-500">Total TTC</span>
-                  <span className="font-semibold text-zinc-950">{formatCurrency(Number(invoice.total_amount))}</span>
+                  <span className="text-muted-foreground">Total TTC</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(Number(invoice.total_amount))}</span>
                 </div>
-                <div className="flex justify-between text-sm pt-2 border-t border-zinc-100">
-                  <span className="text-zinc-500">Montant payé</span>
-                  <span className="font-medium text-emerald-600">{formatCurrency(Number(invoice.amount_paid))}</span>
+                <div className="flex justify-between text-sm pt-2 border-t border-border">
+                  <span className="text-muted-foreground">Montant payé</span>
+                  <span className="font-medium text-success">{formatCurrency(Number(invoice.amount_paid))}</span>
                 </div>
                 {Number(invoice.remaining_amount) > 0 && (
-                  <div className="flex justify-between text-sm font-bold pt-2 border-t border-zinc-200">
-                    <span className="text-red-600">Reste à payer</span>
-                    <span className="text-red-600">{formatCurrency(Number(invoice.remaining_amount))}</span>
+                  <div className="flex justify-between text-sm font-bold pt-2 border-t border-border">
+                    <span className="text-destructive">Reste à payer</span>
+                    <span className="text-destructive">{formatCurrency(Number(invoice.remaining_amount))}</span>
                   </div>
                 )}
               </div>
@@ -450,15 +450,15 @@ export default function InvoiceDetailPage() {
 
             {/* Notes */}
             {invoice.notes && (
-              <div className="mt-8 pt-4 border-t border-zinc-100">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1">Notes</p>
-                <p className="text-xs text-zinc-600">{invoice.notes}</p>
+              <div className="mt-8 pt-4 border-t border-border">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70 mb-1">Notes</p>
+                <p className="text-xs text-muted-foreground">{invoice.notes}</p>
               </div>
             )}
 
             {/* Footer */}
-            <div className="mt-8 pt-4 border-t border-zinc-100 text-center">
-              <p className="text-[10px] text-zinc-400">
+            <div className="mt-8 pt-4 border-t border-border text-center">
+              <p className="text-[10px] text-muted-foreground/70">
                 Merci pour votre confiance — {invoice.company_name || 'B-Stock'}
               </p>
             </div>

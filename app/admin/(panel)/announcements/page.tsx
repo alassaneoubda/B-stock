@@ -87,10 +87,10 @@ type Announcement = {
 type Company = { id: string; name: string }
 
 const levelMeta: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
-  info: { label: 'Info', cls: 'bg-blue-100 text-blue-700', icon: Info },
-  success: { label: 'Succès', cls: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  warning: { label: 'Avertissement', cls: 'bg-amber-100 text-amber-800', icon: AlertTriangle },
-  critical: { label: 'Critique', cls: 'bg-red-100 text-red-700', icon: AlertOctagon },
+  info: { label: 'Info', cls: 'bg-brand-soft text-brand-strong', icon: Info },
+  success: { label: 'Succès', cls: 'bg-success-soft text-success', icon: CheckCircle2 },
+  warning: { label: 'Avertissement', cls: 'bg-warning-soft text-warning-foreground', icon: AlertTriangle },
+  critical: { label: 'Critique', cls: 'bg-destructive/10 text-destructive', icon: AlertOctagon },
 }
 
 const audienceLabel = (a: Announcement) => {
@@ -240,8 +240,8 @@ export default function AdminAnnouncementsPage() {
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-950">Annonces</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-2xl font-bold text-foreground">Annonces</h1>
+          <p className="text-sm text-muted-foreground">
             Bannières in-app diffusées aux entreprises ({items.length})
           </p>
         </div>
@@ -269,7 +269,7 @@ export default function AdminAnnouncementsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs text-zinc-500 uppercase tracking-wide">
+                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
                   <th className="px-5 py-3 font-medium">Annonce</th>
                   <th className="px-5 py-3 font-medium">Niveau</th>
                   <th className="px-5 py-3 font-medium">Audience</th>
@@ -283,10 +283,10 @@ export default function AdminAnnouncementsPage() {
                   const meta = levelMeta[a.level] || levelMeta.info
                   const Icon = meta.icon
                   return (
-                    <tr key={a.id} className="border-b border-zinc-50 hover:bg-zinc-50 align-top">
+                    <tr key={a.id} className="border-b border-border hover:bg-muted/50 align-top">
                       <td className="px-5 py-3 max-w-md">
-                        <p className="font-medium text-zinc-900">{a.title}</p>
-                        <p className="text-zinc-500 text-xs line-clamp-2">{a.body}</p>
+                        <p className="font-medium text-foreground">{a.title}</p>
+                        <p className="text-muted-foreground text-xs line-clamp-2">{a.body}</p>
                       </td>
                       <td className="px-5 py-3">
                         <Badge className={`${meta.cls} hover:${meta.cls} gap-1`}>
@@ -294,7 +294,7 @@ export default function AdminAnnouncementsPage() {
                           {meta.label}
                         </Badge>
                       </td>
-                      <td className="px-5 py-3 text-zinc-600">{audienceLabel(a)}</td>
+                      <td className="px-5 py-3 text-muted-foreground">{audienceLabel(a)}</td>
                       <td className="px-5 py-3">
                         <button
                           onClick={() => toggleActive(a)}
@@ -305,20 +305,20 @@ export default function AdminAnnouncementsPage() {
                           <Badge
                             className={
                               a.is_active
-                                ? 'bg-green-100 text-green-700 hover:bg-green-100'
-                                : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-100'
+                                ? 'bg-success-soft text-success hover:bg-success-soft'
+                                : 'bg-muted text-muted-foreground hover:bg-muted'
                             }
                           >
                             {a.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </button>
                       </td>
-                      <td className="px-5 py-3 text-zinc-500">{formatNumber(a.dismissals)}</td>
+                      <td className="px-5 py-3 text-muted-foreground">{formatNumber(a.dismissals)}</td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => openEdit(a)}
-                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-500 transition-colors"
+                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground transition-colors"
                             title="Modifier"
                             aria-label={`Modifier l\u2019annonce « ${a.title} »`}
                           >
@@ -327,7 +327,7 @@ export default function AdminAnnouncementsPage() {
                           <button
                             onClick={() => setToDelete(a)}
                             disabled={!!busyId}
-                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-500 transition-colors disabled:opacity-60"
+                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-destructive/10 text-destructive transition-colors disabled:opacity-60"
                             title="Supprimer"
                             aria-label={`Supprimer l\u2019annonce « ${a.title} »`}
                           >
@@ -375,7 +375,7 @@ export default function AdminAnnouncementsPage() {
               <select
                 value={form.level}
                 onChange={(e) => setForm({ ...form, level: e.target.value as Announcement['level'] })}
-                className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                className="w-full h-10 rounded-lg border border-border bg-card px-3 text-sm"
               >
                 <option value="info">Info</option>
                 <option value="success">Succès</option>
@@ -392,7 +392,7 @@ export default function AdminAnnouncementsPage() {
                   onChange={(e) =>
                     setForm({ ...form, audience: e.target.value as Announcement['audience'] })
                   }
-                  className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                  className="w-full h-10 rounded-lg border border-border bg-card px-3 text-sm"
                 >
                   <option value="all">Toutes les entreprises</option>
                   <option value="company">Une entreprise spécifique</option>
@@ -413,7 +413,7 @@ export default function AdminAnnouncementsPage() {
                 <select
                   value={form.target_company_id}
                   onChange={(e) => setForm({ ...form, target_company_id: e.target.value })}
-                  className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                  className="w-full h-10 rounded-lg border border-border bg-card px-3 text-sm"
                 >
                   <option value="">— Sélectionner —</option>
                   {companies.map((c) => (
@@ -431,7 +431,7 @@ export default function AdminAnnouncementsPage() {
                 <select
                   value={form.target_status}
                   onChange={(e) => setForm({ ...form, target_status: e.target.value })}
-                  className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                  className="w-full h-10 rounded-lg border border-border bg-card px-3 text-sm"
                 >
                   <option value="trialing">Période d&apos;essai</option>
                   <option value="active">Actif</option>
@@ -460,10 +460,10 @@ export default function AdminAnnouncementsPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Fermable par l&apos;utilisateur</p>
-                <p className="text-xs text-zinc-500">L&apos;utilisateur peut masquer l&apos;annonce</p>
+                <p className="text-xs text-muted-foreground">L&apos;utilisateur peut masquer l&apos;annonce</p>
               </div>
               <Switch
                 checked={form.dismissible}
@@ -471,10 +471,10 @@ export default function AdminAnnouncementsPage() {
               />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">Active</p>
-                <p className="text-xs text-zinc-500">Diffusée immédiatement aux entreprises</p>
+                <p className="text-xs text-muted-foreground">Diffusée immédiatement aux entreprises</p>
               </div>
               <Switch
                 checked={form.is_active}
@@ -483,7 +483,7 @@ export default function AdminAnnouncementsPage() {
             </div>
 
             {error && (
-              <p role="alert" className="text-sm text-red-600">
+              <p role="alert" className="text-sm text-destructive">
                 {error}
               </p>
             )}
@@ -515,7 +515,7 @@ export default function AdminAnnouncementsPage() {
             <AlertDialogCancel disabled={!!busyId}>Annuler</AlertDialogCancel>
             <AlertDialogAction
               disabled={!!busyId}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive hover:bg-destructive"
               onClick={(e) => {
                 e.preventDefault()
                 if (toDelete) remove(toDelete)

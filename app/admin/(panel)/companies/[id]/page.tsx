@@ -254,7 +254,7 @@ export default function AdminCompanyDetailPage() {
       <div className="p-4 sm:p-8 max-w-5xl mx-auto">
         <Link
           href="/admin/companies"
-          className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 mb-4"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
         >
           <ArrowLeft className="h-4 w-4" /> Entreprises
         </Link>
@@ -272,23 +272,23 @@ export default function AdminCompanyDetailPage() {
 
   return (
     <div className="p-4 sm:p-8 max-w-5xl mx-auto">
-      <Link href="/admin/companies" className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 mb-4">
+      <Link href="/admin/companies" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4">
         <ArrowLeft className="h-4 w-4" /> Entreprises
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-zinc-950">{company.name}</h1>
+            <h1 className="text-2xl font-bold text-foreground">{company.name}</h1>
             {company.is_suspended ? (
-              <Badge className="bg-red-100 text-red-700">Suspendue</Badge>
+              <Badge className="bg-destructive/10 text-destructive">Suspendue</Badge>
             ) : (
-              <Badge className="bg-green-100 text-green-700">{statusLabel(company.subscription_status)}</Badge>
+              <Badge className="bg-success-soft text-success">{statusLabel(company.subscription_status)}</Badge>
             )}
           </div>
-          <p className="text-sm text-zinc-500">{company.email || 'Sans email'}</p>
+          <p className="text-sm text-muted-foreground">{company.email || 'Sans email'}</p>
           {company.is_suspended && company.suspension_reason && (
-            <p className="text-xs text-red-600 mt-1">Motif : {company.suspension_reason}</p>
+            <p className="text-xs text-destructive mt-1">Motif : {company.suspension_reason}</p>
           )}
         </div>
 
@@ -298,7 +298,7 @@ export default function AdminCompanyDetailPage() {
             Se connecter en tant que
           </Button>
           {company.is_suspended ? (
-            <Button onClick={() => suspend(false)} className="bg-green-600 hover:bg-green-700" disabled={isBusy}>
+            <Button onClick={() => suspend(false)} className="bg-success hover:bg-success" disabled={isBusy}>
               {busy === 'reactivate' ? (
                 <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
               ) : (
@@ -310,7 +310,7 @@ export default function AdminCompanyDetailPage() {
             <Button
               onClick={() => setPending('suspend')}
               variant="outline"
-              className="text-red-600 border-red-200 hover:bg-red-50"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10"
               disabled={isBusy}
             >
               <Ban className="h-4 w-4 mr-1.5" /> Suspendre
@@ -329,8 +329,8 @@ export default function AdminCompanyDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <Card className="p-6">
-          <h2 className="text-sm font-semibold text-zinc-950 mb-1">Abonnement</h2>
-          <p className="text-xs text-zinc-500 mb-4">
+          <h2 className="text-sm font-semibold text-foreground mb-1">Abonnement</h2>
+          <p className="text-xs text-muted-foreground mb-4">
             Pour un paiement hors plateforme (espèces, virement, Mobile Money…) : choisissez l’offre et une durée personnalisée.
           </p>
 
@@ -351,14 +351,14 @@ export default function AdminCompanyDetailPage() {
             {plan && <Row label="Prix catalogue" value={formatMoney(plan.price_monthly)} />}
           </dl>
 
-          <form onSubmit={saveSubscription} className="space-y-4 border-t border-zinc-100 pt-4">
+          <form onSubmit={saveSubscription} className="space-y-4 border-t border-border pt-4">
             <div className="space-y-1.5">
               <Label htmlFor="plan">Offre</Label>
               <select
                 id="plan"
                 value={formPlan}
                 onChange={(e) => setFormPlan(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
+                className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm"
               >
                 {plans.map((p: any) => (
                   <option key={p.name} value={p.name}>
@@ -374,7 +374,7 @@ export default function AdminCompanyDetailPage() {
                 id="status"
                 value={formStatus}
                 onChange={(e) => setFormStatus(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
+                className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm"
               >
                 <option value="active">Actif (payé)</option>
                 <option value="trialing">Essai</option>
@@ -400,8 +400,8 @@ export default function AdminCompanyDetailPage() {
                     aria-pressed={durationMode === value}
                     className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                       durationMode === value
-                        ? 'bg-zinc-950 text-white border-zinc-950'
-                        : 'bg-white text-zinc-600 border-zinc-200'
+                        ? 'bg-primary text-white border-border'
+                        : 'bg-card text-muted-foreground border-border'
                     }`}
                   >
                     {label}
@@ -420,7 +420,7 @@ export default function AdminCompanyDetailPage() {
                       className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                         formMonths === String(m)
                           ? 'bg-orange-50 text-orange-700 border-orange-200'
-                          : 'bg-white text-zinc-600 border-zinc-200'
+                          : 'bg-card text-muted-foreground border-border'
                       }`}
                     >
                       {m} mois
@@ -450,7 +450,7 @@ export default function AdminCompanyDetailPage() {
               )}
 
               {durationMode === 'unlimited' && (
-                <p className="text-xs text-zinc-500">Accès sans date d’expiration (jusqu’à annulation manuelle).</p>
+                <p className="text-xs text-muted-foreground">Accès sans date d’expiration (jusqu’à annulation manuelle).</p>
               )}
             </div>
 
@@ -461,7 +461,7 @@ export default function AdminCompanyDetailPage() {
                   id="pay"
                   value={formPaymentMethod}
                   onChange={(e) => setFormPaymentMethod(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
+                  className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm"
                 >
                   <option value="especes">Espèces</option>
                   <option value="virement">Virement</option>
@@ -505,7 +505,7 @@ export default function AdminCompanyDetailPage() {
             </Button>
           </form>
 
-          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-zinc-100">
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border">
             <div className="flex items-center gap-2">
               <Input
                 type="number"
@@ -526,9 +526,9 @@ export default function AdminCompanyDetailPage() {
           </div>
         </Card>
 
-        <Card className="p-6 border-red-100">
-          <h2 className="text-sm font-semibold text-red-600 mb-2">Zone sensible</h2>
-          <p className="text-sm text-zinc-500 mb-4">
+        <Card className="p-6 border-destructive/30">
+          <h2 className="text-sm font-semibold text-destructive mb-2">Zone sensible</h2>
+          <p className="text-sm text-muted-foreground mb-4">
             La suppression est définitive. Préférez la suspension si vous comptez réactiver plus tard.
           </p>
           <Button
@@ -537,7 +537,7 @@ export default function AdminCompanyDetailPage() {
               setPending('delete')
             }}
             variant="outline"
-            className="text-red-600 border-red-200 hover:bg-red-50"
+            className="text-destructive border-destructive/30 hover:bg-destructive/10"
             disabled={isBusy}
           >
             {busy === 'delete' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
@@ -547,16 +547,16 @@ export default function AdminCompanyDetailPage() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="px-5 py-3 border-b border-zinc-100">
-          <h2 className="text-sm font-semibold text-zinc-950">Utilisateurs ({formatNumber(users.length)})</h2>
+        <div className="px-5 py-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-foreground">Utilisateurs ({formatNumber(users.length)})</h2>
         </div>
         {users.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-zinc-400">Aucun utilisateur dans cette entreprise</p>
+          <p className="px-5 py-8 text-center text-sm text-muted-foreground/70">Aucun utilisateur dans cette entreprise</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs text-zinc-500 uppercase tracking-wide">
+                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wide">
                   <th className="px-5 py-2.5 font-medium">Nom</th>
                   <th className="px-5 py-2.5 font-medium">Rôle</th>
                   <th className="px-5 py-2.5 font-medium">Statut</th>
@@ -565,20 +565,20 @@ export default function AdminCompanyDetailPage() {
               </thead>
               <tbody>
                 {users.map((u: any) => (
-                  <tr key={u.id} className="border-b border-zinc-50">
+                  <tr key={u.id} className="border-b border-border">
                     <td className="px-5 py-2.5">
-                      <p className="font-medium text-zinc-900">{u.full_name}</p>
-                      <p className="text-xs text-zinc-400">{u.email}</p>
+                      <p className="font-medium text-foreground">{u.full_name}</p>
+                      <p className="text-xs text-muted-foreground/70">{u.email}</p>
                     </td>
-                    <td className="px-5 py-2.5 text-zinc-700">{roleLabel(u.role)}</td>
+                    <td className="px-5 py-2.5 text-foreground/80">{roleLabel(u.role)}</td>
                     <td className="px-5 py-2.5">
                       {u.is_active ? (
-                        <span className="text-green-600 text-xs font-medium">Actif</span>
+                        <span className="text-success text-xs font-medium">Actif</span>
                       ) : (
-                        <span className="text-zinc-400 text-xs font-medium">Inactif</span>
+                        <span className="text-muted-foreground/70 text-xs font-medium">Inactif</span>
                       )}
                     </td>
-                    <td className="px-5 py-2.5 text-zinc-500">{formatDateTime(u.last_login_at)}</td>
+                    <td className="px-5 py-2.5 text-muted-foreground">{formatDateTime(u.last_login_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -663,7 +663,7 @@ export default function AdminCompanyDetailPage() {
               disabled={isBusy || (pending === 'delete' && deleteConfirm.trim() !== String(company.name).trim())}
               className={
                 pending === 'delete' || pending === 'suspend' || pending === 'cancel'
-                  ? 'bg-red-600 hover:bg-red-700'
+                  ? 'bg-destructive hover:bg-destructive'
                   : undefined
               }
               onClick={(e) => {
@@ -692,8 +692,8 @@ export default function AdminCompanyDetailPage() {
 function Usage({ label, value }: { label: string; value?: number }) {
   return (
     <Card className="p-4">
-      <p className="text-2xl font-bold text-zinc-950">{formatNumber(value ?? 0)}</p>
-      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="text-2xl font-bold text-foreground">{formatNumber(value ?? 0)}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
     </Card>
   )
 }
@@ -701,8 +701,8 @@ function Usage({ label, value }: { label: string; value?: number }) {
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between">
-      <dt className="text-zinc-500">{label}</dt>
-      <dd className="font-medium text-zinc-900">{value}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-medium text-foreground">{value}</dd>
     </div>
   )
 }

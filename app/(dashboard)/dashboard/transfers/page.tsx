@@ -24,11 +24,11 @@ interface Transfer {
 }
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'En attente', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  in_transit: { label: 'En transit', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  received: { label: 'Réceptionné', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  pending: { label: 'En attente', cls: 'bg-warning-soft text-warning-foreground border-warning/30' },
+  in_transit: { label: 'En transit', cls: 'bg-brand-soft text-brand-strong border-brand/40' },
+  received: { label: 'Réceptionné', cls: 'bg-success-soft text-success border-success/30' },
   partial: { label: 'Partiel', cls: 'bg-orange-50 text-orange-700 border-orange-200' },
-  cancelled: { label: 'Annulé', cls: 'bg-zinc-100 text-zinc-500 border-zinc-200' },
+  cancelled: { label: 'Annulé', cls: 'bg-muted text-muted-foreground border-border' },
 }
 
 export default function TransfersPage() {
@@ -78,12 +78,12 @@ export default function TransfersPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Transferts inter-dépôts" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
         <div className="flex items-center justify-between">
-          <div className="text-sm text-zinc-500">{formatNumber(transfers.length)} transfert(s)</div>
+          <div className="text-sm text-muted-foreground">{formatNumber(transfers.length)} transfert(s)</div>
           <Link href="/dashboard/transfers/new">
             <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Nouveau transfert</Button>
           </Link>
@@ -123,12 +123,12 @@ export default function TransfersPage() {
                       <TableRow key={t.id}>
                         <TableCell className="font-medium text-sm">{t.transfer_number}</TableCell>
                         <TableCell className="text-sm">{t.source_depot_name}</TableCell>
-                        <TableCell><ArrowLeftRight className="h-4 w-4 text-zinc-400" aria-hidden="true" /></TableCell>
+                        <TableCell><ArrowLeftRight className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" /></TableCell>
                         <TableCell className="text-sm">{t.destination_depot_name}</TableCell>
                         <TableCell className="text-center text-sm">{formatNumber(t.items_count)}</TableCell>
                         <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-sm text-zinc-500">{t.created_by_name || '-'}</TableCell>
-                        <TableCell className="text-sm text-zinc-500">{formatDateShort(t.created_at)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{t.created_by_name || '-'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{formatDateShort(t.created_at)}</TableCell>
                         <TableCell>
                           {(t.status === 'pending' || t.status === 'in_transit') && (
                             <Button

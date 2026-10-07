@@ -47,25 +47,25 @@ export function SubscriptionBlocker({ status, planName, isOwner }: SubscriptionB
       aria-modal="true"
       aria-labelledby="subscription-blocker-title"
       aria-describedby="subscription-blocker-description"
-      className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] bg-card/95 backdrop-blur-sm flex items-center justify-center p-4"
     >
       <div className="max-w-md w-full text-center">
-        <div className="mx-auto h-16 w-16 rounded-2xl bg-red-100 flex items-center justify-center mb-6">
-          <ShieldAlert className="h-8 w-8 text-red-600" aria-hidden="true" />
+        <div className="mx-auto h-16 w-16 rounded-xl bg-destructive/10 flex items-center justify-center mb-6">
+          <ShieldAlert className="h-8 w-8 text-destructive" aria-hidden="true" />
         </div>
 
-        <h1 id="subscription-blocker-title" className="text-xl sm:text-2xl font-bold text-zinc-950 tracking-tight mb-3">
+        <h1 id="subscription-blocker-title" className="text-xl sm:text-2xl font-bold text-foreground tracking-tight mb-3">
           {title}
         </h1>
 
-        <p id="subscription-blocker-description" className="text-sm text-zinc-500 mb-8 max-w-sm mx-auto leading-relaxed">
+        <p id="subscription-blocker-description" className="text-sm text-muted-foreground mb-8 max-w-sm mx-auto leading-relaxed">
           {description}
         </p>
 
         {isOwner ? (
           <Button
             size="lg"
-            className="h-12 px-8 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-600/20"
+            className="h-12 px-8 text-sm font-semibold bg-primary hover:bg-primary text-white rounded-xl shadow-lg shadow-blue-600/20"
             asChild
           >
             <Link href="/dashboard/plans" ref={ctaRef}>
@@ -84,7 +84,7 @@ export function SubscriptionBlocker({ status, planName, isOwner }: SubscriptionB
           </Button>
         )}
 
-        <p className="text-[10px] text-zinc-500 mt-6">
+        <p className="text-[10px] text-muted-foreground mt-6">
           Vos données sont en sécurité et seront accessibles dès la réactivation.
         </p>
       </div>

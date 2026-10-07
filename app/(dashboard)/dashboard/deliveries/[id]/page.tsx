@@ -83,18 +83,18 @@ const TRANSITIONS: Record<TourStatus, TourStatus[]> = {
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    planned: { label: 'Planifiée', color: 'bg-slate-100 text-slate-600', icon: Clock },
-    loading: { label: 'Chargement', color: 'bg-amber-100 text-amber-600', icon: PlayCircle },
-    in_progress: { label: 'En route', color: 'bg-blue-100 text-blue-600', icon: Navigation },
-    completed: { label: 'Terminée', color: 'bg-emerald-100 text-emerald-600', icon: CheckCircle2 },
-    cancelled: { label: 'Annulée', color: 'bg-rose-100 text-rose-600', icon: XCircle },
+    planned: { label: 'Planifiée', color: 'bg-muted text-muted-foreground', icon: Clock },
+    loading: { label: 'Chargement', color: 'bg-warning-soft text-warning-foreground', icon: PlayCircle },
+    in_progress: { label: 'En route', color: 'bg-brand-soft text-brand-strong', icon: Navigation },
+    completed: { label: 'Terminée', color: 'bg-success-soft text-success', icon: CheckCircle2 },
+    cancelled: { label: 'Annulée', color: 'bg-destructive/10 text-destructive', icon: XCircle },
 }
 
 const stopStatusConfig: Record<string, { label: string; color: string }> = {
-    pending: { label: 'En attente', color: 'bg-slate-100 text-slate-500' },
-    delivered: { label: 'Livré', color: 'bg-emerald-100 text-emerald-600' },
-    partial: { label: 'Partiel', color: 'bg-amber-100 text-amber-600' },
-    failed: { label: 'Échoué', color: 'bg-rose-100 text-rose-600' },
+    pending: { label: 'En attente', color: 'bg-muted text-muted-foreground' },
+    delivered: { label: 'Livré', color: 'bg-success-soft text-success' },
+    partial: { label: 'Partiel', color: 'bg-warning-soft text-warning-foreground' },
+    failed: { label: 'Échoué', color: 'bg-destructive/10 text-destructive' },
 }
 
 const STOP_SUCCESS: Record<string, string> = {
@@ -230,7 +230,7 @@ export default function DeliveryDetailPage() {
         updating === status ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : icon
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title={`Tournée du ${new Date(tour.tour_date).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}`}
                 description="Gestion complète de la tournée de livraison"
@@ -239,7 +239,7 @@ export default function DeliveryDetailPage() {
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
                 {/* Actions bar : uniquement les transitions acceptées par l'API */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-slate-200">
+                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-border">
                         <Link href="/dashboard/deliveries">
                             <ArrowLeft className="h-4 w-4 mr-2" /> Retour
                         </Link>
@@ -249,7 +249,7 @@ export default function DeliveryDetailPage() {
                             <Button
                                 onClick={() => updateTourStatus('loading', 'Chargement démarré')}
                                 disabled={busy}
-                                className="rounded-xl bg-amber-600 hover:bg-amber-700 font-bold h-10 px-6"
+                                className="rounded-xl bg-warning hover:bg-warning font-bold h-10 px-6"
                             >
                                 {spinnerOr('loading', <PlayCircle className="h-4 w-4 mr-2" />)} Démarrer chargement
                             </Button>
@@ -258,7 +258,7 @@ export default function DeliveryDetailPage() {
                             <Button
                                 onClick={() => updateTourStatus('in_progress', 'Tournée partie en livraison')}
                                 disabled={busy}
-                                className="rounded-xl bg-blue-600 hover:bg-blue-700 font-bold h-10 px-6"
+                                className="rounded-xl bg-primary hover:bg-primary font-bold h-10 px-6"
                             >
                                 {spinnerOr('in_progress', <Navigation className="h-4 w-4 mr-2" />)} Départ livraison
                             </Button>
@@ -267,7 +267,7 @@ export default function DeliveryDetailPage() {
                             <Button
                                 onClick={() => setConfirmTarget('completed')}
                                 disabled={busy}
-                                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 font-bold h-10 px-6"
+                                className="rounded-xl bg-success hover:bg-success font-bold h-10 px-6"
                             >
                                 {spinnerOr('completed', <CheckCircle2 className="h-4 w-4 mr-2" />)} Terminer la tournée
                             </Button>
@@ -294,7 +294,7 @@ export default function DeliveryDetailPage() {
                                 variant="outline"
                                 onClick={() => setConfirmTarget('cancelled')}
                                 disabled={busy}
-                                className="rounded-xl font-bold h-10 px-6 text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                                className="rounded-xl font-bold h-10 px-6 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
                             >
                                 {spinnerOr('cancelled', <XCircle className="h-4 w-4 mr-2" />)} Annuler la tournée
                             </Button>
@@ -303,8 +303,8 @@ export default function DeliveryDetailPage() {
                 </div>
 
                 {isClosed && (
-                    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
-                        <Lock className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+                        <Lock className="h-4 w-4 text-muted-foreground/70 shrink-0" aria-hidden="true" />
                         Cette tournée est {currentStatus === 'cancelled' ? 'annulée' : 'terminée'} : les arrêts et l&apos;inventaire ne sont plus modifiables.
                     </div>
                 )}
@@ -328,7 +328,7 @@ export default function DeliveryDetailPage() {
                             <AlertDialogCancel disabled={busy}>Retour</AlertDialogCancel>
                             <AlertDialogAction
                                 disabled={busy}
-                                className={confirmTarget === 'cancelled' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'}
+                                className={confirmTarget === 'cancelled' ? 'bg-destructive hover:bg-destructive' : 'bg-success hover:bg-success'}
                                 onClick={(e) => {
                                     // On garde la boîte ouverte jusqu'à la réponse du serveur
                                     e.preventDefault()
@@ -345,49 +345,49 @@ export default function DeliveryDetailPage() {
 
                 {/* Stats row */}
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    <Card className="rounded-[2rem] border-slate-200/60">
+                    <Card className="rounded-xl border-border">
                         <CardContent className="p-6 flex items-center gap-4">
                             <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${statusInfo.color}`}>
                                 <StatusIcon className="h-6 w-6" />
                             </div>
                             <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Statut</p>
-                                <p className="text-lg font-semibold text-slate-950">{statusInfo.label}</p>
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Statut</p>
+                                <p className="text-lg font-semibold text-foreground">{statusInfo.label}</p>
                             </div>
                         </CardContent>
                     </Card>
-                    <Card className="rounded-[2rem] border-slate-200/60">
+                    <Card className="rounded-xl border-border">
                         <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                            <div className="h-12 w-12 rounded-xl bg-brand-soft flex items-center justify-center text-brand-strong">
                                 <MapPin className="h-6 w-6" />
                             </div>
                             <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Arrêts</p>
-                                <p className="text-lg font-semibold text-slate-950">{formatNumber(deliveredStops)}/{formatNumber(totalStops)}</p>
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Arrêts</p>
+                                <p className="text-lg font-semibold text-foreground">{formatNumber(deliveredStops)}/{formatNumber(totalStops)}</p>
                             </div>
                         </CardContent>
                     </Card>
-                    <Card className="rounded-[2rem] border-slate-200/60">
+                    <Card className="rounded-xl border-border">
                         <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                            <div className="h-12 w-12 rounded-xl bg-success-soft flex items-center justify-center text-success">
                                 <Package className="h-6 w-6" />
                             </div>
                             <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Produits chargés</p>
-                                <p className="text-lg font-semibold text-slate-950">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Produits chargés</p>
+                                <p className="text-lg font-semibold text-foreground">
                                     {formatNumber(productInventory.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))}
                                 </p>
                             </div>
                         </CardContent>
                     </Card>
-                    <Card className="rounded-[2rem] border-slate-200/60">
+                    <Card className="rounded-xl border-border">
                         <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                            <div className="h-12 w-12 rounded-xl bg-warning-soft flex items-center justify-center text-warning-foreground">
                                 <PackageOpen className="h-6 w-6" />
                             </div>
                             <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Emb. chargés</p>
-                                <p className="text-lg font-semibold text-slate-950">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Emb. chargés</p>
+                                <p className="text-lg font-semibold text-foreground">
                                     {formatNumber(packagingInventory.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))}
                                 </p>
                             </div>
@@ -398,24 +398,24 @@ export default function DeliveryDetailPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Main: Stops */}
                     <div className="lg:col-span-2 space-y-6">
-                        <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                            <CardHeader className="px-8 py-6 border-b border-slate-100">
+                        <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                            <CardHeader className="px-8 py-6 border-b border-border">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <CardTitle className="text-xl font-semibold text-slate-950">Arrêts de livraison</CardTitle>
+                                        <CardTitle className="text-xl font-semibold text-foreground">Arrêts de livraison</CardTitle>
                                         <CardDescription>
                                             {totalStops} arrêt{totalStops > 1 ? 's' : ''} — {progress}% complété
                                         </CardDescription>
                                     </div>
                                     {totalStops > 0 && (
                                         <div className="flex items-center gap-2 w-32">
-                                            <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                                            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
                                                 <div
-                                                    className={`h-full rounded-full ${progress === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                                                    className={`h-full rounded-full ${progress === 100 ? 'bg-success' : 'bg-primary'}`}
                                                     style={{ width: `${progress}%` }}
                                                 />
                                             </div>
-                                            <span className="text-xs font-semibold text-slate-400">{progress}%</span>
+                                            <span className="text-xs font-semibold text-muted-foreground/70">{progress}%</span>
                                         </div>
                                     )}
                                 </div>
@@ -429,32 +429,32 @@ export default function DeliveryDetailPage() {
                                         className="m-6"
                                     />
                                 ) : (
-                                    <div className="divide-y divide-slate-50">
+                                    <div className="divide-y divide-border">
                                         {tour.stops.map((stop, idx) => {
                                             const sInfo = stopStatusConfig[stop.status] || stopStatusConfig.pending
                                             return (
-                                                <div key={stop.id} className="flex items-center gap-4 px-8 py-5 hover:bg-slate-50/50 transition-colors">
+                                                <div key={stop.id} className="flex items-center gap-4 px-8 py-5 hover:bg-muted/30 transition-colors">
                                                     <div className="flex flex-col items-center gap-1 shrink-0 w-8">
-                                                        <span className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-semibold">
+                                                        <span className="h-8 w-8 rounded-full bg-brand-soft flex items-center justify-center text-brand-strong text-xs font-semibold">
                                                             {idx + 1}
                                                         </span>
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                        <p className="font-semibold text-slate-950 truncate">{stop.client_name}</p>
-                                                        <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+                                                        <p className="font-semibold text-foreground truncate">{stop.client_name}</p>
+                                                        <div className="flex items-center gap-3 text-xs text-muted-foreground/70 mt-1">
                                                             {stop.client_zone && <span className="font-bold">{stop.client_zone}</span>}
                                                             {stop.client_phone && <span>{stop.client_phone}</span>}
                                                             {stop.order_number && (
-                                                                <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">
+                                                                <span className="font-mono bg-muted px-1.5 py-0.5 rounded">
                                                                     {stop.order_number}
                                                                 </span>
                                                             )}
                                                         </div>
                                                         {stop.total_amount != null && (
-                                                            <p className="text-xs font-bold text-slate-500 mt-1">
+                                                            <p className="text-xs font-bold text-muted-foreground mt-1">
                                                                 {formatMoney(Number(stop.total_amount))}
                                                                 {Number(stop.paid_amount) < Number(stop.total_amount) && (
-                                                                    <span className="text-rose-500 ml-2">
+                                                                    <span className="text-destructive ml-2">
                                                                         (reste {formatMoney(Number(stop.total_amount) - Number(stop.paid_amount || 0))})
                                                                     </span>
                                                                 )}
@@ -463,7 +463,7 @@ export default function DeliveryDetailPage() {
                                                     </div>
                                                     <div className="flex items-center gap-3 shrink-0">
                                                         {updatingStop === stop.id && (
-                                                            <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-label="Mise à jour en cours" />
+                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/70" aria-label="Mise à jour en cours" />
                                                         )}
                                                         {!isClosed && (currentStatus === 'in_progress' || currentStatus === 'loading') && stop.status === 'pending' && (
                                                             <Select
@@ -495,40 +495,40 @@ export default function DeliveryDetailPage() {
 
                         {/* Vehicle Inventory */}
                         {tour.inventory.length > 0 && (
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-6 border-b border-slate-100">
-                                    <CardTitle className="text-xl font-semibold text-slate-950">Inventaire Véhicule</CardTitle>
+                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                                <CardHeader className="px-8 py-6 border-b border-border">
+                                    <CardTitle className="text-xl font-semibold text-foreground">Inventaire Véhicule</CardTitle>
                                     <CardDescription>Chargé / Déchargé / Retours / Endommagé</CardDescription>
                                 </CardHeader>
                                 <CardContent className="p-0">
                                     <Table>
-                                        <TableHeader className="bg-slate-50/50">
+                                        <TableHeader className="bg-muted/30">
                                             <TableRow className="border-none">
-                                                <TableHead className="py-4 pl-8 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Article</TableHead>
-                                                <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Type</TableHead>
-                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-blue-500">Chargé</TableHead>
-                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-emerald-500">Déchargé</TableHead>
-                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-amber-500">Retours</TableHead>
-                                                <TableHead className="py-4 text-center pr-8 font-semibold uppercase text-[10px] tracking-wider text-rose-500">Endommagé</TableHead>
+                                                <TableHead className="py-4 pl-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Article</TableHead>
+                                                <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Type</TableHead>
+                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-brand-strong">Chargé</TableHead>
+                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-success">Déchargé</TableHead>
+                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-warning-foreground">Retours</TableHead>
+                                                <TableHead className="py-4 text-center pr-8 font-semibold uppercase text-[10px] tracking-wider text-destructive">Endommagé</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {tour.inventory.map(item => (
-                                                <TableRow key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                                    <TableCell className="py-4 pl-8 font-semibold text-slate-950">
+                                                <TableRow key={item.id} className="border-b border-border hover:bg-muted/30">
+                                                    <TableCell className="py-4 pl-8 font-semibold text-foreground">
                                                         {item.product_name || item.packaging_name || '—'}
                                                     </TableCell>
                                                     <TableCell className="py-4">
                                                         <Badge className={`rounded-lg px-2.5 py-0.5 text-[9px] font-semibold uppercase border-none ${
-                                                            item.inventory_type === 'product' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+                                                            item.inventory_type === 'product' ? 'bg-brand-soft text-brand-strong' : 'bg-warning-soft text-warning-foreground'
                                                         }`}>
                                                             {item.inventory_type === 'product' ? 'Produit' : 'Emballage'}
                                                         </Badge>
                                                     </TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-blue-600">{formatNumber(item.loaded_quantity)}</TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-emerald-600">{formatNumber(item.unloaded_quantity)}</TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-amber-600">{formatNumber(item.returned_quantity)}</TableCell>
-                                                    <TableCell className="py-4 text-center pr-8 font-semibold text-rose-600">{formatNumber(item.damaged_quantity)}</TableCell>
+                                                    <TableCell className="py-4 text-center font-semibold text-brand-strong">{formatNumber(item.loaded_quantity)}</TableCell>
+                                                    <TableCell className="py-4 text-center font-semibold text-success">{formatNumber(item.unloaded_quantity)}</TableCell>
+                                                    <TableCell className="py-4 text-center font-semibold text-warning-foreground">{formatNumber(item.returned_quantity)}</TableCell>
+                                                    <TableCell className="py-4 text-center pr-8 font-semibold text-destructive">{formatNumber(item.damaged_quantity)}</TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>
@@ -540,86 +540,86 @@ export default function DeliveryDetailPage() {
 
                     {/* Sidebar */}
                     <div className="space-y-6">
-                        <Card className="rounded-lg border-slate-200/60 shadow-sm">
-                            <CardHeader className="px-8 py-6 border-b border-slate-100">
-                                <CardTitle className="text-lg font-semibold text-slate-950">Informations</CardTitle>
+                        <Card className="rounded-lg border-border shadow-sm">
+                            <CardHeader className="px-8 py-6 border-b border-border">
+                                <CardTitle className="text-lg font-semibold text-foreground">Informations</CardTitle>
                             </CardHeader>
                             <CardContent className="p-8 space-y-5">
                                 <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2 text-slate-400">
+                                    <div className="flex items-center gap-2 text-muted-foreground/70">
                                         <Calendar className="h-4 w-4" />
                                         <span className="text-[10px] font-semibold uppercase tracking-wider">Date</span>
                                     </div>
-                                    <span className="text-sm font-semibold text-slate-950">
+                                    <span className="text-sm font-semibold text-foreground">
                                         {formatDate(tour.tour_date)}
                                     </span>
                                 </div>
                                 <Separator />
                                 <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2 text-slate-400">
+                                    <div className="flex items-center gap-2 text-muted-foreground/70">
                                         <User className="h-4 w-4" />
                                         <span className="text-[10px] font-semibold uppercase tracking-wider">Chauffeur</span>
                                     </div>
-                                    <span className="text-sm font-semibold text-slate-950">{tour.driver_name || 'Non assigné'}</span>
+                                    <span className="text-sm font-semibold text-foreground">{tour.driver_name || 'Non assigné'}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2 text-slate-400">
+                                    <div className="flex items-center gap-2 text-muted-foreground/70">
                                         <Truck className="h-4 w-4" />
                                         <span className="text-[10px] font-semibold uppercase tracking-wider">Véhicule</span>
                                     </div>
-                                    <span className="text-sm font-semibold text-slate-950">
+                                    <span className="text-sm font-semibold text-foreground">
                                         {tour.vehicle_name || 'Non assigné'}
-                                        {tour.vehicle_plate && <code className="ml-1 text-xs bg-slate-100 px-1.5 py-0.5 rounded">{tour.vehicle_plate}</code>}
+                                        {tour.vehicle_plate && <code className="ml-1 text-xs bg-muted px-1.5 py-0.5 rounded">{tour.vehicle_plate}</code>}
                                     </span>
                                 </div>
                                 {tour.depot_name && (
                                     <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-slate-400">
+                                        <div className="flex items-center gap-2 text-muted-foreground/70">
                                             <Package className="h-4 w-4" />
                                             <span className="text-[10px] font-semibold uppercase tracking-wider">Dépôt</span>
                                         </div>
-                                        <span className="text-sm font-semibold text-slate-950">{tour.depot_name}</span>
+                                        <span className="text-sm font-semibold text-foreground">{tour.depot_name}</span>
                                     </div>
                                 )}
                                 <Separator />
                                 {tour.started_at && (
                                     <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-slate-400">
+                                        <div className="flex items-center gap-2 text-muted-foreground/70">
                                             <Clock className="h-4 w-4" />
                                             <span className="text-[10px] font-semibold uppercase tracking-wider">Départ</span>
                                         </div>
-                                        <span className="text-xs font-bold text-slate-600">
+                                        <span className="text-xs font-bold text-muted-foreground">
                                             {formatDateTime(tour.started_at)}
                                         </span>
                                     </div>
                                 )}
                                 {tour.completed_at && (
                                     <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-slate-400">
+                                        <div className="flex items-center gap-2 text-muted-foreground/70">
                                             <CheckCircle2 className="h-4 w-4" />
                                             <span className="text-[10px] font-semibold uppercase tracking-wider">Fin</span>
                                         </div>
-                                        <span className="text-xs font-bold text-slate-600">
+                                        <span className="text-xs font-bold text-muted-foreground">
                                             {formatDateTime(tour.completed_at)}
                                         </span>
                                     </div>
                                 )}
                                 {tour.created_by_name && (
                                     <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Créé par</span>
-                                        <span className="text-xs font-bold text-slate-600">{tour.created_by_name}</span>
+                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Créé par</span>
+                                        <span className="text-xs font-bold text-muted-foreground">{tour.created_by_name}</span>
                                     </div>
                                 )}
                             </CardContent>
                         </Card>
 
                         {tour.notes && (
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm">
-                                <CardHeader className="px-8 py-5 border-b border-slate-100">
-                                    <CardTitle className="text-sm font-semibold uppercase tracking-wider text-slate-400">Notes</CardTitle>
+                            <Card className="rounded-lg border-border shadow-sm">
+                                <CardHeader className="px-8 py-5 border-b border-border">
+                                    <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground/70">Notes</CardTitle>
                                 </CardHeader>
                                 <CardContent className="p-8">
-                                    <p className="text-sm font-medium text-slate-600 italic leading-relaxed">&ldquo;{tour.notes}&rdquo;</p>
+                                    <p className="text-sm font-medium text-muted-foreground italic leading-relaxed">&ldquo;{tour.notes}&rdquo;</p>
                                 </CardContent>
                             </Card>
                         )}

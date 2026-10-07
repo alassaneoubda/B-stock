@@ -1,23 +1,57 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
-import { BrandLogo } from '@/components/brand-logo'
-import { canAccessPath } from '@/lib/route-permissions'
-import { ROLE_LABELS } from '@/lib/permissions'
+import {
+  ArrowLeftRight,
+  BarChart3,
+  Bell,
+  BoxesIcon,
+  Building2,
+  Car,
+  ChevronDown,
+  ChevronsUpDown,
+  ClipboardCheck,
+  ClipboardList,
+  CreditCard,
+  FileSearch,
+  FileText,
+  KeyRound,
+  LayoutDashboard,
+  LogOut,
+  MonitorSmartphone,
+  Package,
+  PackageSearch,
+  RotateCcw,
+  Settings,
+  ShieldCheck,
+  ShoppingCart,
+  Sparkles,
+  Tag,
+  TrendingUp,
+  Truck,
+  UserCircle,
+  UserCog,
+  Users,
+  Wallet,
+  Warehouse,
+  AlertTriangle,
+  type LucideIcon,
+} from 'lucide-react'
+import { BrandMark, BrandMonogram } from '@/components/brand-mark'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import {
   DropdownMenu,
@@ -26,201 +60,118 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
-import {
-  Package,
-  LayoutDashboard,
-  ShoppingCart,
-  Users,
-  Truck,
-  Warehouse,
-  BarChart3,
-  Bell,
-  Settings,
-  ChevronsUpDown,
-  LogOut,
-  KeyRound,
-  CreditCard,
-  PackageSearch,
-  FileText,
-  UserCircle,
-  ClipboardList,
-  Car,
-  ArchiveRestore,
-  BoxesIcon,
-  Building2,
-  UserCog,
-  Wallet,
-  CreditCard as CreditIcon,
-  RotateCcw,
-  ArrowLeftRight,
-  Users as UsersIcon,
-  AlertTriangle,
-  Tag,
-  FileSearch,
-  TrendingUp,
-  Shield,
-  MonitorSmartphone,
-} from 'lucide-react'
+import { ROLE_LABELS } from '@/lib/permissions'
+import { canAccessPath } from '@/lib/route-permissions'
+import { cn } from '@/lib/utils'
+import type { UserRole } from '@/lib/types'
 
-const mainNavItems = [
+type NavItem = { title: string; href: string; icon: LucideIcon; exact?: boolean }
+type NavSection = { id: string; title: string; items: NavItem[] }
+
+/** Architecture de l'information : 6 sections métier, dans l'ordre d'usage. */
+const SECTIONS: NavSection[] = [
   {
-    title: 'Tableau de bord',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-    exact: true,
+    id: 'vente',
+    title: 'Vente',
+    items: [
+      { title: 'Ventes', href: '/dashboard/sales', icon: ShoppingCart },
+      { title: 'Clients', href: '/dashboard/clients', icon: Users },
+      { title: 'Crédits clients', href: '/dashboard/credits', icon: CreditCard },
+      { title: 'Factures', href: '/dashboard/invoices', icon: FileText },
+      { title: 'Retours', href: '/dashboard/returns', icon: RotateCcw },
+    ],
   },
   {
-    title: 'Point de vente',
-    href: '/pos',
-    icon: MonitorSmartphone,
-  },
-  {
+    id: 'caisse',
     title: 'Caisse',
-    href: '/dashboard/cash',
-    icon: Wallet,
+    items: [
+      { title: 'Caisse du jour', href: '/dashboard/cash', icon: Wallet, exact: true },
+      { title: 'Validation caisse', href: '/dashboard/cash/validation', icon: ShieldCheck },
+      { title: 'Tarifs & promotions', href: '/dashboard/pricing', icon: Tag },
+    ],
   },
   {
-    title: 'Validation Caisse',
-    href: '/dashboard/cash/validation',
-    icon: Shield,
-  },
-  {
-    title: 'Ventes',
-    href: '/dashboard/sales',
-    icon: ShoppingCart,
-  },
-  {
-    title: 'Clients',
-    href: '/dashboard/clients',
-    icon: Users,
-  },
-  {
-    title: 'Crédits',
-    href: '/dashboard/credits',
-    icon: CreditIcon,
-  },
-  {
-    title: 'Factures',
-    href: '/dashboard/invoices',
-    icon: FileText,
-  },
-  {
-    title: 'Livraisons',
-    href: '/dashboard/deliveries',
-    icon: Truck,
-  },
-]
-
-const stockNavItems = [
-  {
-    title: 'Produits',
-    href: '/dashboard/products',
-    icon: Package,
-  },
-  {
-    title: 'Emballages',
-    href: '/dashboard/packaging',
-    icon: BoxesIcon,
-  },
-  {
+    id: 'stock',
     title: 'Stock',
-    href: '/dashboard/stock',
-    icon: Warehouse,
+    items: [
+      { title: 'Produits', href: '/dashboard/products', icon: Package },
+      { title: 'Stock', href: '/dashboard/stock', icon: Warehouse },
+      { title: 'Emballages', href: '/dashboard/packaging', icon: BoxesIcon },
+      { title: 'Inventaires', href: '/dashboard/inventory', icon: ClipboardCheck },
+      { title: 'Transferts', href: '/dashboard/transfers', icon: ArrowLeftRight },
+      { title: 'Casse & pertes', href: '/dashboard/breakage', icon: AlertTriangle },
+    ],
   },
   {
-    title: 'Inventaire',
-    href: '/dashboard/inventory',
-    icon: ClipboardList,
+    id: 'achats',
+    title: 'Achats & logistique',
+    items: [
+      { title: 'Approvisionnement', href: '/dashboard/procurement', icon: ClipboardList },
+      { title: 'Fournisseurs', href: '/dashboard/suppliers', icon: PackageSearch },
+      { title: 'Livraisons', href: '/dashboard/deliveries', icon: Truck },
+      { title: 'Véhicules', href: '/dashboard/vehicles', icon: Car },
+      { title: 'Dépôts', href: '/dashboard/depots', icon: Building2 },
+    ],
   },
   {
-    title: 'Transferts',
-    href: '/dashboard/transfers',
-    icon: ArrowLeftRight,
+    id: 'pilotage',
+    title: 'Pilotage',
+    items: [
+      { title: 'Rapports', href: '/dashboard/reports', icon: BarChart3 },
+      { title: 'Alertes', href: '/dashboard/alerts', icon: Bell },
+      { title: 'Commerciaux', href: '/dashboard/agents', icon: TrendingUp },
+      { title: 'Journal d’audit', href: '/dashboard/audit-logs', icon: FileSearch },
+    ],
   },
   {
-    title: 'Retours',
-    href: '/dashboard/returns',
-    icon: RotateCcw,
-  },
-  {
-    title: 'Casse & Pertes',
-    href: '/dashboard/breakage',
-    icon: AlertTriangle,
-  },
-  {
-    title: 'Approvisionnement',
-    href: '/dashboard/procurement',
-    icon: ArchiveRestore,
-  },
-  {
-    title: 'Fournisseurs',
-    href: '/dashboard/suppliers',
-    icon: PackageSearch,
+    id: 'compte',
+    title: 'Compte',
+    items: [
+      { title: 'Utilisateurs', href: '/dashboard/settings/users', icon: UserCog },
+      { title: 'Paramètres', href: '/dashboard/settings', icon: Settings, exact: true },
+      { title: 'Abonnement', href: '/dashboard/plans', icon: Sparkles },
+    ],
   },
 ]
 
-const reportNavItems = [
-  {
-    title: 'Rapports',
-    href: '/dashboard/reports',
-    icon: BarChart3,
-  },
-  {
-    title: 'Alertes',
-    href: '/dashboard/alerts',
-    icon: Bell,
-  },
-  {
-    title: 'Journal d\'audit',
-    href: '/dashboard/audit-logs',
-    icon: FileSearch,
-  },
-  {
-    title: 'Véhicules',
-    href: '/dashboard/vehicles',
-    icon: Car,
-  },
-]
+const COLLAPSE_KEY = 'bstock.nav.collapsed'
 
-const settingsNavItems = [
-  {
-    title: 'Commerciaux',
-    href: '/dashboard/agents',
-    icon: UsersIcon,
-  },
-  {
-    title: 'Tarification',
-    href: '/dashboard/pricing',
-    icon: Tag,
-  },
-  {
-    title: 'Dépôts',
-    href: '/dashboard/depots',
-    icon: Building2,
-  },
-  {
-    title: 'Utilisateurs',
-    href: '/dashboard/settings/users',
-    icon: UserCog,
-  },
-  {
-    title: 'Paramètres',
-    href: '/dashboard/settings',
-    icon: Settings,
-    exact: true,
-  },
-  {
-    title: 'Abonnement',
-    href: '/dashboard/plans',
-    icon: CreditCard,
-  },
-]
+function isActive(pathname: string, item: NavItem) {
+  if (item.exact) return pathname === item.href
+  return pathname === item.href || pathname.startsWith(item.href + '/')
+}
 
-function isActive(pathname: string, href: string, exact?: boolean) {
-  if (exact) return pathname === href
-  return pathname === href || pathname.startsWith(href + '/')
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+}
+
+function NavLink({ item, active }: { item: NavItem; active: boolean }) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={active}
+        tooltip={item.title}
+        className={cn(
+          'relative h-8 rounded-md px-2.5 text-[13px] transition-colors',
+          active
+            ? 'bg-sidebar-accent font-medium text-foreground before:absolute before:inset-y-1.5 before:-left-3 before:w-[3px] before:rounded-r-full before:bg-brand'
+            : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
+        )}
+      >
+        <Link href={item.href} aria-current={active ? 'page' : undefined}>
+          <item.icon className={cn('h-4 w-4', active ? 'text-foreground' : 'text-muted-foreground')} aria-hidden="true" />
+          <span>{item.title}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
 }
 
 export function DashboardSidebar({
@@ -233,235 +184,152 @@ export function DashboardSidebar({
     name?: string | null
     email?: string | null
     role?: string
-    permissions?: string[]
     companyName?: string | null
-    isPlatformAdmin?: boolean
+    impersonatedBy?: string | null
   }
 }) {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const { state: sidebarState } = useSidebar()
   const user = serverUser ?? session?.user
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
+  useEffect(() => {
+    try {
+      setCollapsed(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'))
+    } catch {
+      /* préférence illisible : on garde tout ouvert */
+    }
+  }, [])
+
+  function toggle(id: string) {
+    setCollapsed((prev) => {
+      const next = { ...prev, [id]: !prev[id] }
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next))
+      return next
+    })
   }
 
-  const getRoleBadge = (role?: string) => {
-    const labels: Record<string, string> = ROLE_LABELS
-    return labels[role ?? ''] ?? role ?? 'Utilisateur'
-  }
-
-  // Même règle que l'API et le garde des pages : on ne montre jamais une
-  // section dont l'API répondrait 403.
-  const canSee = (item: { href: string }) => canAccessPath(item.href, permissions)
-
-  const displayName = user?.name || user?.companyName || user?.email || 'Mon compte'
+  // Même règle que l'API et le garde des pages : jamais une section qui répondrait 403
+  const canSee = (href: string) => canAccessPath(href, permissions)
+  const sections = SECTIONS.map((s) => ({ ...s, items: s.items.filter((i) => canSee(i.href)) })).filter(
+    (s) => s.items.length > 0
+  )
+  const displayName = user?.name || user?.email || 'Mon compte'
+  const roleLabel = ROLE_LABELS[(user?.role as UserRole) ?? 'cashier'] ?? 'Utilisateur'
+  const iconOnly = sidebarState === 'collapsed'
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-zinc-200/60 bg-white">
-      <SidebarHeader className="flex h-auto shrink-0 items-center justify-center border-b border-zinc-200/60 px-4 py-5 group-data-[collapsible=icon]:h-14 group-data-[collapsible=icon]:p-2">
-        <Link
-          href="/dashboard"
-          className="flex w-full items-center justify-center group-data-[collapsible=icon]:hidden"
-          aria-label="B-STOCK — Tableau de bord"
-        >
-          <BrandLogo href={false} height={128} className="mx-auto" />
-        </Link>
-        <Link
-          href="/dashboard"
-          className="hidden h-9 w-9 items-center justify-center rounded-lg bg-zinc-950 text-sm font-bold text-white group-data-[collapsible=icon]:flex"
-          aria-label="B-STOCK"
-        >
-          B
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
+      <SidebarHeader className="px-4 pb-3 pt-4 group-data-[collapsible=icon]:px-2">
+        <div className="group-data-[collapsible=icon]:hidden">
+          <BrandMark subtitle={user?.companyName} />
+        </div>
+        <Link href="/dashboard" className="hidden justify-center group-data-[collapsible=icon]:flex" aria-label="B-Stock">
+          <BrandMonogram size={30} />
         </Link>
       </SidebarHeader>
 
-      <SidebarContent className="px-3 pt-4 gap-4">
-        {/* Activity Group */}
-        {mainNavItems.some(canSee) && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wider text-zinc-400 mb-1">Activité</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {mainNavItems.filter(canSee).map((item) => {
-                  const active = isActive(pathname, item.href, item.hasOwnProperty('exact') ? (item as any).exact : false)
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={item.title}
-                        className={`h-9 rounded-md px-3 transition-colors ${active ? 'bg-zinc-100 text-zinc-950 font-medium' : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'}`}
-                      >
-                        <Link href={item.href} className="flex items-center gap-3">
-                          <item.icon className={`h-4 w-4 ${active ? 'text-zinc-950' : ''}`} />
-                          <span className="text-sm">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+      <SidebarContent className="gap-1 px-3 pb-4">
+        {/* Accès principaux */}
+        <SidebarGroup className="p-0">
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-0.5">
+              <NavLink item={{ title: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard, exact: true }} active={pathname === '/dashboard'} />
+              {canSee('/pos') && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    tooltip="Point de vente"
+                    className="mt-1 h-9 rounded-md border border-border bg-card px-2.5 text-[13px] font-medium text-foreground shadow-xs hover:bg-card hover:shadow-sm"
+                  >
+                    <Link href="/pos">
+                      <MonitorSmartphone className="h-4 w-4 text-brand-strong" aria-hidden="true" />
+                      <span>Point de vente</span>
+                      <span className="ml-auto rounded bg-brand-soft px-1.5 py-0.5 text-[10px] font-semibold text-brand-strong group-data-[collapsible=icon]:hidden">
+                        POS
+                      </span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-        {/* Stock Group */}
-        {stockNavItems.some(canSee) && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wider text-zinc-400 mb-1">Stock & Appro</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {stockNavItems.filter(canSee).map((item) => {
-                  const active = isActive(pathname, item.href)
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={item.title}
-                        className={`h-9 rounded-md px-3 transition-colors ${active ? 'bg-zinc-100 text-zinc-950 font-medium' : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'}`}
-                      >
-                        <Link href={item.href} className="flex items-center gap-3">
-                          <item.icon className={`h-4 w-4 ${active ? 'text-zinc-950' : ''}`} />
-                          <span className="text-sm">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {/* Reporting Group */}
-        {reportNavItems.some(canSee) && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wider text-zinc-400 mb-1">Rapports & Suivi</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {reportNavItems.filter(canSee).map((item) => {
-                  const active = isActive(pathname, item.href)
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={item.title}
-                        className={`h-9 rounded-md px-3 transition-colors ${active ? 'bg-zinc-100 text-zinc-950 font-medium' : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'}`}
-                      >
-                        <Link href={item.href} className="flex items-center gap-3">
-                          <item.icon className={`h-4 w-4 ${active ? 'text-zinc-950' : ''}`} />
-                          <span className="text-sm">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {/* Configuration Group */}
-        {settingsNavItems.some(canSee) && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="px-3 text-[11px] font-medium uppercase tracking-wider text-zinc-400 mb-1">Configuration</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {settingsNavItems.filter(canSee).map((item) => {
-                  const active = isActive(pathname, item.href, item.hasOwnProperty('exact') ? (item as any).exact : false)
-                  return (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={item.title}
-                        className={`h-9 rounded-md px-3 transition-colors ${active ? 'bg-zinc-100 text-zinc-950 font-medium' : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'}`}
-                      >
-                        <Link href={item.href} className="flex items-center gap-3">
-                          <item.icon className={`h-4 w-4 ${active ? 'text-zinc-950' : ''}`} />
-                          <span className="text-sm">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        {sections.map((section) => {
+          const containsActive = section.items.some((i) => isActive(pathname, i))
+          const open = iconOnly || containsActive || !collapsed[section.id]
+          return (
+            <SidebarGroup key={section.id} className="p-0 pt-3">
+              <button
+                type="button"
+                onClick={() => toggle(section.id)}
+                aria-expanded={open}
+                className="flex h-7 w-full items-center justify-between rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80 hover:text-foreground group-data-[collapsible=icon]:hidden"
+              >
+                {section.title}
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', !open && '-rotate-90')} aria-hidden="true" />
+              </button>
+              {open && (
+                <SidebarGroupContent>
+                  <SidebarMenu className="gap-0.5">
+                    {section.items.map((item) => (
+                      <NavLink key={item.href} item={item} active={isActive(pathname, item)} />
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              )}
+            </SidebarGroup>
+          )
+        })}
       </SidebarContent>
 
-      <SidebarFooter className="p-3 border-t border-zinc-200/60">
+      <SidebarFooter className="border-t border-sidebar-border p-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuButton
-                  size="lg"
-                  className="h-10 rounded-md hover:bg-zinc-50 transition-colors data-[state=open]:bg-zinc-50"
-                >
-                  <Avatar className="h-7 w-7 rounded-md shrink-0">
-                    <AvatarFallback className="bg-zinc-900 text-white text-xs font-medium rounded-md">
-                      {user?.name ? getInitials(user.name) : 'U'}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col gap-0 leading-none text-left min-w-0 ml-1">
-                    <span className="font-medium truncate text-sm text-zinc-950">
-                      {displayName}
-                    </span>
-                    <span className="text-[10px] text-zinc-500">
-                      {getRoleBadge(user?.role)}
-                    </span>
-                  </div>
-                  <ChevronsUpDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+                <SidebarMenuButton size="lg" className="h-11 rounded-lg hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                    {initials(displayName)}
+                  </span>
+                  <span className="flex min-w-0 flex-col text-left leading-tight">
+                    <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
+                    <span className="truncate text-xs text-muted-foreground">{roleLabel}</span>
+                  </span>
+                  <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent
-                className="w-56"
-                side="top"
-                align="start"
-                sideOffset={8}
-              >
-                <div className="px-3 py-2 border-b border-zinc-100 mb-1">
-                  <p className="text-sm font-medium text-zinc-950">{displayName}</p>
-                  <p className="text-xs text-zinc-500">{user?.email}</p>
+              <DropdownMenuContent className="w-60" side="top" align="start" sideOffset={8}>
+                <div className="px-2 py-1.5">
+                  <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
                 </div>
-                <DropdownMenuItem asChild className="cursor-pointer">
-                  <Link href="/dashboard/profile" className="flex items-center gap-2">
-                    <UserCircle className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                    <span className="text-sm">Mon profil</span>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/profile">
+                    <UserCircle aria-hidden="true" /> Mon profil
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild className="cursor-pointer">
-                  <Link href="/dashboard/settings/security" className="flex items-center gap-2">
-                    <KeyRound className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                    <span className="text-sm">Mot de passe</span>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/settings/security">
+                    <KeyRound aria-hidden="true" /> Mot de passe
                   </Link>
                 </DropdownMenuItem>
-                {/* Paramètres de l'entreprise : seulement si le rôle y a accès (sinon redirection « accès refusé ») */}
-                {canSee({ href: '/dashboard/settings' }) && (
-                  <DropdownMenuItem asChild className="cursor-pointer">
-                    <Link href="/dashboard/settings" className="flex items-center gap-2">
-                      <Settings className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                      <span className="text-sm">Paramètres</span>
+                {canSee('/dashboard/settings') && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/dashboard/settings">
+                      <Settings aria-hidden="true" /> Paramètres
                     </Link>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                  onClick={() => signOut({ callbackUrl: '/' })}
+                  variant="destructive"
+                  onClick={() => signOut({ callbackUrl: user?.impersonatedBy ? '/admin/login' : '/' })}
                 >
-                  <LogOut className="h-4 w-4 mr-2" aria-hidden="true" />
-                  <span className="text-sm">Déconnexion</span>
+                  <LogOut aria-hidden="true" /> Déconnexion
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

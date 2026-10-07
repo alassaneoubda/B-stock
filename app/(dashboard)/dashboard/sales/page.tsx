@@ -177,33 +177,33 @@ export default async function SalesPage({
             value: formatMoney(stats.todayTotal),
             description: `${stats.todayCount} commande${stats.todayCount > 1 ? 's' : ''}`,
             icon: ShoppingCart,
-            color: 'bg-blue-500/10 text-blue-600',
+            color: 'bg-primary/10 text-brand-strong',
         },
         {
             title: 'Encaissé aujourd\'hui',
             value: formatMoney(stats.todayPaid),
             description: 'Flux de trésorerie',
             icon: Banknote,
-            color: 'bg-emerald-500/10 text-emerald-600',
+            color: 'bg-success/10 text-success',
         },
         {
             title: 'Performance mensuelle',
             value: formatMoney(stats.monthTotal),
             description: `${stats.monthCount} commandes`,
             icon: TrendingUp,
-            color: 'bg-indigo-500/10 text-indigo-600',
+            color: 'bg-info/10 text-info',
         },
         {
             title: 'Encours clients',
             value: formatMoney(stats.pendingCredit),
             description: 'Créances clients restant dues',
             icon: CreditCard,
-            color: 'bg-rose-500/10 text-rose-600',
+            color: 'bg-destructive/10 text-destructive',
         },
     ]
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Ventes"
                 actions={
@@ -220,21 +220,21 @@ export default async function SalesPage({
                 {/* Stats */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {statCards.map((stat) => (
-                        <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
+                        <div key={stat.title} className="bg-card rounded-lg border border-border p-4">
                             <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
-                                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
+                                <span className="text-xs font-medium text-muted-foreground">{stat.title}</span>
+                                <stat.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
                             </div>
-                            <p className="text-xl font-bold text-zinc-950 tracking-tight">{stat.value}</p>
-                            <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
+                            <p className="text-xl font-bold text-foreground tracking-tight">{stat.value}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{stat.description}</p>
                         </div>
                     ))}
                 </div>
 
                 {/* Orders Table */}
-                <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-zinc-100 flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-zinc-950">Historique des ventes</h3>
+                <div className="bg-card rounded-lg border border-border overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-foreground">Historique des ventes</h3>
                         <div className="flex items-center gap-2">
                             {clientId && (
                                 <Button variant="outline" size="sm" className="h-9 text-xs" asChild>
@@ -243,7 +243,7 @@ export default async function SalesPage({
                             )}
                             <form action="/dashboard/sales" method="get" role="search" className="relative">
                                 {clientId && <input type="hidden" name="client" value={clientId} />}
-                                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
+                                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
                                 <Input
                                     type="search"
                                     name="q"
@@ -253,7 +253,7 @@ export default async function SalesPage({
                                     className="h-9 w-56 pl-8 text-sm"
                                 />
                             </form>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" asChild>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" asChild>
                                 <Link href="/dashboard/reports">Voir les rapports</Link>
                             </Button>
                         </div>
@@ -261,8 +261,8 @@ export default async function SalesPage({
 
                     {orders.length === 0 && (q || page > 1 || clientId) ? (
                         <div className="text-center py-16 px-4">
-                            <p className="text-sm font-semibold text-zinc-950">Aucune vente trouvée</p>
-                            <p className="mt-1 text-sm text-zinc-500">
+                            <p className="text-sm font-semibold text-foreground">Aucune vente trouvée</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
                                 {q ? `Aucun résultat pour « ${q} ».` : clientId ? 'Aucune vente pour ce client.' : 'Cette page est vide.'}
                             </p>
                             <Button size="sm" variant="outline" className="mt-4" asChild>
@@ -271,11 +271,11 @@ export default async function SalesPage({
                         </div>
                     ) : orders.length === 0 ? (
                         <div className="text-center py-16 flex flex-col items-center px-4">
-                            <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
-                                <ShoppingCart className="h-6 w-6 text-zinc-400" />
+                            <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center mb-4">
+                                <ShoppingCart className="h-6 w-6 text-muted-foreground/70" />
                             </div>
-                            <h3 className="text-sm font-semibold text-zinc-950">Aucune commande</h3>
-                            <p className="mt-1 text-sm text-zinc-500 max-w-xs">
+                            <h3 className="text-sm font-semibold text-foreground">Aucune commande</h3>
+                            <p className="mt-1 text-sm text-muted-foreground max-w-xs">
                                 Enregistrez des ventes pour voir votre historique ici.
                             </p>
                             <Button size="sm" className="mt-4 h-11 px-6" asChild>
@@ -292,12 +292,12 @@ export default async function SalesPage({
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="hover:bg-transparent">
-                                            <TableHead className="text-xs font-medium text-zinc-500 pl-4">Référence</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Client</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Paiement</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Montant</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Reste</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground pl-4">Référence</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground">Client</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground">Paiement</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground text-right">Montant</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground text-right">Reste</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground">Statut</TableHead>
                                             <TableHead className="pr-4"></TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -311,8 +311,8 @@ export default async function SalesPage({
                                                 <TableRow key={order.id} className="group">
                                                     <TableCell className="pl-4">
                                                         <div>
-                                                            <span className="text-sm font-medium text-zinc-950 font-mono">{order.order_number}</span>
-                                                            <p className="text-xs text-zinc-400">
+                                                            <span className="text-sm font-medium text-foreground font-mono">{order.order_number}</span>
+                                                            <p className="text-xs text-muted-foreground/70">
                                                                 {formatDateShort(order.created_at)}
                                                             </p>
                                                         </div>
@@ -320,34 +320,34 @@ export default async function SalesPage({
                                                     <TableCell>
                                                         <Link
                                                             href={`/dashboard/clients/${order.client_id}`}
-                                                            className="text-sm font-medium text-zinc-700 hover:text-zinc-950 transition-colors"
+                                                            className="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
                                                         >
                                                             {order.client_name || 'Client passager'}
                                                         </Link>
                                                     </TableCell>
                                                     <TableCell>
-                                                        <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+                                                        <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
                                                             {payment.label}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="text-right">
-                                                        <span className="text-sm font-semibold text-zinc-950">
+                                                        <span className="text-sm font-semibold text-foreground">
                                                             {formatMoney(Number(order.total_amount))}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         {remaining > 0 ? (
-                                                            <span className="text-sm font-medium text-red-600">{formatMoney(remaining)}</span>
+                                                            <span className="text-sm font-medium text-destructive">{formatMoney(remaining)}</span>
                                                         ) : (
-                                                            <span className="text-xs font-medium text-emerald-600">Soldé</span>
+                                                            <span className="text-xs font-medium text-success">Soldé</span>
                                                         )}
                                                     </TableCell>
                                                     <TableCell>
                                                         <Badge
                                                             variant={status.variant}
-                                                            className={`text-[10px] font-medium ${status.variant === 'secondary' ? 'bg-zinc-100 text-zinc-600' :
-                                                                status.variant === 'destructive' ? 'bg-red-50 text-red-600' :
-                                                                    'bg-blue-50 text-blue-600'
+                                                            className={`text-[10px] font-medium ${status.variant === 'secondary' ? 'bg-muted text-muted-foreground' :
+                                                                status.variant === 'destructive' ? 'bg-destructive/10 text-destructive' :
+                                                                    'bg-brand-soft text-brand-strong'
                                                                 } border-none`}
                                                         >
                                                             {status.label}
@@ -357,19 +357,19 @@ export default async function SalesPage({
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
                                                                 <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour la vente ${order.order_number}`}>
-                                                                    <MoreHorizontal className="h-4 w-4 text-zinc-400" />
+                                                                    <MoreHorizontal className="h-4 w-4 text-muted-foreground/70" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
                                                             <DropdownMenuContent align="end" className="w-48">
                                                                 <DropdownMenuItem asChild className="cursor-pointer">
                                                                     <Link href={`/dashboard/sales/${order.id}`} className="flex items-center gap-2">
-                                                                        <Eye className="h-4 w-4 text-zinc-500" />
+                                                                        <Eye className="h-4 w-4 text-muted-foreground" />
                                                                         <span className="text-sm">Voir le détail</span>
                                                                     </Link>
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem asChild className="cursor-pointer">
                                                                     <Link href={`/dashboard/invoices/${order.id}`} className="flex items-center gap-2">
-                                                                        <FileText className="h-4 w-4 text-zinc-500" />
+                                                                        <FileText className="h-4 w-4 text-muted-foreground" />
                                                                         <span className="text-sm">Facture</span>
                                                                     </Link>
                                                                 </DropdownMenuItem>
@@ -384,7 +384,7 @@ export default async function SalesPage({
                             </div>
 
                             {/* Mobile cards */}
-                            <div className="md:hidden divide-y divide-zinc-100">
+                            <div className="md:hidden divide-y divide-border">
                                 {orders.map((order) => {
                                     const remaining = Number(order.total_amount) - Number(order.paid_amount)
                                     const status = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const }
@@ -394,22 +394,22 @@ export default async function SalesPage({
                                         <Link
                                             key={order.id}
                                             href={`/dashboard/sales/${order.id}`}
-                                            className="block p-4 active:bg-zinc-50 transition-colors"
+                                            className="block p-4 active:bg-muted/50 transition-colors"
                                         >
                                             <div className="flex items-start justify-between mb-2">
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-semibold text-zinc-950 truncate">
+                                                    <p className="text-sm font-semibold text-foreground truncate">
                                                         {order.client_name || 'Client passager'}
                                                     </p>
-                                                    <p className="text-xs text-zinc-400 font-mono">
+                                                    <p className="text-xs text-muted-foreground/70 font-mono">
                                                         {order.order_number} · {formatDateTime(order.created_at)}
                                                     </p>
                                                 </div>
                                                 <Badge
                                                     variant={status.variant}
-                                                    className={`text-[10px] font-medium ml-2 shrink-0 ${status.variant === 'secondary' ? 'bg-zinc-100 text-zinc-600' :
-                                                        status.variant === 'destructive' ? 'bg-red-50 text-red-600' :
-                                                            'bg-blue-50 text-blue-600'
+                                                    className={`text-[10px] font-medium ml-2 shrink-0 ${status.variant === 'secondary' ? 'bg-muted text-muted-foreground' :
+                                                        status.variant === 'destructive' ? 'bg-destructive/10 text-destructive' :
+                                                            'bg-brand-soft text-brand-strong'
                                                         } border-none`}
                                                 >
                                                     {status.label}
@@ -417,14 +417,14 @@ export default async function SalesPage({
                                             </div>
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
+                                                    <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
                                                         {payment.label}
                                                     </span>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="text-sm font-bold text-zinc-950">{formatMoney(Number(order.total_amount))}</p>
+                                                    <p className="text-sm font-bold text-foreground">{formatMoney(Number(order.total_amount))}</p>
                                                     {remaining > 0 && (
-                                                        <p className="text-xs font-medium text-red-500">Reste: {formatMoney(remaining)}</p>
+                                                        <p className="text-xs font-medium text-destructive">Reste: {formatMoney(remaining)}</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -436,8 +436,8 @@ export default async function SalesPage({
                     )}
 
                     {(page > 1 || hasMore) && (
-                        <nav className="flex items-center justify-between gap-2 px-4 py-3 border-t border-zinc-100" aria-label="Pagination des ventes">
-                            <span className="text-xs text-zinc-500">Page {page}</span>
+                        <nav className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border" aria-label="Pagination des ventes">
+                            <span className="text-xs text-muted-foreground">Page {page}</span>
                             <div className="flex items-center gap-2">
                                 {page > 1 ? (
                                     <Button variant="outline" size="sm" className="h-9" asChild>

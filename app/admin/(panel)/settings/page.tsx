@@ -117,8 +117,8 @@ export default function AdminSettingsPage() {
     <div className="p-4 sm:p-8 max-w-3xl mx-auto">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-950">Paramètres</h1>
-          <p className="text-sm text-zinc-500">Configuration globale de la plateforme</p>
+          <h1 className="text-2xl font-bold text-foreground">Paramètres</h1>
+          <p className="text-sm text-muted-foreground">Configuration globale de la plateforme</p>
         </div>
         <Button onClick={requestSave} disabled={saving}>
           {saving ? (
@@ -131,7 +131,7 @@ export default function AdminSettingsPage() {
       </header>
 
       {error && (
-        <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+        <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -139,8 +139,8 @@ export default function AdminSettingsPage() {
       {/* Général */}
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4">
-          <SettingsIcon className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Général</h2>
+          <SettingsIcon className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-semibold text-foreground">Général</h2>
         </div>
         <div className="grid sm:grid-cols-2 gap-4">
           <div className="space-y-1.5 sm:col-span-2">
@@ -179,8 +179,8 @@ export default function AdminSettingsPage() {
       {/* Inscriptions & essai */}
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4">
-          <UserPlus className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Inscriptions & essai</h2>
+          <UserPlus className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-semibold text-foreground">Inscriptions & essai</h2>
         </div>
         <div className="space-y-4">
           <div className="space-y-1.5 max-w-[200px]">
@@ -193,10 +193,10 @@ export default function AdminSettingsPage() {
               onChange={(e) => set('trial_days', Number(e.target.value))}
             />
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
             <div>
               <p className="text-sm font-medium">Inscriptions ouvertes</p>
-              <p className="text-xs text-zinc-500">Autoriser la création de nouveaux comptes</p>
+              <p className="text-xs text-muted-foreground">Autoriser la création de nouveaux comptes</p>
             </div>
             <Switch
               checked={form.registrations_open}
@@ -209,13 +209,13 @@ export default function AdminSettingsPage() {
       {/* Fonctionnalités */}
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4">
-          <ShieldCheck className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Fonctionnalités</h2>
+          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-semibold text-foreground">Fonctionnalités</h2>
         </div>
-        <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3">
+        <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
           <div>
             <p className="text-sm font-medium">Connexion Google (OAuth)</p>
-            <p className="text-xs text-zinc-500">Activer l&apos;inscription/connexion via Google</p>
+            <p className="text-xs text-muted-foreground">Activer l&apos;inscription/connexion via Google</p>
           </div>
           <Switch
             checked={form.google_oauth_enabled}
@@ -227,14 +227,14 @@ export default function AdminSettingsPage() {
       {/* Maintenance */}
       <Card className="p-6 mb-5">
         <div className="flex items-center gap-2 mb-4">
-          <Wrench className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Maintenance</h2>
+          <Wrench className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-semibold text-foreground">Maintenance</h2>
         </div>
         <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
             <div>
               <p className="text-sm font-medium">Mode maintenance</p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted-foreground">
                 Bloque l&apos;accès des entreprises (les admins restent connectés)
               </p>
             </div>
@@ -267,7 +267,7 @@ export default function AdminSettingsPage() {
             <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
             <AlertDialogAction
               disabled={saving}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive hover:bg-destructive"
               onClick={(e) => {
                 e.preventDefault()
                 save()

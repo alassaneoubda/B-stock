@@ -89,11 +89,11 @@ async function getDeliveryTours(companyId: string): Promise<DeliveryTour[]> {
 }
 
 const statusConfig: Record<string, { label: string; bg: string; text: string; icon: any }> = {
-    planned: { label: 'Planifiée', bg: 'bg-slate-50', text: 'text-slate-500', icon: Clock },
-    loading: { label: 'Chargement', bg: 'bg-amber-50', text: 'text-amber-600', icon: PlayCircle },
-    in_progress: { label: 'En route', bg: 'bg-blue-50', text: 'text-blue-600', icon: Navigation },
-    completed: { label: 'Terminée', bg: 'bg-emerald-50', text: 'text-emerald-600', icon: CheckCircle2 },
-    cancelled: { label: 'Annulée', bg: 'bg-red-50', text: 'text-red-600', icon: XCircle },
+    planned: { label: 'Planifiée', bg: 'bg-muted/50', text: 'text-muted-foreground', icon: Clock },
+    loading: { label: 'Chargement', bg: 'bg-warning-soft', text: 'text-warning-foreground', icon: PlayCircle },
+    in_progress: { label: 'En route', bg: 'bg-brand-soft', text: 'text-brand-strong', icon: Navigation },
+    completed: { label: 'Terminée', bg: 'bg-success-soft', text: 'text-success', icon: CheckCircle2 },
+    cancelled: { label: 'Annulée', bg: 'bg-destructive/10', text: 'text-destructive', icon: XCircle },
 }
 
 export default async function DeliveriesPage() {
@@ -110,34 +110,34 @@ export default async function DeliveriesPage() {
             value: stats.planned,
             description: "Tournées à venir",
             icon: Clock,
-            color: "text-slate-500",
-            bg: "bg-slate-500/10"
+            color: "text-muted-foreground",
+            bg: "bg-muted-foreground/20"
         },
         {
             title: "En cours",
             value: stats.inProgress,
             description: "Actuellement en route",
             icon: Truck,
-            color: "text-blue-600",
-            bg: "bg-blue-600/10"
+            color: "text-brand-strong",
+            bg: "bg-primary/10"
         },
         {
             title: "Terminées",
             value: stats.completedToday,
             description: "Livraisons aujourd'hui",
             icon: CheckCircle2,
-            color: "text-emerald-600",
-            bg: "bg-emerald-600/10"
+            color: "text-success",
+            bg: "bg-success/10"
         }
     ]
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Logistique & Livraisons"
                 description="Suivi en temps réel des tournées de distribution"
                 actions={
-                    <Button asChild className="rounded-md h-11 px-6 bg-blue-600 hover:bg-blue-700 transition-all active:scale-95 font-bold">
+                    <Button asChild className="rounded-md h-11 px-6 bg-primary hover:bg-primary transition-all active:scale-95 font-bold">
                         <Link href="/dashboard/deliveries/new">
                             <Plus className="h-5 w-5 mr-2" />
                             Nouvelle tournée
@@ -152,31 +152,31 @@ export default async function DeliveriesPage() {
                     {statsCards.map((stat) => (
                         <div
                             key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
+                            className="group relative overflow-hidden rounded-lg bg-card p-8 shadow-sm border border-border hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
                         >
                             <div className="relative z-10 flex flex-col gap-6">
                                 <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.bg} ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
                                     <stat.icon className="h-7 w-7" />
                                 </div>
                                 <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{formatNumber(stat.value)}</div>
-                                    <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">{stat.title}</p>
+                                    <div className="text-3xl font-semibold text-foreground tracking-tight">{formatNumber(stat.value)}</div>
+                                    <p className="text-sm font-bold text-muted-foreground/70 mt-2">{stat.description}</p>
                                 </div>
                             </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
+                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-muted/50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
                         </div>
                     ))}
                 </div>
 
                 {/* Tours Listing */}
-                <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="px-8 py-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden">
+                    <div className="px-8 py-8 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
-                            <h3 className="text-2xl font-semibold text-slate-950 tracking-tight">Registre des Tournées</h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Suivi détaillé des opérations logistiques</p>
+                            <h3 className="text-2xl font-semibold text-foreground tracking-tight">Registre des Tournées</h3>
+                            <p className="text-sm font-medium text-muted-foreground/70 mt-1">Suivi détaillé des opérations logistiques</p>
                         </div>
-                        <Button variant="ghost" className="rounded-md h-11 px-6 font-bold text-blue-600 hover:bg-blue-50 transition-all self-start" asChild>
+                        <Button variant="ghost" className="rounded-md h-11 px-6 font-bold text-brand-strong hover:bg-brand-soft transition-all self-start" asChild>
                             <Link href="/dashboard/vehicles" className="flex items-center gap-2">
                                 Gérer les véhicules
                                 <ArrowRight className="h-4 w-4" />
@@ -187,14 +187,14 @@ export default async function DeliveriesPage() {
                     <div className="p-2">
                         {tours.length === 0 ? (
                             <div className="text-center py-24 flex flex-col items-center">
-                                <div className="h-24 w-24 rounded-full bg-slate-50 flex items-center justify-center mb-6">
-                                    <Truck className="h-10 w-10 text-slate-300" />
+                                <div className="h-24 w-24 rounded-full bg-muted/50 flex items-center justify-center mb-6">
+                                    <Truck className="h-10 w-10 text-muted-foreground/70" />
                                 </div>
-                                <h3 className="text-xl font-semibold text-slate-950">Aucune livraison prévue</h3>
-                                <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
+                                <h3 className="text-xl font-semibold text-foreground">Aucune livraison prévue</h3>
+                                <p className="mt-2 text-muted-foreground/70 font-medium max-w-xs mx-auto">
                                     Commencez par planifier une nouvelle tournée en assignant un véhicule et un chauffeur.
                                 </p>
-                                <Button className="mt-8 rounded-md h-12 px-8 bg-blue-600 hover:bg-blue-700 transition-all font-bold" asChild>
+                                <Button className="mt-8 rounded-md h-12 px-8 bg-primary hover:bg-primary transition-all font-bold" asChild>
                                     <Link href="/dashboard/deliveries/new">
                                         <Plus className="h-5 w-5 mr-2" />
                                         Planifier maintenant
@@ -204,13 +204,13 @@ export default async function DeliveriesPage() {
                         ) : (
                             <div className="overflow-x-auto">
                                 <Table>
-                                    <TableHeader className="bg-slate-50/50">
+                                    <TableHeader className="bg-muted/30">
                                         <TableRow className="border-none hover:bg-transparent">
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Planning</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Véhicule</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Personnel</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-center">Progression</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Statut</TableHead>
+                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 pl-8">Planning</TableHead>
+                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Véhicule</TableHead>
+                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Personnel</TableHead>
+                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70 text-center">Progression</TableHead>
+                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Statut</TableHead>
                                             <TableHead className="py-5 pr-8"></TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -218,8 +218,8 @@ export default async function DeliveriesPage() {
                                         {tours.map((tour) => {
                                             const statusInfo = statusConfig[tour.status] || {
                                                 label: tour.status,
-                                                bg: 'bg-slate-50',
-                                                text: 'text-slate-400',
+                                                bg: 'bg-muted/50',
+                                                text: 'text-muted-foreground/70',
                                                 icon: Truck
                                             }
                                             const progress = Number(tour.stops_count) > 0
@@ -227,20 +227,20 @@ export default async function DeliveriesPage() {
                                                 : 0
 
                                             return (
-                                                <TableRow key={tour.id} className="group border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                                <TableRow key={tour.id} className="group border-b border-border hover:bg-muted/30 transition-colors">
                                                     <TableCell className="py-6 pl-8">
                                                         <div className="flex items-center gap-4">
-                                                            <div className="h-12 w-12 rounded-md bg-white flex flex-col items-center justify-center border border-slate-100 shadow-sm transition-transform group-hover:scale-105">
-                                                                <Calendar className="h-4 w-4 text-blue-600 mb-0.5" />
-                                                                <span className="text-[10px] font-semibold text-slate-950 uppercase leading-none">
+                                                            <div className="h-12 w-12 rounded-md bg-card flex flex-col items-center justify-center border border-border shadow-sm transition-transform group-hover:scale-105">
+                                                                <Calendar className="h-4 w-4 text-brand-strong mb-0.5" />
+                                                                <span className="text-[10px] font-semibold text-foreground uppercase leading-none">
                                                                     {new Date(tour.tour_date).toLocaleDateString('fr-FR', { day: '2-digit' })}
                                                                 </span>
                                                             </div>
                                                             <div className="flex flex-col">
-                                                                <span className="text-base font-semibold text-slate-950 tracking-tight leading-tight">
+                                                                <span className="text-base font-semibold text-foreground tracking-tight leading-tight">
                                                                     {new Date(tour.tour_date).toLocaleDateString('fr-FR', { weekday: 'long', month: 'short' })}
                                                                 </span>
-                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1 italic">
+                                                                <span className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider mt-1 italic">
                                                                     {new Date(tour.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                                                                 </span>
                                                             </div>
@@ -249,42 +249,42 @@ export default async function DeliveriesPage() {
                                                     <TableCell className="py-6">
                                                         {tour.vehicle_name ? (
                                                             <div className="flex flex-col">
-                                                                <span className="font-semibold text-slate-700 text-sm leading-tight flex items-center gap-2">
-                                                                    <Truck className="h-3.5 w-3.5 text-slate-400" />
+                                                                <span className="font-semibold text-foreground/80 text-sm leading-tight flex items-center gap-2">
+                                                                    <Truck className="h-3.5 w-3.5 text-muted-foreground/70" />
                                                                     {tour.vehicle_name}
                                                                 </span>
-                                                                <code className="text-[10px] font-semibold bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 mt-1 w-fit tracking-wider">
+                                                                <code className="text-[10px] font-semibold bg-muted px-2 py-0.5 rounded-lg text-muted-foreground mt-1 w-fit tracking-wider">
                                                                     {tour.vehicle_plate?.toUpperCase()}
                                                                 </code>
                                                             </div>
                                                         ) : (
-                                                            <span className="text-slate-300 font-bold italic text-xs">Non assigné</span>
+                                                            <span className="text-muted-foreground/70 font-bold italic text-xs">Non assigné</span>
                                                         )}
                                                     </TableCell>
                                                     <TableCell className="py-6">
                                                         <div className="flex items-center gap-3">
-                                                            <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center">
-                                                                <User className="h-4 w-4 text-slate-500" />
+                                                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                                                                <User className="h-4 w-4 text-muted-foreground" />
                                                             </div>
-                                                            <span className="font-bold text-slate-600 text-sm">
+                                                            <span className="font-bold text-muted-foreground text-sm">
                                                                 {tour.driver_name || 'À définir'}
                                                             </span>
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="py-6 min-w-[180px]">
                                                         <div className="flex flex-col gap-2">
-                                                            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                                            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                                                                 <span className="flex items-center gap-1.5">
                                                                     <MapPin className="h-3 w-3" />
                                                                     {formatNumber(tour.delivered_count)} / {formatNumber(tour.stops_count)}
                                                                 </span>
-                                                                <span className={progress === 100 ? 'text-emerald-600' : 'text-slate-950'}>
+                                                                <span className={progress === 100 ? 'text-success' : 'text-foreground'}>
                                                                     {progress}%
                                                                 </span>
                                                             </div>
-                                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden relative">
+                                                            <div className="h-2 w-full bg-muted rounded-full overflow-hidden relative">
                                                                 <div
-                                                                    className={`h-full transition-all duration-1000 ease-out rounded-full ${progress === 100 ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-blue-600'
+                                                                    className={`h-full transition-all duration-1000 ease-out rounded-full ${progress === 100 ? 'bg-success shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-primary'
                                                                         }`}
                                                                     style={{ width: `${progress}%` }}
                                                                 />
@@ -300,26 +300,26 @@ export default async function DeliveriesPage() {
                                                     <TableCell className="py-6 pr-8 text-right">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" aria-label="Actions de la tournée" className="h-10 w-10 rounded-xl hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 transition-all">
-                                                                    <MoreHorizontal className="h-5 w-5 text-slate-400 group-hover:text-slate-950" />
+                                                                <Button variant="ghost" size="icon" aria-label="Actions de la tournée" className="h-10 w-10 rounded-xl hover:bg-card hover:shadow-md border border-transparent hover:border-border transition-all">
+                                                                    <MoreHorizontal className="h-5 w-5 text-muted-foreground/70 group-hover:text-foreground" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-60 p-2 rounded-md border-slate-100 shadow-lg">
-                                                                <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-slate-50 transition-colors">
+                                                            <DropdownMenuContent align="end" className="w-60 p-2 rounded-md border-border shadow-lg">
+                                                                <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-muted/50 transition-colors">
                                                                     <Link href={`/dashboard/deliveries/${tour.id}`} className="flex items-center gap-3">
-                                                                        <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                                                                        <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
                                                                             <Eye className="h-4 w-4" />
                                                                         </div>
                                                                         <span className="font-bold text-sm">Détails Tournée</span>
                                                                     </Link>
                                                                 </DropdownMenuItem>
                                                                 {tour.status === 'planned' && (
-                                                                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-blue-50 focus:bg-blue-50 transition-colors">
+                                                                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-brand-soft focus:bg-brand-soft transition-colors">
                                                                         <Link href={`/dashboard/deliveries/${tour.id}/load`} className="flex items-center gap-3">
-                                                                            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                                                                            <div className="h-8 w-8 rounded-lg bg-brand-soft flex items-center justify-center text-brand-strong">
                                                                                 <PlayCircle className="h-4 w-4" />
                                                                             </div>
-                                                                            <span className="font-bold text-sm text-blue-700">Démarrer Chargement</span>
+                                                                            <span className="font-bold text-sm text-brand-strong">Démarrer Chargement</span>
                                                                         </Link>
                                                                     </DropdownMenuItem>
                                                                 )}

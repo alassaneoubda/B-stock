@@ -28,10 +28,10 @@ interface ReturnRecord {
 const fmt = formatMoney
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'En attente', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  approved: { label: 'Approuvé', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  processed: { label: 'Traité', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  rejected: { label: 'Rejeté', cls: 'bg-red-50 text-red-700 border-red-200' },
+  pending: { label: 'En attente', cls: 'bg-warning-soft text-warning-foreground border-warning/30' },
+  approved: { label: 'Approuvé', cls: 'bg-brand-soft text-brand-strong border-brand/40' },
+  processed: { label: 'Traité', cls: 'bg-success-soft text-success border-success/30' },
+  rejected: { label: 'Rejeté', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
 }
 
 export default function ReturnsPage() {
@@ -82,7 +82,7 @@ export default function ReturnsPage() {
 
   if (loadError && returns.length === 0) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Gestion des Retours" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState title="Impossible de charger les retours" onRetry={() => { setIsLoading(true); fetchData() }} />
@@ -92,7 +92,7 @@ export default function ReturnsPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Gestion des Retours" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
@@ -141,23 +141,23 @@ export default function ReturnsPage() {
                       <TableRow key={r.id}>
                         <TableCell className="font-medium text-sm">{r.return_number}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={r.return_type === 'client' ? 'border-blue-200 text-blue-700' : 'border-purple-200 text-purple-700'}>
+                          <Badge variant="outline" className={r.return_type === 'client' ? 'border-brand/40 text-brand-strong' : 'border-info/30 text-info'}>
                             {r.return_type === 'client' ? 'Client' : 'Fournisseur'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm">{r.client_name || r.supplier_name || '-'}</TableCell>
-                        <TableCell className="text-sm text-zinc-500">{r.order_number || '-'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.order_number || '-'}</TableCell>
                         <TableCell className="text-center text-sm">{formatNumber(r.items_count)}</TableCell>
                         <TableCell className="text-right text-sm font-medium">{fmt(Number(r.total_amount))}</TableCell>
                         <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-sm text-zinc-500">{formatDateShort(r.created_at)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{formatDateShort(r.created_at)}</TableCell>
                         <TableCell>
                           {r.status === 'pending' && (
                             <div className="flex gap-1">
-                              <Button size="sm" variant="outline" className="h-9 text-xs text-emerald-600" onClick={() => setConfirm({ record: r, action: 'approve' })} disabled={processing !== null}>
+                              <Button size="sm" variant="outline" className="h-9 text-xs text-success" onClick={() => setConfirm({ record: r, action: 'approve' })} disabled={processing !== null}>
                                 {processing === r.id ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />} Traiter
                               </Button>
-                              <Button size="sm" variant="ghost" className="h-9 w-9 p-0 text-red-600" onClick={() => setConfirm({ record: r, action: 'reject' })} disabled={processing !== null} aria-label={`Rejeter le retour ${r.return_number}`}>
+                              <Button size="sm" variant="ghost" className="h-9 w-9 p-0 text-destructive" onClick={() => setConfirm({ record: r, action: 'reject' })} disabled={processing !== null} aria-label={`Rejeter le retour ${r.return_number}`}>
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             </div>

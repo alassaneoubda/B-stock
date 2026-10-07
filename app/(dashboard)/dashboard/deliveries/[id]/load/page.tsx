@@ -232,7 +232,7 @@ export default function LoadTourPage() {
     const formDisabled = saving || isClosed
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Chargement du véhicule"
                 description={`Tournée du ${formatDate(tour.tour_date)} — ${tour.driver_name || 'Chauffeur non assigné'}`}
@@ -240,7 +240,7 @@ export default function LoadTourPage() {
 
             <main className="flex-1 p-4 lg:p-6 space-y-6 ">
                 <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-slate-200">
+                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-border">
                         <Link href={`/dashboard/deliveries/${tourId}`}>
                             <ArrowLeft className="h-4 w-4 mr-2" /> Retour à la tournée
                         </Link>
@@ -249,7 +249,7 @@ export default function LoadTourPage() {
                         <Button
                             onClick={handleStartDelivery}
                             disabled={starting || saving}
-                            className="rounded-xl bg-blue-600 hover:bg-blue-700 font-bold h-10 px-6 shadow-lg shadow-blue-500/20"
+                            className="rounded-xl bg-primary hover:bg-primary font-bold h-10 px-6 shadow-lg shadow-blue-500/20"
                         >
                             {starting ? (
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -261,7 +261,7 @@ export default function LoadTourPage() {
                     )}
                 </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50/60 p-4 text-sm text-blue-800">
+                <div className="flex items-start gap-3 rounded-lg border border-brand/40 bg-brand-soft p-4 text-sm text-brand-strong">
                     <Info className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
                     <p>
                         Le chargement n&apos;est pas encore déduit du stock du dépôt.
@@ -270,8 +270,8 @@ export default function LoadTourPage() {
                 </div>
 
                 {isClosed && (
-                    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
-                        <Lock className="h-4 w-4 text-slate-400 shrink-0" aria-hidden="true" />
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+                        <Lock className="h-4 w-4 text-muted-foreground/70 shrink-0" aria-hidden="true" />
                         Cette tournée est {tour.status === 'cancelled' ? 'annulée' : 'terminée'} : le chargement n&apos;est plus modifiable.
                     </div>
                 )}
@@ -284,9 +284,9 @@ export default function LoadTourPage() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Add item form */}
-                    <Card className="rounded-lg border-slate-200/60 shadow-sm">
-                        <CardHeader className="px-8 py-6 border-b border-slate-100">
-                            <CardTitle className="text-lg font-semibold text-slate-950">Ajouter un article</CardTitle>
+                    <Card className="rounded-lg border-border shadow-sm">
+                        <CardHeader className="px-8 py-6 border-b border-border">
+                            <CardTitle className="text-lg font-semibold text-foreground">Ajouter un article</CardTitle>
                             <CardDescription>Chargez des produits ou emballages dans le véhicule</CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 space-y-5">
@@ -368,34 +368,34 @@ export default function LoadTourPage() {
                     {/* Loaded inventory */}
                     <div className="lg:col-span-2 space-y-6">
                         {productItems.length > 0 && (
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-5 border-b border-slate-100">
+                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                                <CardHeader className="px-8 py-5 border-b border-border">
                                     <div className="flex items-center gap-3">
-                                        <Package className="h-5 w-5 text-blue-600" />
-                                        <CardTitle className="text-lg font-semibold text-slate-950">Produits chargés</CardTitle>
-                                        <Badge className="bg-blue-50 text-blue-600 border-none font-semibold text-xs">
+                                        <Package className="h-5 w-5 text-brand-strong" />
+                                        <CardTitle className="text-lg font-semibold text-foreground">Produits chargés</CardTitle>
+                                        <Badge className="bg-brand-soft text-brand-strong border-none font-semibold text-xs">
                                             {formatNumber(productItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))} unités
                                         </Badge>
                                     </div>
                                 </CardHeader>
                                 <CardContent className="p-0">
                                     <Table>
-                                        <TableHeader className="bg-slate-50/50">
+                                        <TableHeader className="bg-muted/30">
                                             <TableRow className="border-none">
-                                                <TableHead className="py-3 pl-8 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Produit</TableHead>
-                                                <TableHead className="py-3 text-right pr-8 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Quantité</TableHead>
+                                                <TableHead className="py-3 pl-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Produit</TableHead>
+                                                <TableHead className="py-3 text-right pr-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Quantité</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {productItems.map(item => (
-                                                <TableRow key={item.id} className="border-b border-slate-50">
+                                                <TableRow key={item.id} className="border-b border-border">
                                                     <TableCell className="py-4 pl-8">
-                                                        <span className="font-semibold text-slate-950">{item.product_name}</span>
+                                                        <span className="font-semibold text-foreground">{item.product_name}</span>
                                                         {item.packaging_name && (
-                                                            <span className="ml-2 text-xs text-slate-400">({item.packaging_name})</span>
+                                                            <span className="ml-2 text-xs text-muted-foreground/70">({item.packaging_name})</span>
                                                         )}
                                                     </TableCell>
-                                                    <TableCell className="py-4 text-right pr-8 font-semibold text-blue-600 text-lg">
+                                                    <TableCell className="py-4 text-right pr-8 font-semibold text-brand-strong text-lg">
                                                         {formatNumber(item.loaded_quantity)}
                                                     </TableCell>
                                                 </TableRow>
@@ -407,31 +407,31 @@ export default function LoadTourPage() {
                         )}
 
                         {packagingItems.length > 0 && (
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-5 border-b border-slate-100">
+                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                                <CardHeader className="px-8 py-5 border-b border-border">
                                     <div className="flex items-center gap-3">
-                                        <PackageOpen className="h-5 w-5 text-amber-600" />
-                                        <CardTitle className="text-lg font-semibold text-slate-950">Emballages vides chargés</CardTitle>
-                                        <Badge className="bg-amber-50 text-amber-600 border-none font-semibold text-xs">
+                                        <PackageOpen className="h-5 w-5 text-warning-foreground" />
+                                        <CardTitle className="text-lg font-semibold text-foreground">Emballages vides chargés</CardTitle>
+                                        <Badge className="bg-warning-soft text-warning-foreground border-none font-semibold text-xs">
                                             {formatNumber(packagingItems.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))} unités
                                         </Badge>
                                     </div>
                                 </CardHeader>
                                 <CardContent className="p-0">
                                     <Table>
-                                        <TableHeader className="bg-slate-50/50">
+                                        <TableHeader className="bg-muted/30">
                                             <TableRow className="border-none">
-                                                <TableHead className="py-3 pl-8 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Emballage</TableHead>
-                                                <TableHead className="py-3 text-right pr-8 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Quantité</TableHead>
+                                                <TableHead className="py-3 pl-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Emballage</TableHead>
+                                                <TableHead className="py-3 text-right pr-8 font-semibold uppercase text-[10px] tracking-wider text-muted-foreground/70">Quantité</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {packagingItems.map(item => (
-                                                <TableRow key={item.id} className="border-b border-slate-50">
-                                                    <TableCell className="py-4 pl-8 font-semibold text-slate-950">
+                                                <TableRow key={item.id} className="border-b border-border">
+                                                    <TableCell className="py-4 pl-8 font-semibold text-foreground">
                                                         {item.packaging_name || '—'}
                                                     </TableCell>
-                                                    <TableCell className="py-4 text-right pr-8 font-semibold text-amber-600 text-lg">
+                                                    <TableCell className="py-4 text-right pr-8 font-semibold text-warning-foreground text-lg">
                                                         {formatNumber(item.loaded_quantity)}
                                                     </TableCell>
                                                 </TableRow>
@@ -449,7 +449,7 @@ export default function LoadTourPage() {
                                 description={isClosed
                                     ? "Aucun article n'a été chargé pour cette tournée."
                                     : 'Utilisez le formulaire pour ajouter des produits et emballages.'}
-                                className="bg-white"
+                                className="bg-card"
                             />
                         )}
                     </div>

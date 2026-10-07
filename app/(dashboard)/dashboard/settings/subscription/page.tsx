@@ -30,12 +30,12 @@ interface SubscriptionInfo {
 }
 
 const statusInfo: Record<SubscriptionInfo['status'], { label: string; color: string; icon: React.ElementType }> = {
-    trialing: { label: "Période d'essai", color: 'bg-amber-50 text-amber-600', icon: Clock },
-    active: { label: 'Actif', color: 'bg-emerald-50 text-emerald-600', icon: CheckCircle2 },
-    expired: { label: 'Expiré', color: 'bg-rose-50 text-rose-600', icon: AlertTriangle },
-    past_due: { label: 'Paiement en retard', color: 'bg-rose-50 text-rose-600', icon: AlertTriangle },
-    canceled: { label: 'Annulé', color: 'bg-slate-100 text-slate-600', icon: AlertTriangle },
-    not_found: { label: 'Introuvable', color: 'bg-slate-100 text-slate-600', icon: AlertTriangle },
+    trialing: { label: "Période d'essai", color: 'bg-warning-soft text-warning-foreground', icon: Clock },
+    active: { label: 'Actif', color: 'bg-success-soft text-success', icon: CheckCircle2 },
+    expired: { label: 'Expiré', color: 'bg-destructive/10 text-destructive', icon: AlertTriangle },
+    past_due: { label: 'Paiement en retard', color: 'bg-destructive/10 text-destructive', icon: AlertTriangle },
+    canceled: { label: 'Annulé', color: 'bg-muted text-muted-foreground', icon: AlertTriangle },
+    not_found: { label: 'Introuvable', color: 'bg-muted text-muted-foreground', icon: AlertTriangle },
 }
 
 function remainingText(sub: SubscriptionInfo): string | null {
@@ -75,7 +75,7 @@ export default function SubscriptionPage() {
     const needsAction = sub ? !sub.isActive || (sub.status === 'trialing' || sub.daysRemaining <= 7) : false
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Abonnement"
                 description="Suivez votre offre et son échéance"
@@ -91,28 +91,28 @@ export default function SubscriptionPage() {
                 ) : (
                     <>
                         <div className="grid gap-6 sm:grid-cols-2">
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm">
+                            <Card className="rounded-lg border-border shadow-sm">
                                 <CardContent className="p-8 flex items-center gap-6">
                                     <div className={`h-14 w-14 shrink-0 rounded-md flex items-center justify-center ${status.color}`}>
                                         <StatusIcon className="h-7 w-7" aria-hidden="true" />
                                     </div>
                                     <div>
-                                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Statut</p>
-                                        <p className="text-xl font-semibold text-slate-950">{status.label}</p>
+                                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Statut</p>
+                                        <p className="text-xl font-semibold text-foreground">{status.label}</p>
                                         {remainingText(sub) && (
-                                            <p className="text-sm text-slate-500 font-medium mt-1">{remainingText(sub)}</p>
+                                            <p className="text-sm text-muted-foreground font-medium mt-1">{remainingText(sub)}</p>
                                         )}
                                     </div>
                                 </CardContent>
                             </Card>
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm">
+                            <Card className="rounded-lg border-border shadow-sm">
                                 <CardContent className="p-8 flex items-center gap-6">
-                                    <div className="h-14 w-14 shrink-0 rounded-md bg-slate-100 flex items-center justify-center text-slate-600">
+                                    <div className="h-14 w-14 shrink-0 rounded-md bg-muted flex items-center justify-center text-muted-foreground">
                                         <Crown className="h-7 w-7" aria-hidden="true" />
                                     </div>
                                     <div>
-                                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Offre actuelle</p>
-                                        <p className="text-xl font-semibold text-slate-950">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Offre actuelle</p>
+                                        <p className="text-xl font-semibold text-foreground">
                                             {sub.status === 'trialing' ? 'Essai gratuit' : sub.planName || 'Aucune offre'}
                                         </p>
                                     </div>
@@ -120,17 +120,17 @@ export default function SubscriptionPage() {
                             </Card>
                         </div>
 
-                        <Card className={`rounded-lg shadow-sm ${needsAction ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200/60'}`}>
+                        <Card className={`rounded-lg shadow-sm ${needsAction ? 'border-warning/30 bg-warning-soft' : 'border-border'}`}>
                             <CardContent className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
-                                    <p className="font-semibold text-slate-950">
+                                    <p className="font-semibold text-foreground">
                                         {!sub.isActive
                                             ? 'Votre accès est suspendu jusqu’au renouvellement.'
                                             : sub.status === 'trialing'
                                                 ? "Choisissez une offre avant la fin de l'essai pour ne pas être interrompu."
                                                 : 'Changer d’offre ou prolonger votre abonnement'}
                                     </p>
-                                    <p className="text-sm text-slate-500 mt-1">
+                                    <p className="text-sm text-muted-foreground mt-1">
                                         Comparez les offres et payez en ligne (Mobile Money, carte) sur la page des offres.
                                     </p>
                                 </div>

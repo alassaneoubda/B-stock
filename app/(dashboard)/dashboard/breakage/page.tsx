@@ -36,9 +36,9 @@ interface Stats {
 const NO_PRODUCT = '__none__'
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
-  reported: { label: 'Signalé', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  approved: { label: 'Approuvé', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  rejected: { label: 'Rejeté', cls: 'bg-red-50 text-red-700 border-red-200' },
+  reported: { label: 'Signalé', cls: 'bg-warning-soft text-warning-foreground border-warning/30' },
+  approved: { label: 'Approuvé', cls: 'bg-success-soft text-success border-success/30' },
+  rejected: { label: 'Rejeté', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
 }
 
 const typeLabels: Record<string, string> = {
@@ -178,7 +178,7 @@ export default function BreakagePage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Casse et Pertes" />
         <main className="flex-1 p-4 lg:p-6 max-w-[1400px] mx-auto w-full">
           <ErrorState description="Les incidents n'ont pas pu être chargés." onRetry={fetchData} />
@@ -191,27 +191,27 @@ export default function BreakagePage() {
   const pendingItemName = pendingRecord ? (pendingRecord.product_name || pendingRecord.packaging_name) : null
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Casse et Pertes" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Total incidents</div>
-            <div className="text-xl font-bold text-zinc-950">{formatNumber(records.length)}</div>
+            <div className="text-xs text-muted-foreground mb-1">Total incidents</div>
+            <div className="text-xl font-bold text-foreground">{formatNumber(records.length)}</div>
           </Card>
-          <Card className="p-4 border-red-200 bg-red-50/30">
-            <div className="flex items-center gap-1 text-xs text-red-600 mb-1"><TrendingDown className="h-3 w-3" aria-hidden="true" /> Valeur totale</div>
-            <div className="text-xl font-bold text-red-600">{formatMoney(records.reduce((s, r) => s + Number(r.total_value), 0))}</div>
-          </Card>
-          <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Ce mois</div>
-            <div className="text-xl font-bold text-amber-600">{formatMoney(stats.reduce((s, st) => s + Number(st.total_value), 0))}</div>
+          <Card className="p-4 border-destructive/30 bg-destructive/10">
+            <div className="flex items-center gap-1 text-xs text-destructive mb-1"><TrendingDown className="h-3 w-3" aria-hidden="true" /> Valeur totale</div>
+            <div className="text-xl font-bold text-destructive">{formatMoney(records.reduce((s, r) => s + Number(r.total_value), 0))}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">En attente</div>
-            <div className="text-xl font-bold text-amber-600">{formatNumber(records.filter(r => r.status === 'reported').length)}</div>
+            <div className="text-xs text-muted-foreground mb-1">Ce mois</div>
+            <div className="text-xl font-bold text-warning-foreground">{formatMoney(stats.reduce((s, st) => s + Number(st.total_value), 0))}</div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-xs text-muted-foreground mb-1">En attente</div>
+            <div className="text-xl font-bold text-warning-foreground">{formatNumber(records.filter(r => r.status === 'reported').length)}</div>
           </Card>
         </div>
 
@@ -261,7 +261,7 @@ export default function BreakagePage() {
                 </div>
                 <div>
                   <Label>
-                    Dépôt{hasItem && <span className="text-red-600"> *</span>}
+                    Dépôt{hasItem && <span className="text-destructive"> *</span>}
                   </Label>
                   <Select value={newDepotId} onValueChange={(v) => { setNewDepotId(v); setFormError(null) }}>
                     <SelectTrigger
@@ -277,7 +277,7 @@ export default function BreakagePage() {
                     </SelectContent>
                   </Select>
                   {hasItem && (
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Obligatoire : le stock de ce dépôt sera diminué à l&apos;approbation.
                     </p>
                   )}
@@ -296,7 +296,7 @@ export default function BreakagePage() {
                   <Label htmlFor="breakage-reason">Raison</Label>
                   <Input id="breakage-reason" value={newReason} onChange={(e) => setNewReason(e.target.value)} className="mt-1" placeholder="Cause..." />
                 </div>
-                {formError && <p role="alert" className="text-sm text-red-600">{formError}</p>}
+                {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button variant="outline" disabled={creating}>Annuler</Button></DialogClose>
@@ -339,16 +339,16 @@ export default function BreakagePage() {
                     return (
                       <TableRow key={r.id}>
                         <TableCell>
-                          <Badge variant="outline" className="border-red-200 text-red-700">
+                          <Badge variant="outline" className="border-destructive/30 text-destructive">
                             {typeLabels[r.record_type] || r.record_type}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm">{r.product_name || r.packaging_name || '-'}</TableCell>
                         <TableCell className="text-sm">{r.depot_name || '-'}</TableCell>
                         <TableCell className="text-center text-sm">{formatNumber(r.quantity)}</TableCell>
-                        <TableCell className="text-right text-sm font-medium text-red-600">{formatMoney(r.total_value)}</TableCell>
-                        <TableCell className="text-sm text-zinc-600">{r.reason || '-'}</TableCell>
-                        <TableCell className="text-sm text-zinc-500">{r.reported_by_name || '-'}</TableCell>
+                        <TableCell className="text-right text-sm font-medium text-destructive">{formatMoney(r.total_value)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.reason || '-'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{r.reported_by_name || '-'}</TableCell>
                         <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
                         <TableCell>
                           {r.status === 'reported' && (
@@ -356,7 +356,7 @@ export default function BreakagePage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs text-emerald-600"
+                                className="h-7 text-xs text-success"
                                 onClick={() => setPendingAction({ record: r, action: 'approve' })}
                                 disabled={processing === r.id}
                               >
@@ -367,7 +367,7 @@ export default function BreakagePage() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="h-7 text-xs text-red-600"
+                                className="h-7 text-xs text-destructive"
                                 aria-label="Rejeter l'incident"
                                 title="Rejeter"
                                 onClick={() => setPendingAction({ record: r, action: 'reject' })}

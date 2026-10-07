@@ -36,7 +36,7 @@ export function MobileBottomNav({ permissions = [] }: { permissions?: string[] }
         href={item.href}
         aria-current={active ? 'page' : undefined}
         className={`flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 transition-colors ${
-          active ? 'text-blue-600' : 'text-zinc-500 active:text-zinc-800'
+          active ? 'text-brand-strong' : 'text-muted-foreground active:text-foreground'
         }`}
       >
         <item.icon className="h-5 w-5" aria-hidden="true" />
@@ -49,7 +49,7 @@ export function MobileBottomNav({ permissions = [] }: { permissions?: string[] }
     <nav
       data-mobile-bottom-nav
       aria-label="Navigation principale"
-      className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden"
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <div className="flex h-16 items-center justify-around px-2">
         {left.map(renderItem)}
@@ -57,7 +57,7 @@ export function MobileBottomNav({ permissions = [] }: { permissions?: string[] }
           <Link
             href="/dashboard/sales/new"
             aria-label="Nouvelle vente"
-            className="mx-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-md active:scale-95 transition-transform"
+            className="mx-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-md active:scale-95 transition-transform"
           >
             <Plus className="h-6 w-6" aria-hidden="true" />
           </Link>
@@ -67,7 +67,7 @@ export function MobileBottomNav({ permissions = [] }: { permissions?: string[] }
           type="button"
           onClick={toggleSidebar}
           aria-label="Ouvrir le menu complet"
-          className="flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-zinc-500 transition-colors active:text-zinc-800"
+          className="flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-muted-foreground transition-colors active:text-foreground"
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
           <span className="text-[11px] font-medium">Plus</span>

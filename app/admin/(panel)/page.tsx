@@ -40,8 +40,8 @@ export default function AdminDashboardPage() {
   return (
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <header className="mb-8">
-        <h1 className="text-2xl font-bold text-zinc-950">Tableau de bord</h1>
-        <p className="text-sm text-zinc-500">Vue d&apos;ensemble de la plateforme</p>
+        <h1 className="text-2xl font-bold text-foreground">Tableau de bord</h1>
+        <p className="text-sm text-muted-foreground">Vue d&apos;ensemble de la plateforme</p>
       </header>
 
       {isLoading ? (
@@ -98,21 +98,21 @@ export default function AdminDashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="p-6">
-              <h2 className="text-sm font-semibold text-zinc-950 mb-4">Inscriptions (6 mois)</h2>
+              <h2 className="text-sm font-semibold text-foreground mb-4">Inscriptions (6 mois)</h2>
               <SignupBars data={s.signups} />
             </Card>
 
             <Card className="p-6">
-              <h2 className="text-sm font-semibold text-zinc-950 mb-4">Répartition par plan</h2>
+              <h2 className="text-sm font-semibold text-foreground mb-4">Répartition par plan</h2>
               <div className="space-y-2">
                 {s.byPlan.map((p) => (
                   <div key={p.plan} className="flex items-center justify-between text-sm">
-                    <span className="capitalize text-zinc-700">{p.plan}</span>
-                    <span className="font-semibold text-zinc-950">{formatNumber(p.count)}</span>
+                    <span className="capitalize text-foreground/80">{p.plan}</span>
+                    <span className="font-semibold text-foreground">{formatNumber(p.count)}</span>
                   </div>
                 ))}
                 {s.byPlan.length === 0 && (
-                  <p className="text-sm text-zinc-400">Aucune donnée</p>
+                  <p className="text-sm text-muted-foreground/70">Aucune donnée</p>
                 )}
               </div>
             </Card>
@@ -138,14 +138,14 @@ function Stat({
 }) {
   return (
     <Card className="p-5">
-      <div className="flex items-center gap-2 text-zinc-500 mb-3">
+      <div className="flex items-center gap-2 text-muted-foreground mb-3">
         <Icon className="h-4 w-4" />
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
       </div>
-      <p className={isText ? 'text-xl font-bold text-zinc-950' : 'text-3xl font-bold text-zinc-950'}>
+      <p className={isText ? 'text-xl font-bold text-foreground' : 'text-3xl font-bold text-foreground'}>
         {value}
       </p>
-      {hint && <p className="text-xs text-zinc-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-muted-foreground/70 mt-1">{hint}</p>}
     </Card>
   )
 }
@@ -162,9 +162,9 @@ function MiniStat({
   tone: 'amber' | 'red' | 'zinc'
 }) {
   const tones: Record<string, string> = {
-    amber: 'text-amber-600 bg-amber-50',
-    red: 'text-red-600 bg-red-50',
-    zinc: 'text-zinc-600 bg-zinc-100',
+    amber: 'text-warning-foreground bg-warning-soft',
+    red: 'text-destructive bg-destructive/10',
+    zinc: 'text-muted-foreground bg-muted',
   }
   return (
     <Card className="p-4 flex items-center gap-3">
@@ -172,15 +172,15 @@ function MiniStat({
         <Icon className="h-4 w-4" />
       </div>
       <div>
-        <p className="text-xl font-bold text-zinc-950 leading-tight">{formatNumber(value)}</p>
-        <p className="text-xs text-zinc-500">{label}</p>
+        <p className="text-xl font-bold text-foreground leading-tight">{formatNumber(value)}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
       </div>
     </Card>
   )
 }
 
 function SignupBars({ data }: { data: { month: string; count: number }[] }) {
-  if (data.length === 0) return <p className="text-sm text-zinc-400">Aucune donnée</p>
+  if (data.length === 0) return <p className="text-sm text-muted-foreground/70">Aucune donnée</p>
   const max = Math.max(...data.map((d) => d.count), 1)
   return (
     <div className="flex items-end gap-3 h-40">
@@ -188,12 +188,12 @@ function SignupBars({ data }: { data: { month: string; count: number }[] }) {
         <div key={d.month} className="flex-1 flex flex-col items-center gap-2">
           <div className="w-full flex items-end justify-center" style={{ height: '120px' }}>
             <div
-              className="w-full max-w-[40px] bg-zinc-950 rounded-t-md"
+              className="w-full max-w-[40px] bg-primary rounded-t-md"
               style={{ height: `${(d.count / max) * 100}%`, minHeight: d.count > 0 ? '4px' : '0' }}
               title={`${formatNumber(d.count)} inscription(s)`}
             />
           </div>
-          <span className="text-[10px] text-zinc-500">{d.month.slice(5)}</span>
+          <span className="text-[10px] text-muted-foreground">{d.month.slice(5)}</span>
         </div>
       ))}
     </div>

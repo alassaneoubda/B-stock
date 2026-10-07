@@ -36,8 +36,8 @@ const fetcher = (url: string) => apiFetch(url)
 type PricingType = 'paid' | 'free' | 'on_quote'
 
 const PRICING_TYPES: { value: PricingType; label: string; badge: string }[] = [
-  { value: 'paid', label: 'Payant', badge: 'bg-violet-100 text-violet-700 hover:bg-violet-100' },
-  { value: 'free', label: 'Gratuit', badge: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  { value: 'paid', label: 'Payant', badge: 'bg-info-soft text-info hover:bg-info-soft' },
+  { value: 'free', label: 'Gratuit', badge: 'bg-success-soft text-success hover:bg-success-soft' },
   { value: 'on_quote', label: 'Sur devis', badge: 'bg-orange-100 text-orange-700 hover:bg-orange-100' },
 ]
 
@@ -97,12 +97,12 @@ export default function AdminPlansPage() {
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <header className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-950">Plans d&apos;abonnement</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-2xl font-bold text-foreground">Plans d&apos;abonnement</h1>
+          <p className="text-sm text-muted-foreground">
             Source unique : pilote les tarifs du checkout GeniusPay
           </p>
         </div>
-        <Button onClick={() => setCreating(true)} className="bg-zinc-950 hover:bg-zinc-800">
+        <Button onClick={() => setCreating(true)} className="bg-primary hover:bg-primary">
           <Plus className="h-4 w-4 mr-1.5" /> Nouveau plan
         </Button>
       </header>
@@ -133,12 +133,12 @@ export default function AdminPlansPage() {
               <Card key={p.id} className="p-5">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h2 className="text-lg font-bold text-zinc-950">{p.display_name || p.name}</h2>
-                    <p className="text-xs text-zinc-400 font-mono">{p.name}</p>
+                    <h2 className="text-lg font-bold text-foreground">{p.display_name || p.name}</h2>
+                    <p className="text-xs text-muted-foreground/70 font-mono">{p.name}</p>
                   </div>
                   <button
                     onClick={() => setEditing(p)}
-                    className="text-zinc-400 hover:text-zinc-900 transition-colors"
+                    className="text-muted-foreground/70 hover:text-foreground transition-colors"
                     aria-label={`Modifier le plan ${p.display_name || p.name}`}
                   >
                     <Pencil className="h-4 w-4" />
@@ -148,38 +148,38 @@ export default function AdminPlansPage() {
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   <Badge className={pt.badge}>{pt.label}</Badge>
                   {p.is_active ? (
-                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Actif</Badge>
+                    <Badge className="bg-success-soft text-success hover:bg-success-soft">Actif</Badge>
                   ) : (
-                    <Badge className="bg-zinc-100 text-zinc-500 hover:bg-zinc-100">Inactif</Badge>
+                    <Badge className="bg-muted text-muted-foreground hover:bg-muted">Inactif</Badge>
                   )}
                   {p.is_public ? (
-                    <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">Public</Badge>
+                    <Badge className="bg-brand-soft text-brand-strong hover:bg-brand-soft">Public</Badge>
                   ) : (
-                    <Badge className="bg-zinc-100 text-zinc-500 hover:bg-zinc-100">Masqué</Badge>
+                    <Badge className="bg-muted text-muted-foreground hover:bg-muted">Masqué</Badge>
                   )}
                   {p.is_popular && (
-                    <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                    <Badge className="bg-warning-soft text-warning-foreground hover:bg-warning-soft">
                       <Star className="h-3 w-3 mr-1" /> Populaire
                     </Badge>
                   )}
                 </div>
 
                 {pricingType === 'on_quote' ? (
-                  <p className="text-2xl font-bold text-zinc-950 mb-0.5">Sur devis</p>
+                  <p className="text-2xl font-bold text-foreground mb-0.5">Sur devis</p>
                 ) : (
-                  <p className="text-2xl font-bold text-zinc-950 mb-0.5">
+                  <p className="text-2xl font-bold text-foreground mb-0.5">
                     {formatMoney(monthly ? monthly.price : p.price_monthly)}
-                    <span className="text-sm font-normal text-zinc-400">/mois</span>
+                    <span className="text-sm font-normal text-muted-foreground/70">/mois</span>
                   </p>
                 )}
-                <p className="text-xs text-zinc-400 mb-3">{prices.length} tarif(s) configuré(s)</p>
+                <p className="text-xs text-muted-foreground/70 mb-3">{prices.length} tarif(s) configuré(s)</p>
 
-                <ul className="space-y-1 text-sm text-zinc-600 border-t border-zinc-100 pt-3">
+                <ul className="space-y-1 text-sm text-muted-foreground border-t border-border pt-3">
                   <li>Utilisateurs : {p.max_users === -1 ? '∞' : formatNumber(p.max_users)}</li>
                   <li>Dépôts : {p.max_depots === -1 ? '∞' : formatNumber(p.max_depots)}</li>
                   <li>Produits : {p.max_products === -1 ? '∞' : formatNumber(p.max_products)}</li>
                 </ul>
-                <p className="text-xs text-zinc-400 mt-3">{formatNumber(p.subscribers)} abonné(s)</p>
+                <p className="text-xs text-muted-foreground/70 mt-3">{formatNumber(p.subscribers)} abonné(s)</p>
               </Card>
             )
           })}
@@ -340,17 +340,17 @@ function PlanModal({
         onClick={saving ? undefined : onClose}
       >
         <div
-          className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+          className="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 sticky top-0 bg-white">
-            <h2 className="font-bold text-zinc-950">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card">
+            <h2 className="font-bold text-foreground">
               {isEdit ? `Modifier ${plan!.display_name || plan!.name}` : 'Nouveau plan'}
             </h2>
             <button
               onClick={onClose}
               disabled={saving}
-              className="text-zinc-400 hover:text-zinc-900 transition-colors"
+              className="text-muted-foreground/70 hover:text-foreground transition-colors"
               aria-label="Fermer"
             >
               <X className="h-5 w-5" />
@@ -359,7 +359,7 @@ function PlanModal({
 
           <div className="p-6 space-y-5">
             {error && (
-              <div role="alert" className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600">
+              <div role="alert" className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
@@ -398,10 +398,10 @@ function PlanModal({
 
             {/* Tarifs checkout */}
             <div>
-              <p className="text-xs font-semibold text-zinc-700 uppercase tracking-wide mb-2">
+              <p className="text-xs font-semibold text-foreground/80 uppercase tracking-wide mb-2">
                 Tarifs (FCFA) — pilotent le checkout
               </p>
-              <p className="text-xs text-zinc-400 mb-3">
+              <p className="text-xs text-muted-foreground/70 mb-3">
                 {pricingType === 'paid' &&
                   'Laisser vide pour ne pas proposer cet intervalle. Chaque tarif proposé doit être supérieur à 0.'}
                 {pricingType === 'free' &&
@@ -426,7 +426,7 @@ function PlanModal({
 
             {/* Limites */}
             <div>
-              <p className="text-xs font-semibold text-zinc-700 uppercase tracking-wide mb-2">
+              <p className="text-xs font-semibold text-foreground/80 uppercase tracking-wide mb-2">
                 Limites (-1 = illimité)
               </p>
               <div className="grid grid-cols-2 gap-4">
@@ -450,30 +450,30 @@ function PlanModal({
                 value={features}
                 onChange={(e) => setFeatures(e.target.value)}
                 rows={5}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-950/10"
+                className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-border"
                 placeholder={'Gestion des ventes\nMulti-dépôts\nSupport prioritaire'}
               />
             </Field>
 
             <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/80">
                 <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Actif
               </label>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/80">
                 <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} /> Public (page tarifs)
               </label>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/80">
                 <input type="checkbox" checked={isPopular} onChange={(e) => setIsPopular(e.target.checked)} /> Populaire
               </label>
             </div>
           </div>
 
-          <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-100 sticky bottom-0 bg-white">
+          <div className="flex items-center justify-between px-6 py-4 border-t border-border sticky bottom-0 bg-card">
             {isEdit ? (
               <Button
                 variant="outline"
                 onClick={() => setConfirmDelete(true)}
-                className="text-red-600 border-red-200 hover:bg-red-50"
+                className="text-destructive border-destructive/30 hover:bg-destructive/10"
                 disabled={saving}
               >
                 <Trash2 className="h-4 w-4 mr-1.5" /> Supprimer
@@ -485,7 +485,7 @@ function PlanModal({
               <Button variant="outline" onClick={onClose} disabled={saving}>
                 Annuler
               </Button>
-              <Button onClick={save} className="bg-zinc-950 hover:bg-zinc-800" disabled={saving}>
+              <Button onClick={save} className="bg-primary hover:bg-primary" disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Enregistrer'}
               </Button>
             </div>
@@ -507,7 +507,7 @@ function PlanModal({
             <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
             <AlertDialogAction
               disabled={saving}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive hover:bg-destructive"
               onClick={(e) => {
                 e.preventDefault()
                 remove()
@@ -526,7 +526,7 @@ function PlanModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-zinc-600">{label}</Label>
+      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
       {children}
     </div>
   )

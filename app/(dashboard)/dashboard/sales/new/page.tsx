@@ -818,8 +818,8 @@ export default function NewSalePage() {
                                         const debtProducts = totalProducts - allocProducts
                                         const debtPackaging = totalPackaging - allocPackaging
                                         return (debtProducts > 0 || debtPackaging > 0) ? (
-                                            <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
-                                                <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Répartition du paiement</p>
+                                            <div className="p-4 rounded-lg bg-warning-soft border border-warning/30 space-y-2">
+                                                <p className="text-xs font-bold text-warning-foreground uppercase tracking-wider">Répartition du paiement</p>
                                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                                     <div className="flex justify-between">
                                                         <span className="text-muted-foreground">Payé produits</span>
@@ -831,18 +831,18 @@ export default function NewSalePage() {
                                                     </div>
                                                 </div>
                                                 <Separator />
-                                                <p className="text-xs font-bold text-rose-600 uppercase tracking-wider">Dettes créées</p>
+                                                <p className="text-xs font-bold text-destructive uppercase tracking-wider">Dettes créées</p>
                                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                                     {debtProducts > 0 && (
                                                         <div className="flex justify-between">
                                                             <span className="text-muted-foreground">Dette produits</span>
-                                                            <span className="font-bold text-rose-600">{formatMoney(debtProducts)}</span>
+                                                            <span className="font-bold text-destructive">{formatMoney(debtProducts)}</span>
                                                         </div>
                                                     )}
                                                     {debtPackaging > 0 && (
                                                         <div className="flex justify-between">
                                                             <span className="text-muted-foreground">Dette emballages</span>
-                                                            <span className="font-bold text-amber-600">{formatMoney(debtPackaging)}</span>
+                                                            <span className="font-bold text-warning-foreground">{formatMoney(debtPackaging)}</span>
                                                         </div>
                                                     )}
                                                 </div>

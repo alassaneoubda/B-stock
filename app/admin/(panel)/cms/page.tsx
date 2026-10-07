@@ -151,21 +151,21 @@ export default function AdminCmsPage() {
   return (
     <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-zinc-950">CMS Landing</h1>
-        <p className="text-sm text-zinc-500 mt-1">
+        <h1 className="text-2xl font-bold text-foreground">CMS Landing</h1>
+        <p className="text-sm text-muted-foreground mt-1">
           Modifiez les textes, FAQ et témoignages affichés sur la page d’accueil — sans toucher au code.
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-zinc-200 pb-3">
+      <div className="flex flex-wrap gap-2 border-b border-border pb-3">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               tab === t.id
-                ? 'bg-zinc-950 text-white'
-                : 'text-zinc-600 hover:bg-zinc-100'
+                ? 'bg-primary text-white'
+                : 'text-muted-foreground hover:bg-muted'
             }`}
           >
             {t.label}
@@ -179,7 +179,7 @@ export default function AdminCmsPage() {
           {sections.map((s) => (
             <form
               key={s.section_key}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className="rounded-xl border border-border bg-card p-5 space-y-3"
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -196,8 +196,8 @@ export default function AdminCmsPage() {
               }}
             >
               <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-zinc-900">{s.section_key}</h2>
-                <label className="flex items-center gap-2 text-xs text-zinc-500">
+                <h2 className="font-semibold text-foreground">{s.section_key}</h2>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
                     name="is_published"
@@ -225,7 +225,7 @@ export default function AdminCmsPage() {
                 <textarea
                   name="body"
                   defaultValue={s.body || ''}
-                  className="w-full min-h-[80px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+                  className="w-full min-h-[80px] rounded-md border border-border px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -247,7 +247,7 @@ export default function AdminCmsPage() {
           {features.map((f) => (
             <form
               key={f.id}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className="rounded-xl border border-border bg-card p-5 space-y-3"
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -262,10 +262,10 @@ export default function AdminCmsPage() {
               }}
             >
               <div className="flex justify-between">
-                <span className="text-xs font-mono text-zinc-400">{f.slug}</span>
+                <span className="text-xs font-mono text-muted-foreground/70">{f.slug}</span>
                 <button
                   type="button"
-                  className="text-red-600 text-xs flex items-center gap-1 disabled:opacity-50"
+                  className="text-destructive text-xs flex items-center gap-1 disabled:opacity-50"
                   disabled={saving}
                   onClick={() =>
                     setPendingDelete({
@@ -282,7 +282,7 @@ export default function AdminCmsPage() {
               <textarea
                 name="description"
                 defaultValue={f.description || ''}
-                className="w-full min-h-[60px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+                className="w-full min-h-[60px] rounded-md border border-border px-3 py-2 text-sm"
               />
               <Input name="highlight" defaultValue={f.highlight || ''} placeholder="Highlight" />
               <label className="flex items-center gap-2 text-xs">
@@ -302,7 +302,7 @@ export default function AdminCmsPage() {
           {faq.map((item) => (
             <form
               key={item.id}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className="rounded-xl border border-border bg-card p-5 space-y-3"
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -318,7 +318,7 @@ export default function AdminCmsPage() {
               <div className="flex justify-end">
                 <button
                   type="button"
-                  className="text-red-600 text-xs flex items-center gap-1 disabled:opacity-50"
+                  className="text-destructive text-xs flex items-center gap-1 disabled:opacity-50"
                   disabled={saving}
                   onClick={() =>
                     setPendingDelete({
@@ -342,7 +342,7 @@ export default function AdminCmsPage() {
                 name="answer"
                 defaultValue={item.answer}
                 required
-                className="w-full min-h-[80px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+                className="w-full min-h-[80px] rounded-md border border-border px-3 py-2 text-sm"
               />
               <label className="flex items-center gap-2 text-xs">
                 <input type="checkbox" name="is_published" defaultChecked={item.is_published} />
@@ -355,7 +355,7 @@ export default function AdminCmsPage() {
           ))}
 
           <form
-            className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-5 space-y-3"
+            className="rounded-xl border border-dashed border-border bg-muted/50 p-5 space-y-3"
             onSubmit={async (e) => {
               e.preventDefault()
               const formEl = e.currentTarget
@@ -379,7 +379,7 @@ export default function AdminCmsPage() {
               name="answer"
               placeholder="Réponse"
               required
-              className="w-full min-h-[60px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+              className="w-full min-h-[60px] rounded-md border border-border px-3 py-2 text-sm"
             />
             <Button type="submit" disabled={saving} size="sm">
               Ajouter
@@ -393,7 +393,7 @@ export default function AdminCmsPage() {
           {testimonials.map((t) => (
             <form
               key={t.id}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className="rounded-xl border border-border bg-card p-5 space-y-3"
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -412,7 +412,7 @@ export default function AdminCmsPage() {
               <div className="flex justify-end">
                 <button
                   type="button"
-                  className="text-red-600 text-xs flex items-center gap-1 disabled:opacity-50"
+                  className="text-destructive text-xs flex items-center gap-1 disabled:opacity-50"
                   disabled={saving}
                   onClick={() =>
                     setPendingDelete({
@@ -444,7 +444,7 @@ export default function AdminCmsPage() {
                 name="quote"
                 defaultValue={t.quote}
                 required
-                className="w-full min-h-[80px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+                className="w-full min-h-[80px] rounded-md border border-border px-3 py-2 text-sm"
               />
               <Input name="rating" type="number" min={1} max={5} defaultValue={t.rating} />
               <label className="flex items-center gap-2 text-xs">
@@ -458,7 +458,7 @@ export default function AdminCmsPage() {
           ))}
 
           <form
-            className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-5 space-y-3"
+            className="rounded-xl border border-dashed border-border bg-muted/50 p-5 space-y-3"
             onSubmit={async (e) => {
               e.preventDefault()
               const formEl = e.currentTarget
@@ -486,7 +486,7 @@ export default function AdminCmsPage() {
               name="quote"
               placeholder="Citation"
               required
-              className="w-full min-h-[60px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+              className="w-full min-h-[60px] rounded-md border border-border px-3 py-2 text-sm"
             />
             <Button type="submit" disabled={saving} size="sm">
               Ajouter
@@ -510,7 +510,7 @@ export default function AdminCmsPage() {
             <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
             <AlertDialogAction
               disabled={saving}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive hover:bg-destructive"
               onClick={(e) => {
                 e.preventDefault()
                 confirmDelete()

@@ -42,49 +42,38 @@ export function SubscriptionBanner() {
   // Active paid plan with unlimited time (e.g. Pack Entreprise) — don't show banner
   if (sub.isActive && sub.status === 'active' && sub.daysRemaining >= 999) return null
 
-  // Trialing
+  // Essai : discret tant qu'il reste du temps, visible à l'approche de l'échéance
   if (sub.status === 'trialing' && sub.isActive) {
     const urgent = sub.daysRemaining <= 7
     return (
       <div
-        className={`rounded-lg border p-3 sm:p-4 ${
-          urgent
-            ? 'bg-amber-50 border-amber-200'
-            : 'bg-blue-50 border-blue-200'
+        className={`flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center sm:gap-4 ${
+          urgent ? 'border-warning/40 bg-warning-soft' : 'border-border bg-card'
         }`}
       >
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Clock className={`h-4 w-4 shrink-0 ${urgent ? 'text-amber-600' : 'text-blue-600'}`} aria-hidden="true" />
-            <div className="min-w-0">
-              <p className={`text-xs font-semibold ${urgent ? 'text-amber-900' : 'text-blue-900'}`}>
-                Version d&apos;essai — {days}
-                {sub.endsAt && <span className="font-normal"> (jusqu&apos;au {formatDateShort(sub.endsAt)})</span>}
-              </p>
-              <p className={`text-[10px] mt-0.5 ${urgent ? 'text-amber-700' : 'text-blue-700'}`}>
-                {urgent
-                  ? isOwner
-                    ? 'Votre essai expire bientôt. Choisissez une offre pour continuer.'
-                    : "L'essai expire bientôt. Prévenez le propriétaire du compte."
-                  : 'Accès complet à toutes les fonctionnalités pendant votre essai.'}
-              </p>
-            </div>
-          </div>
-          {isOwner && (
-            <Button
-              size="sm"
-              className={`h-7 text-[10px] font-semibold shrink-0 ${
-                urgent ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'
-              } text-white`}
-              asChild
-            >
-              <Link href="/dashboard/plans">
-                Voir les offres
-                <ArrowRight className="h-3 w-3 ml-1" aria-hidden="true" />
-              </Link>
-            </Button>
-          )}
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${urgent ? 'bg-warning text-warning-foreground' : 'bg-brand-soft text-brand-strong'}`}>
+          <Clock className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <p className="min-w-0 flex-1 text-sm text-foreground">
+          <span className="font-semibold">Essai gratuit · {days}</span>
+          {sub.endsAt && <span className="text-muted-foreground"> — jusqu&apos;au {formatDateShort(sub.endsAt)}</span>}
+          <span className="block text-xs text-muted-foreground">
+            {urgent
+              ? isOwner
+                ? 'Choisissez une offre pour continuer sans interruption.'
+                : "L'essai se termine bientôt : prévenez le propriétaire du compte."
+              : 'Toutes les fonctionnalités sont incluses pendant l’essai.'}
+          </span>
+        </p>
         </div>
+        {isOwner && (
+          <Button size="sm" variant={urgent ? 'default' : 'outline'} className="self-start sm:self-auto" asChild>
+            <Link href="/dashboard/plans">
+              Voir les offres <ArrowRight aria-hidden="true" />
+            </Link>
+          </Button>
+        )}
       </div>
     )
   }
@@ -92,15 +81,15 @@ export function SubscriptionBanner() {
   // Active paid plan nearing expiry (≤30 days)
   if (sub.isActive && sub.status === 'active' && sub.daysRemaining <= 30 && sub.daysRemaining < 999) {
     return (
-      <div className="rounded-lg border bg-amber-50 border-amber-200 p-3 sm:p-4">
+      <div className="rounded-lg border bg-warning-soft border-warning/30 p-3 sm:p-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Crown className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+            <Crown className="h-4 w-4 shrink-0 text-warning-foreground" aria-hidden="true" />
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-amber-900">
+              <p className="text-xs font-semibold text-warning-foreground">
                 {sub.planName} — {days}
               </p>
-              <p className="text-[10px] text-amber-700 mt-0.5">
+              <p className="text-[10px] text-warning-foreground mt-0.5">
                 {sub.endsAt && <>Expire le {formatDateShort(sub.endsAt)}. </>}
                 {isOwner
                   ? "Renouvelez pour éviter l'interruption."
@@ -109,7 +98,7 @@ export function SubscriptionBanner() {
             </div>
           </div>
           {isOwner && (
-            <Button size="sm" className="h-7 text-[10px] font-semibold bg-amber-600 hover:bg-amber-700 text-white shrink-0" asChild>
+            <Button size="sm" className="h-7 text-[10px] font-semibold bg-warning hover:bg-warning text-white shrink-0" asChild>
               <Link href="/dashboard/plans">
                 Renouveler
                 <ArrowRight className="h-3 w-3 ml-1" aria-hidden="true" />
@@ -117,9 +106,9 @@ export function SubscriptionBanner() {
             </Button>
           )}
         </div>
-        <div className="mt-2.5 w-full bg-white/60 rounded-full h-1.5 overflow-hidden">
+        <div className="mt-2.5 w-full bg-card/60 rounded-full h-1.5 overflow-hidden">
           <div
-            className={`h-full rounded-full ${sub.daysRemaining <= 5 ? 'bg-red-500' : 'bg-amber-500'}`}
+            className={`h-full rounded-full ${sub.daysRemaining <= 5 ? 'bg-destructive' : 'bg-warning'}`}
             style={{ width: `${Math.min(100, Math.max(3, (sub.daysRemaining / 30) * 100))}%` }}
           />
         </div>
@@ -130,15 +119,15 @@ export function SubscriptionBanner() {
   // Active paid plan — show plan name quietly
   if (sub.isActive && sub.status === 'active' && sub.daysRemaining < 999) {
     return (
-      <div className="flex items-center justify-between rounded-lg border bg-emerald-50/50 border-emerald-200 p-3 sm:p-4">
+      <div className="flex items-center justify-between rounded-lg border bg-success-soft border-success/30 p-3 sm:p-4">
         <div className="flex items-center gap-2.5 min-w-0">
-          <Crown className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+          <Crown className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-emerald-900">
+            <p className="text-xs font-semibold text-success">
               {sub.planName} — {days}
             </p>
             {sub.endsAt && (
-              <p className="text-[10px] text-emerald-700 mt-0.5">
+              <p className="text-[10px] text-success mt-0.5">
                 Expire le {formatDateShort(sub.endsAt)}
               </p>
             )}

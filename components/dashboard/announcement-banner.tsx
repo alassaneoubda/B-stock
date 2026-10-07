@@ -17,10 +17,10 @@ type Announcement = {
 }
 
 const styles: Record<string, { bg: string; icon: React.ElementType }> = {
-  info: { bg: 'bg-blue-600 text-white', icon: Info },
-  success: { bg: 'bg-green-600 text-white', icon: CheckCircle2 },
-  warning: { bg: 'bg-amber-500 text-amber-950', icon: AlertTriangle },
-  critical: { bg: 'bg-red-600 text-white', icon: AlertOctagon },
+  info: { bg: 'bg-primary text-white', icon: Info },
+  success: { bg: 'bg-success text-white', icon: CheckCircle2 },
+  warning: { bg: 'bg-warning text-warning-foreground', icon: AlertTriangle },
+  critical: { bg: 'bg-destructive text-white', icon: AlertOctagon },
 }
 
 export function AnnouncementBanner() {

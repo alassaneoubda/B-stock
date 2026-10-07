@@ -176,7 +176,7 @@ export default function PricingPage() {
 
   if (loadError && priceRules.length === 0 && promotions.length === 0) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Tarification" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState title="Impossible de charger la tarification" onRetry={() => { setIsLoading(true); fetchData() }} />
@@ -186,7 +186,7 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Tarification" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
@@ -240,7 +240,7 @@ export default function PricingPage() {
                           <TableCell className="text-sm">{clientTypeLabels[rule.client_type] || rule.client_type}</TableCell>
                           <TableCell className="text-center text-sm">{formatNumber(rule.min_quantity)}</TableCell>
                           <TableCell className="text-right text-sm font-medium">{fmt(Number(rule.price))}</TableCell>
-                          <TableCell className="text-sm text-zinc-500">
+                          <TableCell className="text-sm text-muted-foreground">
                             {validityLabel(rule.valid_from, rule.valid_until)}
                           </TableCell>
                           <TableCell>
@@ -288,7 +288,7 @@ export default function PricingPage() {
                         <TableRow key={promo.id}>
                           <TableCell className="text-sm font-medium">{promo.name}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className={promo.discount_type === 'percentage' ? 'border-blue-200 text-blue-700' : 'border-green-200 text-green-700'}>
+                            <Badge variant="outline" className={promo.discount_type === 'percentage' ? 'border-brand/40 text-brand-strong' : 'border-success/30 text-success'}>
                               {promo.discount_type === 'percentage' ? '%' : 'FCFA'}
                             </Badge>
                           </TableCell>
@@ -298,12 +298,12 @@ export default function PricingPage() {
                           <TableCell className="text-sm">
                             {promo.applies_to === 'all' ? 'Tous' : promo.applies_to === 'category' ? promo.category : promo.product_name}
                           </TableCell>
-                          <TableCell className="text-sm text-zinc-500">
+                          <TableCell className="text-sm text-muted-foreground">
                             {promo.min_quantity > 1 && `Min ${formatNumber(promo.min_quantity)} pcs`}
                             {promo.min_order_amount ? ` • Min ${fmt(Number(promo.min_order_amount))}` : null}
                             {promo.client_type && ` • ${clientTypeLabels[promo.client_type] || promo.client_type}`}
                           </TableCell>
-                          <TableCell className="text-sm text-zinc-500">
+                          <TableCell className="text-sm text-muted-foreground">
                             {validityLabel(promo.valid_from, promo.valid_until)}
                           </TableCell>
                           <TableCell>
@@ -337,7 +337,7 @@ export default function PricingPage() {
                   </SelectContent>
                 </Select>
                 {ruleProductId && (
-                  <p className="text-xs text-zinc-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Prix catalogue : {fmt(variantOptions.find((v) => v.id === ruleProductId)?.price ?? 0)}
                   </p>
                 )}

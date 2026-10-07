@@ -50,11 +50,11 @@ type Invoice = {
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-    paid: { label: 'Payée', color: 'bg-emerald-50 text-emerald-700' },
-    partial: { label: 'Partielle', color: 'bg-amber-50 text-amber-700' },
-    draft: { label: 'Brouillon', color: 'bg-zinc-100 text-zinc-600' },
-    sent: { label: 'Envoyée', color: 'bg-blue-50 text-blue-700' },
-    cancelled: { label: 'Annulée', color: 'bg-red-50 text-red-600' },
+    paid: { label: 'Payée', color: 'bg-success-soft text-success' },
+    partial: { label: 'Partielle', color: 'bg-warning-soft text-warning-foreground' },
+    draft: { label: 'Brouillon', color: 'bg-muted text-muted-foreground' },
+    sent: { label: 'Envoyée', color: 'bg-brand-soft text-brand-strong' },
+    cancelled: { label: 'Annulée', color: 'bg-destructive/10 text-destructive' },
 }
 
 export default function InvoicesPage() {
@@ -101,14 +101,14 @@ export default function InvoicesPage() {
     const paidCount = invoices.filter(i => i.status === 'paid').length
 
     const statsData = [
-        { title: 'Total factures', value: formatNumber(invoices.length), icon: Receipt, color: 'bg-blue-500/10 text-blue-600', desc: 'factures générées' },
-        { title: 'Montant total', value: formatCurrency(totalAmount), icon: Banknote, color: 'bg-emerald-500/10 text-emerald-600', desc: 'chiffre d\'affaires' },
-        { title: 'Encours impayé', value: formatCurrency(totalRemaining), icon: Clock, color: 'bg-amber-500/10 text-amber-600', desc: 'à recouvrer' },
-        { title: 'Factures soldées', value: formatNumber(paidCount), icon: CheckCircle2, color: 'bg-emerald-500/10 text-emerald-600', desc: `sur ${invoices.length}` },
+        { title: 'Total factures', value: formatNumber(invoices.length), icon: Receipt, color: 'bg-primary/10 text-brand-strong', desc: 'factures générées' },
+        { title: 'Montant total', value: formatCurrency(totalAmount), icon: Banknote, color: 'bg-success/10 text-success', desc: 'chiffre d\'affaires' },
+        { title: 'Encours impayé', value: formatCurrency(totalRemaining), icon: Clock, color: 'bg-warning/10 text-warning-foreground', desc: 'à recouvrer' },
+        { title: 'Factures soldées', value: formatNumber(paidCount), icon: CheckCircle2, color: 'bg-success/10 text-success', desc: `sur ${invoices.length}` },
     ]
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Factures"
                 description="Gestion des factures clients et fournisseurs"
@@ -118,22 +118,22 @@ export default function InvoicesPage() {
                 {/* Stats */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {statsData.map((stat) => (
-                        <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
+                        <div key={stat.title} className="bg-card rounded-lg border border-border p-4">
                             <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
-                                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
+                                <span className="text-xs font-medium text-muted-foreground">{stat.title}</span>
+                                <stat.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
                             </div>
-                            <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight truncate">{stat.value}</p>
-                            <p className="text-xs text-zinc-500 mt-1">{stat.desc}</p>
+                            <p className="text-lg sm:text-xl font-bold text-foreground tracking-tight truncate">{stat.value}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{stat.desc}</p>
                         </div>
                     ))}
                 </div>
 
                 {/* Filters + Search */}
-                <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-zinc-100 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="bg-card rounded-lg border border-border overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border flex flex-col sm:flex-row sm:items-center gap-3">
                         <div className="relative flex-1 max-w-sm">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" aria-hidden="true" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
                             <Input
                                 placeholder="Rechercher..."
                                 aria-label="Rechercher une facture"
@@ -147,7 +147,7 @@ export default function InvoicesPage() {
                                 value={filterType}
                                 onChange={(e) => setFilterType(e.target.value)}
                                 aria-label="Filtrer par type"
-                                className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600"
+                                className="h-9 rounded-md border border-border bg-card px-3 text-xs font-medium text-muted-foreground"
                             >
                                 <option value="all">Tous types</option>
                                 <option value="client">Client</option>
@@ -157,7 +157,7 @@ export default function InvoicesPage() {
                                 value={filterStatus}
                                 onChange={(e) => setFilterStatus(e.target.value)}
                                 aria-label="Filtrer par statut"
-                                className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600"
+                                className="h-9 rounded-md border border-border bg-card px-3 text-xs font-medium text-muted-foreground"
                             >
                                 <option value="all">Tous statuts</option>
                                 <option value="paid">Payée</option>
@@ -200,51 +200,51 @@ export default function InvoicesPage() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="hover:bg-transparent">
-                                            <TableHead className="text-xs font-medium text-zinc-500 pl-4">N° Facture</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Type</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Client / Fournisseur</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Date</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Montant</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Reste</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground pl-4">N° Facture</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground">Type</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground">Client / Fournisseur</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground">Date</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground text-right">Montant</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground text-right">Reste</TableHead>
+                                            <TableHead className="text-xs font-medium text-muted-foreground">Statut</TableHead>
                                             <TableHead className="pr-4"></TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {invoices.map((inv) => {
-                                            const status = statusConfig[inv.status] || { label: inv.status, color: 'bg-zinc-100 text-zinc-600' }
+                                            const status = statusConfig[inv.status] || { label: inv.status, color: 'bg-muted text-muted-foreground' }
                                             return (
                                                 <TableRow key={inv.id} className="group">
                                                     <TableCell className="pl-4">
-                                                        <span className="text-sm font-medium text-zinc-950 font-mono">{inv.invoice_number}</span>
+                                                        <span className="text-sm font-medium text-foreground font-mono">{inv.invoice_number}</span>
                                                     </TableCell>
                                                     <TableCell>
-                                                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${inv.type === 'client' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                                                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${inv.type === 'client' ? 'bg-brand-soft text-brand-strong' : 'bg-info-soft text-info'}`}>
                                                             {inv.type === 'client' ? 'Client' : 'Fournisseur'}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell>
-                                                        <span className="text-sm text-zinc-700">
+                                                        <span className="text-sm text-foreground/80">
                                                             {inv.client_name || inv.supplier_name || '—'}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell>
-                                                        <span className="text-xs text-zinc-500">
+                                                        <span className="text-xs text-muted-foreground">
                                                             {formatDateShort(inv.created_at)}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="text-right">
-                                                        <span className="text-sm font-semibold text-zinc-950">
+                                                        <span className="text-sm font-semibold text-foreground">
                                                             {formatCurrency(Number(inv.total_amount))}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         {Number(inv.remaining_amount) > 0 ? (
-                                                            <span className="text-sm font-medium text-red-600">
+                                                            <span className="text-sm font-medium text-destructive">
                                                                 {formatCurrency(Number(inv.remaining_amount))}
                                                             </span>
                                                         ) : (
-                                                            <span className="text-xs font-medium text-emerald-600">Soldé</span>
+                                                            <span className="text-xs font-medium text-success">Soldé</span>
                                                         )}
                                                     </TableCell>
                                                     <TableCell>
@@ -256,19 +256,19 @@ export default function InvoicesPage() {
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
                                                                 <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour la facture ${inv.invoice_number}`}>
-                                                                    <MoreHorizontal className="h-4 w-4 text-zinc-400" />
+                                                                    <MoreHorizontal className="h-4 w-4 text-muted-foreground/70" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
                                                             <DropdownMenuContent align="end" className="w-48">
                                                                 <DropdownMenuItem asChild className="cursor-pointer">
                                                                     <Link href={`/dashboard/invoices/${inv.id}`} className="flex items-center gap-2">
-                                                                        <Eye className="h-4 w-4 text-zinc-500" />
+                                                                        <Eye className="h-4 w-4 text-muted-foreground" />
                                                                         <span className="text-sm">Voir la facture</span>
                                                                     </Link>
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem asChild className="cursor-pointer">
                                                                     <Link href={`/dashboard/invoices/${inv.id}?print=1`} className="flex items-center gap-2">
-                                                                        <Printer className="h-4 w-4 text-zinc-500" />
+                                                                        <Printer className="h-4 w-4 text-muted-foreground" />
                                                                         <span className="text-sm">Imprimer / PDF</span>
                                                                     </Link>
                                                                 </DropdownMenuItem>
@@ -283,21 +283,21 @@ export default function InvoicesPage() {
                             </div>
 
                             {/* Mobile cards */}
-                            <div className="md:hidden divide-y divide-zinc-100">
+                            <div className="md:hidden divide-y divide-border">
                                 {invoices.map((inv) => {
-                                    const status = statusConfig[inv.status] || { label: inv.status, color: 'bg-zinc-100 text-zinc-600' }
+                                    const status = statusConfig[inv.status] || { label: inv.status, color: 'bg-muted text-muted-foreground' }
                                     return (
                                         <Link
                                             key={inv.id}
                                             href={`/dashboard/invoices/${inv.id}`}
-                                            className="block p-4 active:bg-zinc-50 transition-colors"
+                                            className="block p-4 active:bg-muted/50 transition-colors"
                                         >
                                             <div className="flex items-start justify-between mb-2">
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-semibold text-zinc-950 truncate">
+                                                    <p className="text-sm font-semibold text-foreground truncate">
                                                         {inv.client_name || inv.supplier_name || 'Sans nom'}
                                                     </p>
-                                                    <p className="text-xs text-zinc-400 font-mono">
+                                                    <p className="text-xs text-muted-foreground/70 font-mono">
                                                         {inv.invoice_number} · {formatDateShort(inv.created_at)}
                                                     </p>
                                                 </div>
@@ -306,13 +306,13 @@ export default function InvoicesPage() {
                                                 </Badge>
                                             </div>
                                             <div className="flex items-center justify-between">
-                                                <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${inv.type === 'client' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                                                <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${inv.type === 'client' ? 'bg-brand-soft text-brand-strong' : 'bg-info-soft text-info'}`}>
                                                     {inv.type === 'client' ? 'Client' : 'Fournisseur'}
                                                 </span>
                                                 <div className="text-right">
-                                                    <p className="text-sm font-bold text-zinc-950">{formatCurrency(Number(inv.total_amount))}</p>
+                                                    <p className="text-sm font-bold text-foreground">{formatCurrency(Number(inv.total_amount))}</p>
                                                     {Number(inv.remaining_amount) > 0 && (
-                                                        <p className="text-xs font-medium text-red-500">Reste: {formatCurrency(Number(inv.remaining_amount))}</p>
+                                                        <p className="text-xs font-medium text-destructive">Reste: {formatCurrency(Number(inv.remaining_amount))}</p>
                                                     )}
                                                 </div>
                                             </div>

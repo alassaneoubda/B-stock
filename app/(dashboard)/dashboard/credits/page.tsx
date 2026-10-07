@@ -37,11 +37,11 @@ interface Stats {
 const fmt = formatMoney
 
 const statusLabels: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'En attente', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  partial: { label: 'Partiel', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  paid: { label: 'Payé', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  overdue: { label: 'En retard', cls: 'bg-red-50 text-red-700 border-red-200' },
-  written_off: { label: 'Abandonné', cls: 'bg-zinc-100 text-zinc-500 border-zinc-200' },
+  pending: { label: 'En attente', cls: 'bg-warning-soft text-warning-foreground border-warning/30' },
+  partial: { label: 'Partiel', cls: 'bg-brand-soft text-brand-strong border-brand/40' },
+  paid: { label: 'Payé', cls: 'bg-success-soft text-success border-success/30' },
+  overdue: { label: 'En retard', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
+  written_off: { label: 'Abandonné', cls: 'bg-muted text-muted-foreground border-border' },
 }
 
 export default function CreditsPage() {
@@ -119,7 +119,7 @@ export default function CreditsPage() {
 
   if (loadError && credits.length === 0 && !stats) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Gestion des Crédits" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState title="Impossible de charger les créances" onRetry={() => { setIsLoading(true); fetchData() }} />
@@ -129,28 +129,28 @@ export default function CreditsPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Gestion des Crédits" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Créances totales</div>
-            <div className="text-xl font-bold text-zinc-950">{formatNumber(stats?.total_credits || 0)}</div>
+            <div className="text-xs text-muted-foreground mb-1">Créances totales</div>
+            <div className="text-xl font-bold text-foreground">{formatNumber(stats?.total_credits || 0)}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Montant en cours</div>
-            <div className="text-xl font-bold text-amber-600">{fmt(Number(stats?.total_outstanding || 0))}</div>
+            <div className="text-xs text-muted-foreground mb-1">Montant en cours</div>
+            <div className="text-xl font-bold text-warning-foreground">{fmt(Number(stats?.total_outstanding || 0))}</div>
           </Card>
-          <Card className="p-4 border-red-200 bg-red-50/30">
-            <div className="flex items-center gap-1 text-xs text-red-600 mb-1"><AlertTriangle className="h-3 w-3" /> En retard</div>
-            <div className="text-xl font-bold text-red-600">{formatNumber(stats?.overdue_count || 0)}</div>
-            <div className="text-xs text-red-500">{fmt(Number(stats?.overdue_amount || 0))}</div>
+          <Card className="p-4 border-destructive/30 bg-destructive/10">
+            <div className="flex items-center gap-1 text-xs text-destructive mb-1"><AlertTriangle className="h-3 w-3" /> En retard</div>
+            <div className="text-xl font-bold text-destructive">{formatNumber(stats?.overdue_count || 0)}</div>
+            <div className="text-xs text-destructive">{fmt(Number(stats?.overdue_amount || 0))}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Taux recouvrement</div>
-            <div className="text-xl font-bold text-emerald-600">
+            <div className="text-xs text-muted-foreground mb-1">Taux recouvrement</div>
+            <div className="text-xl font-bold text-success">
               {credits.length > 0 ? Math.round((credits.filter(c => c.status === 'paid').length / credits.length) * 100) : 0}%
             </div>
           </Card>
@@ -158,7 +158,7 @@ export default function CreditsPage() {
 
         {/* Search */}
         <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" aria-hidden="true" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
           <Input aria-label="Rechercher une créance" placeholder="Rechercher par client ou n° créance..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
@@ -194,20 +194,20 @@ export default function CreditsPage() {
                       <TableRow key={c.id}>
                         <TableCell className="text-sm font-medium">
                           <div>{c.credit_number}</div>
-                          <Badge variant="outline" className={`mt-1 text-[10px] ${c.account_type === 'packaging' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                          <Badge variant="outline" className={`mt-1 text-[10px] ${c.account_type === 'packaging' ? 'bg-info-soft text-info border-info/30' : 'bg-brand-soft text-brand-strong border-brand/40'}`}>
                             {c.account_type === 'packaging' ? 'Emballage' : 'Produit'}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <div className="text-sm font-medium">{c.client_name}</div>
-                          {c.client_phone && <div className="text-xs text-zinc-400">{c.client_phone}</div>}
+                          {c.client_phone && <div className="text-xs text-muted-foreground/70">{c.client_phone}</div>}
                         </TableCell>
                         <TableCell className="text-right text-sm">{fmt(Number(c.total_amount))}</TableCell>
-                        <TableCell className="text-right text-sm text-emerald-600">{fmt(Number(c.paid_amount))}</TableCell>
-                        <TableCell className="text-right text-sm font-semibold text-red-600">{remaining > 0 ? fmt(remaining) : '-'}</TableCell>
+                        <TableCell className="text-right text-sm text-success">{fmt(Number(c.paid_amount))}</TableCell>
+                        <TableCell className="text-right text-sm font-semibold text-destructive">{remaining > 0 ? fmt(remaining) : '-'}</TableCell>
                         <TableCell className="text-sm">
                           {c.due_date ? (
-                            <span className={c.is_overdue ? 'text-red-600 font-medium' : ''}>
+                            <span className={c.is_overdue ? 'text-destructive font-medium' : ''}>
                               {formatDateShort(c.due_date)}
                               {c.is_overdue && ` (${c.days_overdue}j)`}
                             </span>
@@ -250,11 +250,11 @@ export default function CreditsPage() {
           <DialogContent>
             <DialogHeader><DialogTitle>Encaisser — {payDialog?.credit_number}</DialogTitle></DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="bg-zinc-50 rounded-lg p-3 text-sm space-y-1">
+              <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
                 <div className="flex justify-between"><span>Client</span><span className="font-medium">{payDialog?.client_name}</span></div>
                 <div className="flex justify-between"><span>Total</span><span>{fmt(Number(payDialog?.total_amount || 0))}</span></div>
-                <div className="flex justify-between"><span>Déjà payé</span><span className="text-emerald-600">{fmt(Number(payDialog?.paid_amount || 0))}</span></div>
-                <div className="flex justify-between font-semibold"><span>Reste</span><span className="text-red-600">{fmt(Number(payDialog?.total_amount || 0) - Number(payDialog?.paid_amount || 0))}</span></div>
+                <div className="flex justify-between"><span>Déjà payé</span><span className="text-success">{fmt(Number(payDialog?.paid_amount || 0))}</span></div>
+                <div className="flex justify-between font-semibold"><span>Reste</span><span className="text-destructive">{fmt(Number(payDialog?.total_amount || 0) - Number(payDialog?.paid_amount || 0))}</span></div>
               </div>
               <div>
                 <Label>Montant à encaisser (FCFA)</Label>
@@ -278,7 +278,7 @@ export default function CreditsPage() {
             </div>
             <DialogFooter>
               <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-              <Button onClick={handlePay} disabled={submitting || !payAmount || Number(payAmount) <= 0} className="bg-emerald-600 hover:bg-emerald-700">
+              <Button onClick={handlePay} disabled={submitting || !payAmount || Number(payAmount) <= 0} className="bg-success hover:bg-success">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Banknote className="h-4 w-4 mr-2" />} Encaisser
               </Button>
             </DialogFooter>

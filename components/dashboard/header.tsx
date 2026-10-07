@@ -60,50 +60,27 @@ export function DashboardHeader({ title, description, actions }: DashboardHeader
     : 'Alertes'
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 bg-white border-b border-zinc-200/60 px-4 lg:px-6 sticky top-0 z-40">
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <SidebarTrigger className="h-9 w-auto shrink-0 gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 text-zinc-800 hover:bg-zinc-100 md:border-0 md:bg-transparent md:px-2">
-          <span className="text-sm font-medium md:hidden">Menu</span>
-        </SidebarTrigger>
-        <div className="h-5 w-px bg-zinc-200 hidden sm:block" />
-        <div className="flex flex-col min-w-0">
-          <h1 className="text-sm font-semibold text-zinc-950 truncate">{title}</h1>
-          {description && (
-            <p className="text-xs text-zinc-500 truncate">{description}</p>
-          )}
-        </div>
+    <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:px-8">
+      <SidebarTrigger
+        className="h-9 w-9 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+        aria-label="Afficher ou masquer le menu"
+      />
+      <div className="hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <h1 className="truncate text-[15px] font-semibold tracking-tight text-foreground">{title}</h1>
+        {description && <p className="truncate text-xs text-muted-foreground">{description}</p>}
       </div>
 
-      <div className="flex items-center gap-2">
-        {/* Actions rapides (selon les droits du rôle) */}
-        {quickActions.length > 0 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" className="h-8 px-3 gap-1.5 text-xs font-medium" aria-label="Nouveau">
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Nouveau</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            {quickActions.map((action) => (
-              <DropdownMenuItem key={action.href} asChild className="cursor-pointer">
-                <Link href={action.href} className="flex items-center gap-2">
-                  <action.icon className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                  <span className="text-sm">{action.label}</span>
-                </Link>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        )}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {actions}
 
         {/* Alertes : pastille uniquement s'il existe des alertes non lues */}
-        <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-md hover:bg-zinc-100" asChild>
+        <Button variant="ghost" size="icon" className="relative rounded-lg text-muted-foreground hover:text-foreground" asChild>
           <Link href="/dashboard/alerts" aria-label={bellLabel} title={bellLabel}>
-            <Bell className="h-4 w-4 text-zinc-500" aria-hidden="true" />
+            <Bell className="h-[18px] w-[18px]" aria-hidden="true" />
             {hasUnread && (
               <span
-                className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-semibold leading-4 text-center"
+                className="tabular absolute right-1 top-1 h-4 min-w-4 rounded-full bg-brand px-1 text-center text-[10px] font-bold leading-4 text-brand-foreground ring-2 ring-background"
                 aria-hidden="true"
               >
                 {countLabel}
@@ -112,7 +89,27 @@ export function DashboardHeader({ title, description, actions }: DashboardHeader
           </Link>
         </Button>
 
-        {actions}
+        {/* Actions rapides (selon les droits du rôle) */}
+        {quickActions.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="h-9 gap-1.5 rounded-lg px-3" aria-label="Nouveau">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Nouveau</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {quickActions.map((action) => (
+                <DropdownMenuItem key={action.href} asChild>
+                  <Link href={action.href}>
+                    <action.icon aria-hidden="true" />
+                    {action.label}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </header>
   )

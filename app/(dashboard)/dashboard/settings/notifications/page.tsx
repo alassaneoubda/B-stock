@@ -131,7 +131,7 @@ export default function NotificationsSettingsPage() {
 
                 <div className="max-w-3xl space-y-6">
                     {isLoading ? (
-                        <Card className="rounded-lg border-slate-200/60 shadow-sm p-8 space-y-6" aria-busy="true" aria-label="Chargement">
+                        <Card className="rounded-lg border-border shadow-sm p-8 space-y-6" aria-busy="true" aria-label="Chargement">
                             <Skeleton className="h-6 w-56" />
                             {Array.from({ length: 4 }, (_, i) => (
                                 <div key={i} className="flex items-center justify-between gap-4">
@@ -147,13 +147,13 @@ export default function NotificationsSettingsPage() {
                         <ErrorState description={loadError ?? undefined} onRetry={fetchSettings} />
                     ) : (
                         <>
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-8 border-b border-slate-100">
-                                    <CardTitle className="text-xl font-semibold text-slate-950">Événements à suivre</CardTitle>
+                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                                <CardHeader className="px-8 py-8 border-b border-border">
+                                    <CardTitle className="text-xl font-semibold text-foreground">Événements à suivre</CardTitle>
                                     <CardDescription>
                                         Ces préférences sont enregistrées sur votre compte. Les alertes restent toujours
                                         consultables dans la page{' '}
-                                        <Link href="/dashboard/alerts" className="font-medium text-blue-600 hover:underline">Alertes</Link>.
+                                        <Link href="/dashboard/alerts" className="font-medium text-brand-strong hover:underline">Alertes</Link>.
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="p-8 space-y-6">
@@ -173,7 +173,7 @@ export default function NotificationsSettingsPage() {
                                             </div>
                                             {toggle.key === 'credit_overdue_enabled' && settings.credit_overdue_enabled && (
                                                 <div className="flex items-center gap-3 pl-1">
-                                                    <Label htmlFor="credit_overdue_days" className="text-sm text-slate-600">
+                                                    <Label htmlFor="credit_overdue_days" className="text-sm text-muted-foreground">
                                                         Considérer en retard après
                                                     </Label>
                                                     <Input
@@ -190,14 +190,14 @@ export default function NotificationsSettingsPage() {
                                                             setDirty(true)
                                                         }}
                                                     />
-                                                    <span className="text-sm text-slate-600">jours</span>
+                                                    <span className="text-sm text-muted-foreground">jours</span>
                                                 </div>
                                             )}
                                         </div>
                                     ))}
                                 </CardContent>
-                                <CardFooter className="px-8 py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
-                                    <span className="text-xs text-slate-500">
+                                <CardFooter className="px-8 py-4 border-t border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3">
+                                    <span className="text-xs text-muted-foreground">
                                         {settings.updated_at
                                             ? `Dernier enregistrement : ${formatDateTime(settings.updated_at)}`
                                             : 'Valeurs par défaut (jamais enregistrées)'}
@@ -213,9 +213,9 @@ export default function NotificationsSettingsPage() {
                                 </CardFooter>
                             </Card>
 
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-6 border-b border-slate-100">
-                                    <CardTitle className="text-base font-semibold text-slate-950">Canaux d&apos;envoi</CardTitle>
+                            <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                                <CardHeader className="px-8 py-6 border-b border-border">
+                                    <CardTitle className="text-base font-semibold text-foreground">Canaux d&apos;envoi</CardTitle>
                                     <CardDescription>
                                         L&apos;envoi des notifications par email et par SMS n&apos;est pas encore disponible.
                                     </CardDescription>

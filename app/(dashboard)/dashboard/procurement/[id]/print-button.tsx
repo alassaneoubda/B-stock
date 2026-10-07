@@ -7,7 +7,7 @@ export function PrintButton() {
     return (
         <Button
             variant="outline"
-            className="rounded-xl border-slate-200 font-bold h-10"
+            className="rounded-xl border-border font-bold h-10"
             onClick={() => window.print()}
         >
             Imprimer

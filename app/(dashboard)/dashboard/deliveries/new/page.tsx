@@ -147,7 +147,7 @@ export default function NewDeliveryPage() {
                     )}
 
                     {loadError && (
-                        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-soft p-4 text-sm text-warning-foreground">
                             <span>Les véhicules et dépôts n&apos;ont pas pu être chargés.</span>
                             <Button type="button" size="sm" variant="outline" onClick={loadFormData}>
                                 <RotateCw className="h-3.5 w-3.5 mr-1.5" />

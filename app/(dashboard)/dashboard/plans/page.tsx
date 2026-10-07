@@ -193,7 +193,7 @@ export default function PlansPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Choisir un plan" />
         <main className="flex-1 p-4 lg:p-6">
           <div className="max-w-5xl mx-auto space-y-6" aria-busy="true" aria-label="Chargement des offres">
@@ -211,7 +211,7 @@ export default function PlansPage() {
 
   if (loadError) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Choisir un plan" />
         <main className="flex-1 p-4 lg:p-6">
           <div className="max-w-5xl mx-auto space-y-6">
@@ -224,7 +224,7 @@ export default function PlansPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader
         title="Choisir un plan"
         actions={
@@ -242,11 +242,11 @@ export default function PlansPage() {
           {/* Success / Cancel banners */}
           <PaymentBanner state={paymentState} message={paymentMessage} />
           {canceled && paymentState === 'idle' && (
-            <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <XCircle className="h-5 w-5 text-amber-600 shrink-0" aria-hidden="true" />
+            <div className="flex items-center gap-3 bg-warning-soft border border-warning/30 rounded-lg p-4">
+              <XCircle className="h-5 w-5 text-warning-foreground shrink-0" aria-hidden="true" />
               <div>
-                <p className="text-sm font-semibold text-amber-900">Paiement annulé</p>
-                <p className="text-xs text-amber-700">Aucun montant n&apos;a été débité. Vous pouvez réessayer à tout moment.</p>
+                <p className="text-sm font-semibold text-warning-foreground">Paiement annulé</p>
+                <p className="text-xs text-warning-foreground">Aucun montant n&apos;a été débité. Vous pouvez réessayer à tout moment.</p>
               </div>
             </div>
           )}
@@ -255,15 +255,15 @@ export default function PlansPage() {
           {subscription && (
             <div className={`rounded-lg border p-4 sm:p-6 ${
               subscription.status === 'trialing'
-                ? 'bg-blue-50/50 border-blue-200'
+                ? 'bg-brand-soft border-brand/40'
                 : subscription.isActive
-                  ? 'bg-white border-zinc-200/80'
-                  : 'bg-red-50/50 border-red-200'
+                  ? 'bg-card border-border'
+                  : 'bg-destructive/10 border-destructive/30'
             }`}>
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex-1">
-                  <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Plan actuel</p>
-                  <p className="text-lg font-bold text-zinc-950 mt-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Plan actuel</p>
+                  <p className="text-lg font-bold text-foreground mt-1">
                     {subscription.status === 'trialing'
                       ? 'Version d\u2019essai gratuite'
                       : subscription.planName && subscription.planName !== 'Abonnement actif'
@@ -277,17 +277,17 @@ export default function PlansPage() {
                   {subscription.isActive && subscription.daysRemaining < 999 && (
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className={`text-sm font-semibold ${subscription.daysRemaining <= 5 ? 'text-red-700' : subscription.daysRemaining <= 10 ? 'text-amber-700' : 'text-zinc-800'}`}>
+                        <span className={`text-sm font-semibold ${subscription.daysRemaining <= 5 ? 'text-destructive' : subscription.daysRemaining <= 10 ? 'text-warning-foreground' : 'text-foreground'}`}>
                           {subscription.daysRemaining} jour{subscription.daysRemaining > 1 ? 's' : ''} restant{subscription.daysRemaining > 1 ? 's' : ''}
                         </span>
                         {subscription.endsAt && (
-                          <span className="text-xs text-zinc-500">
+                          <span className="text-xs text-muted-foreground">
                             Expire le {formatDateShort(subscription.endsAt)}
                           </span>
                         )}
                       </div>
                       {subscription.status === 'trialing' && (
-                        <p className="text-xs text-blue-600">
+                        <p className="text-xs text-brand-strong">
                           Votre essai gratuit est en cours. Choisissez un plan pour continuer après l\u2019expiration.
                         </p>
                       )}
@@ -296,7 +296,7 @@ export default function PlansPage() {
 
                   {/* Expired message */}
                   {!subscription.isActive && (
-                    <p className="text-xs text-red-600 mt-2">
+                    <p className="text-xs text-destructive mt-2">
                       Votre {subscription.status === 'expired' && subscription.planName === 'Free Trial' ? 'période d\u2019essai' : 'abonnement'} a expiré. Choisissez un plan pour continuer.
                     </p>
                   )}
@@ -305,10 +305,10 @@ export default function PlansPage() {
                 <Badge
                   className={`self-start text-xs font-medium border-none shrink-0 ${
                     subscription.status === 'trialing'
-                      ? 'bg-blue-100 text-blue-700'
+                      ? 'bg-brand-soft text-brand-strong'
                       : subscription.isActive
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-red-50 text-red-700'
+                        ? 'bg-success-soft text-success'
+                        : 'bg-destructive/10 text-destructive'
                   }`}
                 >
                   {subscription.status === 'trialing'
@@ -341,15 +341,15 @@ export default function PlansPage() {
               return (
                 <div
                   key={plan.id}
-                  className={`relative bg-white rounded-xl border ${
+                  className={`relative bg-card rounded-xl border ${
                     plan.popular
-                      ? 'border-blue-300 shadow-md shadow-blue-100/50'
-                      : 'border-zinc-200/80'
+                      ? 'border-brand/40 shadow-md shadow-blue-100/50'
+                      : 'border-border'
                   } p-5 sm:p-6 flex flex-col`}
                 >
                   {plan.popular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-blue-600 text-white border-none text-[10px] font-semibold px-3">
+                      <Badge className="bg-primary text-white border-none text-[10px] font-semibold px-3">
                         POPULAIRE
                       </Badge>
                     </div>
@@ -360,16 +360,16 @@ export default function PlansPage() {
                     <div className="flex items-center gap-2 mb-2">
                       <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
                         plan.id === 'entreprise'
-                          ? 'bg-amber-100 text-amber-700'
+                          ? 'bg-warning-soft text-warning-foreground'
                           : plan.popular
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-zinc-100 text-zinc-700'
+                            ? 'bg-brand-soft text-brand-strong'
+                            : 'bg-muted text-foreground/80'
                       }`}>
                         <Icon className="h-4 w-4" aria-hidden="true" />
                       </div>
-                      <h3 className="text-base font-bold text-zinc-950">{plan.name}</h3>
+                      <h3 className="text-base font-bold text-foreground">{plan.name}</h3>
                     </div>
-                    <p className="text-xs text-zinc-500">{plan.description}</p>
+                    <p className="text-xs text-muted-foreground">{plan.description}</p>
                   </div>
 
                   {/* Interval selector */}
@@ -384,8 +384,8 @@ export default function PlansPage() {
                           onClick={() => setSelectedIntervals((prev) => ({ ...prev, [plan.id]: pr.interval }))}
                           className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${
                             selectedInterval === pr.interval
-                              ? 'bg-zinc-950 text-white'
-                              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                              ? 'bg-primary text-white'
+                              : 'bg-muted text-muted-foreground hover:bg-muted'
                           }`}
                         >
                           {intervalLabels[pr.interval] || pr.interval}
@@ -399,11 +399,11 @@ export default function PlansPage() {
                     {currentPrice && (
                       <>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-2xl sm:text-3xl font-bold text-zinc-950 tracking-tight">
+                          <span className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight">
                             {formatMoney(currentPrice.price)}
                           </span>
                         </div>
-                        <p className="text-[10px] text-zinc-400 mt-0.5 uppercase tracking-wider">
+                        <p className="text-[10px] text-muted-foreground/70 mt-0.5 uppercase tracking-wider">
                           {currentPrice.label.split('/').pop()?.trim()}
                         </p>
                       </>
@@ -414,14 +414,14 @@ export default function PlansPage() {
                   <ul className="space-y-2 mb-6 flex-1">
                     {plan.features.map((f) => (
                       <li key={f} className="flex items-start gap-2">
-                        <Check className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" aria-hidden="true" />
-                        <span className="text-xs text-zinc-700">{f}</span>
+                        <Check className="h-3.5 w-3.5 text-success mt-0.5 shrink-0" aria-hidden="true" />
+                        <span className="text-xs text-foreground/80">{f}</span>
                       </li>
                     ))}
                   </ul>
 
                   {isOnQuote && (
-                    <p className="mb-4 text-2xl font-bold text-zinc-950 tracking-tight">Sur devis</p>
+                    <p className="mb-4 text-2xl font-bold text-foreground tracking-tight">Sur devis</p>
                   )}
 
                   {/* CTA button */}
@@ -444,7 +444,7 @@ export default function PlansPage() {
                       size="sm"
                       className={`w-full h-10 text-xs font-semibold ${
                         plan.popular
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                          ? 'bg-primary hover:bg-primary text-white'
                           : ''
                       }`}
                       onClick={() => handleCheckout(plan.id)}
@@ -464,26 +464,26 @@ export default function PlansPage() {
           </div>
 
           {/* FAQ / Info */}
-          <div className="bg-white rounded-lg border border-zinc-200/80 p-4 sm:p-6">
-            <h3 className="text-sm font-semibold text-zinc-950 mb-3">Questions fréquentes</h3>
+          <div className="bg-card rounded-lg border border-border p-4 sm:p-6">
+            <h3 className="text-sm font-semibold text-foreground mb-3">Questions fréquentes</h3>
             <div className="space-y-3">
               <div>
-                <p className="text-xs font-medium text-zinc-700">Comment fonctionne le paiement ?</p>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs font-medium text-foreground/80">Comment fonctionne le paiement ?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Le paiement est sécurisé via GeniusPay (Wave, Orange Money, MTN, Moov, carte bancaire).
                   Vous payez une seule fois pour la durée choisie. À la fin de la période, vous pouvez renouveler.
                 </p>
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-700">Puis-je changer de plan ?</p>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs font-medium text-foreground/80">Puis-je changer de plan ?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Oui, vous pouvez passer à un plan supérieur à tout moment.
                   Le nouveau plan remplacera l&apos;ancien.
                 </p>
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-700">Que se passe-t-il à l&apos;expiration ?</p>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs font-medium text-foreground/80">Que se passe-t-il à l&apos;expiration ?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   Vos données sont conservées. L&apos;accès au dashboard est bloqué
                   jusqu&apos;au renouvellement de votre abonnement.
                 </p>
@@ -499,13 +499,13 @@ export default function PlansPage() {
 function PaymentBanner({ state, message }: { state: PaymentState; message: string | null }) {
   if (state === 'idle') return null
   const config: Record<Exclude<PaymentState, 'idle'>, { tone: string; title: string; text: string; spin?: boolean }> = {
-    checking: { tone: 'bg-blue-50 border-blue-200 text-blue-900', title: 'Vérification du paiement…', text: 'Nous confirmons votre paiement auprès de GeniusPay.', spin: true },
-    pending: { tone: 'bg-blue-50 border-blue-200 text-blue-900', title: 'Paiement en attente de confirmation', text: 'Validez le paiement sur votre téléphone si demandé. Cette page se met à jour automatiquement.', spin: true },
-    completed: { tone: 'bg-emerald-50 border-emerald-200 text-emerald-900', title: 'Paiement confirmé', text: 'Votre abonnement est actif. Merci pour votre confiance !' },
-    failed: { tone: 'bg-red-50 border-red-200 text-red-900', title: 'Paiement refusé', text: "Aucun montant n'a été débité. Vous pouvez réessayer ou choisir un autre moyen de paiement." },
-    expired: { tone: 'bg-amber-50 border-amber-200 text-amber-900', title: 'Paiement expiré', text: "Le délai de paiement est dépassé. Relancez le paiement depuis l'offre choisie." },
-    timeout: { tone: 'bg-amber-50 border-amber-200 text-amber-900', title: 'Confirmation toujours en attente', text: 'Si vous avez payé, votre abonnement sera activé automatiquement dans quelques minutes. Sinon, contactez le support.' },
-    error: { tone: 'bg-red-50 border-red-200 text-red-900', title: 'Vérification impossible', text: 'Réessayez dans un instant ou contactez le support.' },
+    checking: { tone: 'bg-brand-soft border-brand/40 text-brand-strong', title: 'Vérification du paiement…', text: 'Nous confirmons votre paiement auprès de GeniusPay.', spin: true },
+    pending: { tone: 'bg-brand-soft border-brand/40 text-brand-strong', title: 'Paiement en attente de confirmation', text: 'Validez le paiement sur votre téléphone si demandé. Cette page se met à jour automatiquement.', spin: true },
+    completed: { tone: 'bg-success-soft border-success/30 text-success', title: 'Paiement confirmé', text: 'Votre abonnement est actif. Merci pour votre confiance !' },
+    failed: { tone: 'bg-destructive/10 border-destructive/30 text-destructive', title: 'Paiement refusé', text: "Aucun montant n'a été débité. Vous pouvez réessayer ou choisir un autre moyen de paiement." },
+    expired: { tone: 'bg-warning-soft border-warning/30 text-warning-foreground', title: 'Paiement expiré', text: "Le délai de paiement est dépassé. Relancez le paiement depuis l'offre choisie." },
+    timeout: { tone: 'bg-warning-soft border-warning/30 text-warning-foreground', title: 'Confirmation toujours en attente', text: 'Si vous avez payé, votre abonnement sera activé automatiquement dans quelques minutes. Sinon, contactez le support.' },
+    error: { tone: 'bg-destructive/10 border-destructive/30 text-destructive', title: 'Vérification impossible', text: 'Réessayez dans un instant ou contactez le support.' },
   }
   const c = config[state]
   const Icon = state === 'completed' ? CheckCircle2 : c.spin ? Loader2 : XCircle

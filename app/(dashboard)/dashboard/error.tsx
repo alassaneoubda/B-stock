@@ -32,7 +32,7 @@ export default function DashboardError({
           </Button>
         </div>
         {error.digest && (
-          <p className="text-center text-xs text-zinc-400">Référence : {error.digest}</p>
+          <p className="text-center text-xs text-muted-foreground/70">Référence : {error.digest}</p>
         )}
       </div>
     </div>

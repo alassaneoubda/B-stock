@@ -190,7 +190,7 @@ export default function NewTransferPage() {
 
   if (refsError) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Nouveau Transfert" />
         <main className="flex-1 p-4 lg:p-6 max-w-[1000px] mx-auto w-full">
           <ErrorState description="Les dépôts et articles n'ont pas pu être chargés." onRetry={loadReferences} />
@@ -200,7 +200,7 @@ export default function NewTransferPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Nouveau Transfert" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1000px] mx-auto w-full">
         <Button variant="ghost" onClick={() => router.back()} className="w-fit">
@@ -235,7 +235,7 @@ export default function NewTransferPage() {
               </div>
             </div>
             {stockError && (
-              <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 <span>Le stock du dépôt source n&apos;a pas pu être chargé.</span>
                 <Button size="sm" variant="outline" onClick={() => setStockReloadKey((k) => k + 1)}>Réessayer</Button>
               </div>
@@ -294,11 +294,11 @@ export default function NewTransferPage() {
             </div>
 
             {!sourceDepotId && (
-              <p className="text-sm text-zinc-500">Choisissez d&apos;abord le dépôt source pour voir le stock disponible.</p>
+              <p className="text-sm text-muted-foreground">Choisissez d&apos;abord le dépôt source pour voir le stock disponible.</p>
             )}
-            {itemError && <p role="alert" className="text-sm text-red-600">{itemError}</p>}
+            {itemError && <p role="alert" className="text-sm text-destructive">{itemError}</p>}
             {overStock && (
-              <p role="alert" className="text-sm text-red-600">
+              <p role="alert" className="text-sm text-destructive">
                 Certaines lignes dépassent le stock disponible du dépôt source : ajustez-les avant de créer le transfert.
               </p>
             )}
@@ -309,7 +309,7 @@ export default function NewTransferPage() {
                   <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
                       <div className="font-medium">{item.product_name || item.packaging_name}</div>
-                      <div className="text-sm text-zinc-500">
+                      <div className="text-sm text-muted-foreground">
                         Qté : {formatNumber(item.quantity)} • Disponible :{' '}
                         {stockLoading ? '…' : formatNumber(availableFor(item.item_type, itemRefId(item)))}
                       </div>

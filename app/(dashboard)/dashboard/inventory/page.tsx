@@ -29,9 +29,9 @@ interface InventorySession {
 interface Depot { id: string; name: string }
 
 const statusBadge: Record<string, { label: string; cls: string }> = {
-  in_progress: { label: 'En cours', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  completed: { label: 'Terminé', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  cancelled: { label: 'Annulé', cls: 'bg-zinc-100 text-zinc-500 border-zinc-200' },
+  in_progress: { label: 'En cours', cls: 'bg-brand-soft text-brand-strong border-brand/40' },
+  completed: { label: 'Terminé', cls: 'bg-success-soft text-success border-success/30' },
+  cancelled: { label: 'Annulé', cls: 'bg-muted text-muted-foreground border-border' },
 }
 
 export default function InventoryPage() {
@@ -87,12 +87,12 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Inventaire" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
         <div className="flex items-center justify-between">
-          <div className="text-sm text-zinc-500">{formatNumber(sessions.length)} inventaire(s)</div>
+          <div className="text-sm text-muted-foreground">{formatNumber(sessions.length)} inventaire(s)</div>
           <Dialog open={openNew} onOpenChange={setOpenNew}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Nouvel inventaire</Button>
@@ -167,10 +167,10 @@ export default function InventoryPage() {
                         <TableCell className="text-sm">{s.depot_name}</TableCell>
                         <TableCell className="text-sm capitalize">{s.inventory_type === 'full' ? 'Complet' : s.inventory_type === 'partial' ? 'Partiel' : 'Contrôle'}</TableCell>
                         <TableCell className="text-center text-sm">{formatNumber(s.total_items)}</TableCell>
-                        <TableCell className="text-center text-sm">{s.items_with_variance > 0 ? <span className="text-red-600 font-medium">{formatNumber(s.items_with_variance)}</span> : '0'}</TableCell>
-                        <TableCell className={`text-right text-sm ${Number(s.total_variance_value) < 0 ? 'text-red-600' : ''}`}>{s.status === 'completed' ? formatSignedMoney(s.total_variance_value) : '-'}</TableCell>
+                        <TableCell className="text-center text-sm">{s.items_with_variance > 0 ? <span className="text-destructive font-medium">{formatNumber(s.items_with_variance)}</span> : '0'}</TableCell>
+                        <TableCell className={`text-right text-sm ${Number(s.total_variance_value) < 0 ? 'text-destructive' : ''}`}>{s.status === 'completed' ? formatSignedMoney(s.total_variance_value) : '-'}</TableCell>
                         <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-sm text-zinc-500">{formatDateShort(s.started_at)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{formatDateShort(s.started_at)}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Link href={`/dashboard/inventory/${s.id}`}>

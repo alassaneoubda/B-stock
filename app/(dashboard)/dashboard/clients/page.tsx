@@ -113,33 +113,33 @@ export default async function ClientsPage({
       value: formatNumber(clients.length),
       description: q ? `Résultats pour « ${q} »` : "Base de données clients",
       icon: Users,
-      color: "bg-blue-500/10 text-blue-600",
+      color: "bg-primary/10 text-brand-strong",
     },
     {
       title: "Clients Actifs",
       value: formatNumber(activeClients.length),
       description: "Partenaires réguliers",
       icon: Check,
-      color: "bg-emerald-500/10 text-emerald-600",
+      color: "bg-success/10 text-success",
     },
     {
       title: "Dettes Produits",
       value: formatCurrency(totalDebt),
       description: "Encours à recouvrer",
       icon: CreditCard,
-      color: "bg-rose-500/10 text-rose-600",
+      color: "bg-destructive/10 text-destructive",
     },
     {
       title: "Emballages Dus",
       value: formatCurrency(totalPackagingDebt),
       description: "Consignes en attente",
       icon: Package,
-      color: "bg-amber-500/10 text-amber-600",
+      color: "bg-warning/10 text-warning-foreground",
     }
   ]
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader
         title="Clients"
         actions={
@@ -156,23 +156,23 @@ export default async function ClientsPage({
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {statsData.map((stat) => (
-            <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
+            <div key={stat.title} className="bg-card rounded-lg border border-border p-4">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
-                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
+                <span className="text-xs font-medium text-muted-foreground">{stat.title}</span>
+                <stat.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
               </div>
-              <p className="text-xl font-bold text-zinc-950 tracking-tight">{stat.value}</p>
-              <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
+              <p className="text-xl font-bold text-foreground tracking-tight">{stat.value}</p>
+              <p className="text-xs text-muted-foreground mt-1">{stat.description}</p>
             </div>
           ))}
         </div>
 
         {/* Clients Table */}
-        <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
-          <div className="px-4 py-3 border-b border-zinc-100 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-zinc-950">Répertoire clients</h3>
+        <div className="bg-card rounded-lg border border-border overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground">Répertoire clients</h3>
             <form action="/dashboard/clients" method="get" role="search" className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
               <Input
                 type="search"
                 name="q"
@@ -186,19 +186,19 @@ export default async function ClientsPage({
 
           {clients.length === 0 && q ? (
             <div className="text-center py-16 px-4">
-              <p className="text-sm font-semibold text-zinc-950">Aucun client trouvé</p>
-              <p className="mt-1 text-sm text-zinc-500">Aucun résultat pour « {q} ».</p>
+              <p className="text-sm font-semibold text-foreground">Aucun client trouvé</p>
+              <p className="mt-1 text-sm text-muted-foreground">Aucun résultat pour « {q} ».</p>
               <Button size="sm" variant="outline" className="mt-4" asChild>
                 <Link href="/dashboard/clients">Voir tous les clients</Link>
               </Button>
             </div>
           ) : clients.length === 0 ? (
             <div className="text-center py-16 flex flex-col items-center px-4">
-              <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
-                <Users className="h-6 w-6 text-zinc-400" />
+              <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center mb-4">
+                <Users className="h-6 w-6 text-muted-foreground/70" />
               </div>
-              <h3 className="text-sm font-semibold text-zinc-950">Aucun client</h3>
-              <p className="mt-1 text-sm text-zinc-500 max-w-xs">
+              <h3 className="text-sm font-semibold text-foreground">Aucun client</h3>
+              <p className="mt-1 text-sm text-muted-foreground max-w-xs">
                 Ajoutez vos premiers partenaires pour commencer.
               </p>
               <Button size="sm" className="mt-4 h-11 px-6" asChild>
@@ -215,12 +215,12 @@ export default async function ClientsPage({
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-xs font-medium text-zinc-500 pl-4">Client</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500">Contact</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500">Type / Zone</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Solde produits</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500 text-right">Solde emballages</TableHead>
-                      <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground pl-4">Client</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground">Contact</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground">Type / Zone</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground text-right">Solde produits</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground text-right">Solde emballages</TableHead>
+                      <TableHead className="text-xs font-medium text-muted-foreground">Statut</TableHead>
                       <TableHead className="pr-4"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -229,11 +229,11 @@ export default async function ClientsPage({
                       <TableRow key={client.id} className="group">
                         <TableCell className="pl-4">
                           <div>
-                            <Link href={`/dashboard/clients/${client.id}`} className="text-sm font-medium text-zinc-950 hover:underline">
+                            <Link href={`/dashboard/clients/${client.id}`} className="text-sm font-medium text-foreground hover:underline">
                               {client.name}
                             </Link>
                             {client.address && (
-                              <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
+                              <p className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-0.5">
                                 <MapPin className="h-3 w-3" />
                                 {client.address}
                               </p>
@@ -242,9 +242,9 @@ export default async function ClientsPage({
                         </TableCell>
                         <TableCell>
                           <div>
-                            <span className="text-sm text-zinc-700">{client.contact_name || '—'}</span>
+                            <span className="text-sm text-foreground/80">{client.contact_name || '—'}</span>
                             {client.phone && (
-                              <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
+                              <p className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-0.5">
                                 <Phone className="h-3 w-3" />
                                 {client.phone}
                               </p>
@@ -253,20 +253,20 @@ export default async function ClientsPage({
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
-                            <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded w-fit">
+                            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded w-fit">
                               {typeLabels[client.client_type] || client.client_type}
                             </span>
-                            <span className="text-xs text-zinc-400">{client.zone || '—'}</span>
+                            <span className="text-xs text-muted-foreground/70">{client.zone || '—'}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <BalanceText value={client.product_balance} className="text-sm font-medium" />
                         </TableCell>
                         <TableCell className="text-right">
-                          <BalanceText value={client.packaging_balance} className="text-sm font-medium" debtClassName="text-amber-600" />
+                          <BalanceText value={client.packaging_balance} className="text-sm font-medium" debtClassName="text-warning-foreground" />
                         </TableCell>
                         <TableCell>
-                          <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
+                          <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'} border-none`}>
                             {client.is_active ? 'Actif' : 'Bloqué'}
                           </Badge>
                         </TableCell>
@@ -274,25 +274,25 @@ export default async function ClientsPage({
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour ${client.name}`}>
-                                <MoreHorizontal className="h-4 w-4 text-zinc-400" />
+                                <MoreHorizontal className="h-4 w-4 text-muted-foreground/70" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-48">
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/clients/${client.id}`} className="flex items-center gap-2">
-                                  <Eye className="h-4 w-4 text-zinc-500" />
+                                  <Eye className="h-4 w-4 text-muted-foreground" />
                                   <span className="text-sm">Voir le compte</span>
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/sales/new?client=${client.id}`} className="flex items-center gap-2">
-                                  <Plus className="h-4 w-4 text-zinc-500" />
+                                  <Plus className="h-4 w-4 text-muted-foreground" />
                                   <span className="text-sm">Nouvelle vente</span>
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuItem asChild className="cursor-pointer">
                                 <Link href={`/dashboard/clients/${client.id}/edit`} className="flex items-center gap-2">
-                                  <Edit className="h-4 w-4 text-zinc-500" />
+                                  <Edit className="h-4 w-4 text-muted-foreground" />
                                   <span className="text-sm">Modifier</span>
                                 </Link>
                               </DropdownMenuItem>
@@ -306,40 +306,40 @@ export default async function ClientsPage({
               </div>
 
               {/* Mobile cards */}
-              <div className="md:hidden divide-y divide-zinc-100">
+              <div className="md:hidden divide-y divide-border">
                 {clients.map((client) => (
                   <Link
                     key={client.id}
                     href={`/dashboard/clients/${client.id}`}
-                    className="block p-4 active:bg-zinc-50 transition-colors"
+                    className="block p-4 active:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-zinc-950 truncate">{client.name}</p>
+                        <p className="text-sm font-semibold text-foreground truncate">{client.name}</p>
                         {client.phone && (
-                          <p className="text-xs text-zinc-400 flex items-center gap-1 mt-0.5">
+                          <p className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-0.5">
                             <Phone className="h-3 w-3" /> {client.phone}
                           </p>
                         )}
                       </div>
                       <div className="flex items-center gap-2 ml-2 shrink-0">
-                        <span className="text-[10px] font-medium text-zinc-500 bg-zinc-100 px-1.5 py-0.5 rounded">
+                        <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                           {typeLabels[client.client_type] || client.client_type}
                         </span>
-                        <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500'} border-none`}>
+                        <Badge className={`text-[10px] font-medium ${client.is_active ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground'} border-none`}>
                           {client.is_active ? 'Actif' : 'Bloqué'}
                         </Badge>
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-400">{client.zone || 'Sans zone'}</span>
+                      <span className="text-muted-foreground/70">{client.zone || 'Sans zone'}</span>
                       <div className="flex items-center gap-3">
                         {Number(client.product_balance) !== 0 && (
                           <BalanceText value={client.product_balance} className="font-medium" />
                         )}
                         {Number(client.packaging_balance) !== 0 && (
                           <span className="font-medium">
-                            Emb. : <BalanceText value={client.packaging_balance} debtClassName="text-amber-600" />
+                            Emb. : <BalanceText value={client.packaging_balance} debtClassName="text-warning-foreground" />
                           </span>
                         )}
                       </div>

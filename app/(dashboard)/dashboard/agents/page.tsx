@@ -85,7 +85,7 @@ export default function AgentsPage() {
 
   if (loadError && agents.length === 0) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Commerciaux" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState title="Impossible de charger les commerciaux" onRetry={() => { setIsLoading(true); fetchData() }} />
@@ -95,32 +95,32 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <DashboardHeader title="Commerciaux" />
       <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Total commerciaux</div>
-            <div className="text-xl font-bold text-zinc-950">{formatNumber(agents.length)}</div>
+            <div className="text-xs text-muted-foreground mb-1">Total commerciaux</div>
+            <div className="text-xl font-bold text-foreground">{formatNumber(agents.length)}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Actifs</div>
-            <div className="text-xl font-bold text-emerald-600">{formatNumber(agents.filter(a => a.is_active).length)}</div>
+            <div className="text-xs text-muted-foreground mb-1">Actifs</div>
+            <div className="text-xl font-bold text-success">{formatNumber(agents.filter(a => a.is_active).length)}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Ventes du mois</div>
-            <div className="text-xl font-bold text-blue-600">{fmt(agents.reduce((s, a) => s + Number(a.monthly_sales), 0))}</div>
+            <div className="text-xs text-muted-foreground mb-1">Ventes du mois</div>
+            <div className="text-xl font-bold text-brand-strong">{fmt(agents.reduce((s, a) => s + Number(a.monthly_sales), 0))}</div>
           </Card>
           <Card className="p-4">
-            <div className="text-xs text-zinc-500 mb-1">Commissions en attente</div>
-            <div className="text-xl font-bold text-amber-600">{fmt(agents.reduce((s, a) => s + Number(a.pending_commissions), 0))}</div>
+            <div className="text-xs text-muted-foreground mb-1">Commissions en attente</div>
+            <div className="text-xl font-bold text-warning-foreground">{fmt(agents.reduce((s, a) => s + Number(a.pending_commissions), 0))}</div>
           </Card>
         </div>
 
         <div className="flex items-center justify-between">
-          <div className="text-sm text-zinc-500">{agents.length} commercial(aux)</div>
+          <div className="text-sm text-muted-foreground">{agents.length} commercial(aux)</div>
           <Dialog open={openNew} onOpenChange={(o) => { if (!submitting) setOpenNew(o) }}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="h-4 w-4 mr-2" /> Nouveau commercial</Button>
@@ -155,7 +155,7 @@ export default function AgentsPage() {
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button variant="outline">Annuler</Button></DialogClose>
-                <Button onClick={handleCreate} disabled={submitting || !newName.trim()} className="bg-emerald-600 hover:bg-emerald-700">
+                <Button onClick={handleCreate} disabled={submitting || !newName.trim()} className="bg-success hover:bg-success">
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Users className="h-4 w-4 mr-2" />} Ajouter
                 </Button>
               </DialogFooter>
@@ -192,22 +192,22 @@ export default function AgentsPage() {
                     <TableRow key={agent.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-full bg-zinc-100 flex items-center justify-center">
-                            <UserCheck className="h-4 w-4 text-zinc-600" />
+                          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                            <UserCheck className="h-4 w-4 text-muted-foreground" />
                           </div>
                           <span className="font-medium text-sm">{agent.full_name}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">
                         {agent.phone && <div>{agent.phone}</div>}
-                        {agent.email && <div className="text-xs text-zinc-400">{agent.email}</div>}
+                        {agent.email && <div className="text-xs text-muted-foreground/70">{agent.email}</div>}
                       </TableCell>
                       <TableCell className="text-sm">{agent.zone || '-'}</TableCell>
                       <TableCell className="text-center text-sm">{formatNumber(agent.client_count)}</TableCell>
                       <TableCell className="text-right text-sm font-medium">{fmt(Number(agent.monthly_sales))}</TableCell>
-                      <TableCell className="text-right text-sm text-amber-600">{fmt(Number(agent.pending_commissions))}</TableCell>
+                      <TableCell className="text-right text-sm text-warning-foreground">{fmt(Number(agent.pending_commissions))}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={agent.is_active ? 'border-emerald-200 text-emerald-700 bg-emerald-50' : 'border-zinc-200 text-zinc-500 bg-zinc-50'}>
+                        <Badge variant="outline" className={agent.is_active ? 'border-success/30 text-success bg-success-soft' : 'border-border text-muted-foreground bg-muted/50'}>
                           {agent.is_active ? 'Actif' : 'Inactif'}
                         </Badge>
                       </TableCell>

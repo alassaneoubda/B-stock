@@ -184,9 +184,9 @@ export default function EditPackagingPage() {
                         </div>
                     )}
 
-                    <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-8 border-b border-slate-100">
-                            <CardTitle className="text-xl font-semibold text-slate-950">Modifier l&apos;emballage</CardTitle>
+                    <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                        <CardHeader className="px-8 py-8 border-b border-border">
+                            <CardTitle className="text-xl font-semibold text-foreground">Modifier l&apos;emballage</CardTitle>
                             <CardDescription>Mettez à jour les caractéristiques du contenant.</CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 space-y-6">

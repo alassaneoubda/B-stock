@@ -80,16 +80,16 @@ export default function CompanySettingsPage() {
     const sectorIsCustom = form.sector !== '' && !(form.sector in SECTOR_OPTIONS)
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Informations de l'entreprise"
                 description="Gérez les informations de votre société"
             />
             <main className="flex-1 p-4 lg:p-6 ">
-                <Card className="rounded-lg border-slate-200/60 shadow-sm max-w-2xl">
-                    <CardHeader className="px-8 py-8 border-b border-slate-100">
-                        <CardTitle className="text-xl font-semibold text-slate-950 flex items-center gap-3">
-                            <Building2 className="h-5 w-5 text-blue-600" aria-hidden="true" /> Entreprise
+                <Card className="rounded-lg border-border shadow-sm max-w-2xl">
+                    <CardHeader className="px-8 py-8 border-b border-border">
+                        <CardTitle className="text-xl font-semibold text-foreground flex items-center gap-3">
+                            <Building2 className="h-5 w-5 text-brand-strong" aria-hidden="true" /> Entreprise
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="px-8 py-8">
@@ -107,16 +107,16 @@ export default function CompanySettingsPage() {
                         ) : (
                             <form onSubmit={handleSave} className="space-y-6">
                                 {!canEdit && (
-                                    <p className="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                                    <p className="rounded-md bg-warning-soft px-4 py-3 text-sm text-warning-foreground">
                                         Seul le propriétaire du compte peut modifier ces informations.
                                     </p>
                                 )}
                                 <fieldset disabled={!canEdit || saving} className="space-y-6">
                                     <div className="space-y-2">
-                                        <Label htmlFor="company-name" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Nom de l&apos;entreprise</Label>
+                                        <Label htmlFor="company-name" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Nom de l&apos;entreprise</Label>
                                         <Input
                                             id="company-name"
-                                            className="h-12 rounded-xl bg-slate-50 border-transparent focus:bg-white"
+                                            className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-card"
                                             value={form.name}
                                             maxLength={255}
                                             required
@@ -124,9 +124,9 @@ export default function CompanySettingsPage() {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="company-sector" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Secteur</Label>
+                                        <Label htmlFor="company-sector" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Secteur</Label>
                                         <Select value={form.sector || undefined} onValueChange={(sector) => setForm({ ...form, sector })}>
-                                            <SelectTrigger id="company-sector" className="h-12 rounded-xl bg-slate-50 border-transparent focus:bg-white">
+                                            <SelectTrigger id="company-sector" className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-card">
                                                 <SelectValue placeholder="Choisir un secteur" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -139,47 +139,47 @@ export default function CompanySettingsPage() {
                                     </div>
                                     <div className="grid sm:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <Label htmlFor="company-phone" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Téléphone</Label>
+                                            <Label htmlFor="company-phone" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Téléphone</Label>
                                             <Input
                                                 id="company-phone"
                                                 type="tel"
                                                 maxLength={20}
-                                                className="h-12 rounded-xl bg-slate-50 border-transparent focus:bg-white"
+                                                className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-card"
                                                 value={form.phone}
                                                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label htmlFor="company-email" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Email</Label>
+                                            <Label htmlFor="company-email" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Email</Label>
                                             <Input
                                                 id="company-email"
                                                 type="email"
                                                 maxLength={255}
-                                                className="h-12 rounded-xl bg-slate-50 border-transparent focus:bg-white"
+                                                className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-card"
                                                 value={form.email}
                                                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                                             />
                                         </div>
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="company-address" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Adresse</Label>
+                                        <Label htmlFor="company-address" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Adresse</Label>
                                         <Input
                                             id="company-address"
                                             maxLength={500}
-                                            className="h-12 rounded-xl bg-slate-50 border-transparent focus:bg-white"
+                                            className="h-12 rounded-xl bg-muted/50 border-transparent focus:bg-card"
                                             value={form.address}
                                             onChange={(e) => setForm({ ...form, address: e.target.value })}
                                         />
                                     </div>
                                 </fieldset>
                                 {formError && (
-                                    <p role="alert" className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{formError}</p>
+                                    <p role="alert" className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">{formError}</p>
                                 )}
                                 {canEdit && (
                                     <div className="flex items-center gap-4 pt-4">
                                         <Button
                                             type="submit"
-                                            className="rounded-md h-12 px-8 bg-blue-600 hover:bg-blue-700 font-bold"
+                                            className="rounded-md h-12 px-8 bg-primary hover:bg-primary font-bold"
                                             disabled={saving}
                                         >
                                             {saving ? (

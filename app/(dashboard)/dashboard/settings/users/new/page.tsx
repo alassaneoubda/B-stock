@@ -109,9 +109,9 @@ export default function NewUserPage() {
                         </div>
                     )}
 
-                    <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-8 border-b border-slate-100">
-                            <CardTitle className="text-xl font-semibold text-slate-950">Nouvel utilisateur</CardTitle>
+                    <Card className="rounded-lg border-border shadow-sm overflow-hidden">
+                        <CardHeader className="px-8 py-8 border-b border-border">
+                            <CardTitle className="text-xl font-semibold text-foreground">Nouvel utilisateur</CardTitle>
                             <CardDescription>Remplissez les informations ci-dessous.</CardDescription>
                         </CardHeader>
                         <CardContent className="p-8 space-y-6">
@@ -199,8 +199,8 @@ export default function NewUserPage() {
                                 )}
                             </div>
 
-                            <div className="space-y-4 pt-4 border-t border-slate-100">
-                                <div className="flex items-center gap-2 text-slate-900 font-bold mb-2">
+                            <div className="space-y-4 pt-4 border-t border-border">
+                                <div className="flex items-center gap-2 text-foreground font-bold mb-2">
                                     <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
                                     <span>Rubriques affichées dans le menu</span>
                                 </div>
@@ -209,7 +209,7 @@ export default function NewUserPage() {
                                 </p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {MODULE_OPTIONS.map((m) => (
-                                        <div key={m.id} className="flex items-center space-x-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                                        <div key={m.id} className="flex items-center space-x-3 p-3 rounded-xl border border-border hover:bg-muted/50 transition-colors">
                                             <Checkbox
                                                 id={`module-${m.id}`}
                                                 disabled={isLoading}

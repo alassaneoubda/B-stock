@@ -90,11 +90,11 @@ async function getPurchaseOrders(companyId: string): Promise<PurchaseOrder[]> {
 }
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: React.ComponentType<{ className?: string }>; color: string }> = {
-    pending: { label: 'En attente', variant: 'secondary', icon: Clock, color: 'bg-slate-100 text-slate-500' },
-    confirmed: { label: 'Confirmée', variant: 'outline', icon: ClipboardCheck, color: 'bg-blue-50 text-blue-600' },
-    partial: { label: 'Partiellement reçue', variant: 'outline', icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
-    received: { label: 'Reçue', variant: 'default', icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-600' },
-    cancelled: { label: 'Annulée', variant: 'destructive', icon: AlertTriangle, color: 'bg-rose-50 text-rose-600' },
+    pending: { label: 'En attente', variant: 'secondary', icon: Clock, color: 'bg-muted text-muted-foreground' },
+    confirmed: { label: 'Confirmée', variant: 'outline', icon: ClipboardCheck, color: 'bg-brand-soft text-brand-strong' },
+    partial: { label: 'Partiellement reçue', variant: 'outline', icon: AlertTriangle, color: 'bg-warning-soft text-warning-foreground' },
+    received: { label: 'Reçue', variant: 'default', icon: CheckCircle2, color: 'bg-success-soft text-success' },
+    cancelled: { label: 'Annulée', variant: 'destructive', icon: AlertTriangle, color: 'bg-destructive/10 text-destructive' },
 }
 
 export default async function ProcurementPage() {
@@ -111,31 +111,31 @@ export default async function ProcurementPage() {
             value: stats.pending,
             description: "Commandes lancées",
             icon: Clock,
-            color: "bg-amber-500/10 text-amber-600",
+            color: "bg-warning/10 text-warning-foreground",
         },
         {
             title: "Réceptions Partielles",
             value: stats.partial,
             description: "En cours de livraison",
             icon: Truck,
-            color: "bg-blue-500/10 text-blue-600",
+            color: "bg-primary/10 text-brand-strong",
         },
         {
             title: "Reçues ce mois",
             value: stats.receivedThisMonth,
             description: "Total réceptions",
             icon: CheckCircle2,
-            color: "bg-emerald-500/10 text-emerald-600",
+            color: "bg-success/10 text-success",
         }
     ]
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex flex-col min-h-screen bg-muted/30">
             <DashboardHeader
                 title="Approvisionnement"
                 description="Suivez vos stocks entrants et commandes fournisseurs"
                 actions={
-                    <Button asChild className="rounded-md h-11 px-6 bg-blue-600 hover:bg-blue-700 transition-all active:scale-95 font-bold">
+                    <Button asChild className="rounded-md h-11 px-6 bg-primary hover:bg-primary transition-all active:scale-95 font-bold">
                         <Link href="/dashboard/procurement/new" className="flex items-center gap-2">
                             <Plus className="h-5 w-5" />
                             <span>Nouvelle commande</span>
@@ -148,23 +148,23 @@ export default async function ProcurementPage() {
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {statsData.map((stat) => (
-                        <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
+                        <div key={stat.title} className="bg-card rounded-lg border border-border p-4">
                             <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
-                                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
+                                <span className="text-xs font-medium text-muted-foreground">{stat.title}</span>
+                                <stat.icon className="h-3.5 w-3.5 text-muted-foreground/70" />
                             </div>
-                            <p className="text-lg sm:text-xl font-bold text-zinc-950 tracking-tight">{formatNumber(stat.value)}</p>
-                            <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
+                            <p className="text-lg sm:text-xl font-bold text-foreground tracking-tight">{formatNumber(stat.value)}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{stat.description}</p>
                         </div>
                     ))}
                 </div>
 
                 {/* Procurement Table */}
-                <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="px-4 sm:px-6 py-4 sm:py-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="rounded-lg bg-card border border-border shadow-sm overflow-hidden">
+                    <div className="px-4 sm:px-6 py-4 sm:py-6 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
-                            <h3 className="text-base sm:text-lg font-semibold text-slate-950">Commandes Fournisseurs</h3>
-                            <p className="text-xs text-slate-400 mt-0.5">Suivez les transactions et états de réception</p>
+                            <h3 className="text-base sm:text-lg font-semibold text-foreground">Commandes Fournisseurs</h3>
+                            <p className="text-xs text-muted-foreground/70 mt-0.5">Suivez les transactions et états de réception</p>
                         </div>
                         <Button variant="outline" size="sm" className="h-8 text-xs font-medium" asChild>
                             <Link href="/dashboard/suppliers">Fournisseurs</Link>
@@ -184,44 +184,44 @@ export default async function ProcurementPage() {
                               {/* Desktop table */}
                               <div className="hidden md:block overflow-x-auto">
                                 <Table>
-                                    <TableHeader className="bg-slate-50/50">
+                                    <TableHeader className="bg-muted/30">
                                         <TableRow className="border-none hover:bg-transparent">
-                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 pl-4">Réf. & Date</TableHead>
-                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Fournisseur</TableHead>
-                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Livraison</TableHead>
-                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Articles</TableHead>
-                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 text-right">Montant</TableHead>
-                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Statut</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 pl-4">Réf. & Date</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Fournisseur</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Livraison</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Articles</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 text-right">Montant</TableHead>
+                                            <TableHead className="py-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Statut</TableHead>
                                             <TableHead className="py-3 pr-4"></TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {orders.map((order) => {
-                                            const statusInfo = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const, icon: Clock, color: 'bg-slate-100 text-slate-500' }
+                                            const statusInfo = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const, icon: Clock, color: 'bg-muted text-muted-foreground' }
                                             const StatusIcon = statusInfo.icon
                                             return (
-                                                <TableRow key={order.id} className="group border-b border-slate-50 hover:bg-slate-50/50">
+                                                <TableRow key={order.id} className="group border-b border-border hover:bg-muted/30">
                                                     <TableCell className="py-3 pl-4">
-                                                        <span className="text-sm font-medium text-slate-950 font-mono">{order.order_number}</span>
-                                                        <p className="text-xs text-slate-400 mt-0.5">
+                                                        <span className="text-sm font-medium text-foreground font-mono">{order.order_number}</span>
+                                                        <p className="text-xs text-muted-foreground/70 mt-0.5">
                                                             {formatDateShort(order.ordered_at)}
                                                         </p>
                                                     </TableCell>
                                                     <TableCell className="py-3">
-                                                        <span className="text-sm text-slate-700">{order.supplier_name || 'Inconnu'}</span>
+                                                        <span className="text-sm text-foreground/80">{order.supplier_name || 'Inconnu'}</span>
                                                     </TableCell>
                                                     <TableCell className="py-3">
-                                                        <span className="text-xs text-slate-500">
+                                                        <span className="text-xs text-muted-foreground">
                                                             {formatDate(order.expected_delivery_at)}
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="py-3">
-                                                        <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                                                        <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded">
                                                             {formatNumber(order.items_count)} art.
                                                         </span>
                                                     </TableCell>
                                                     <TableCell className="py-3 text-right">
-                                                        <span className="text-sm font-semibold text-slate-950">
+                                                        <span className="text-sm font-semibold text-foreground">
                                                             {order.total_amount ? formatMoney(order.total_amount) : '—'}
                                                         </span>
                                                     </TableCell>
@@ -234,20 +234,20 @@ export default async function ProcurementPage() {
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
                                                                 <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md" aria-label={`Actions pour la commande ${order.order_number}`}>
-                                                                    <MoreHorizontal className="h-4 w-4 text-slate-400" />
+                                                                    <MoreHorizontal className="h-4 w-4 text-muted-foreground/70" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
                                                             <DropdownMenuContent align="end" className="w-48">
                                                                 <DropdownMenuItem asChild className="cursor-pointer">
                                                                     <Link href={`/dashboard/procurement/${order.id}`} className="flex items-center gap-2">
-                                                                        <Eye className="h-4 w-4 text-zinc-500" />
+                                                                        <Eye className="h-4 w-4 text-muted-foreground" />
                                                                         <span className="text-sm">Détail</span>
                                                                     </Link>
                                                                 </DropdownMenuItem>
                                                                 {['pending', 'confirmed', 'partial'].includes(order.status) && (
                                                                     <DropdownMenuItem asChild className="cursor-pointer">
                                                                         <Link href={`/dashboard/procurement/${order.id}/receive`} className="flex items-center gap-2">
-                                                                            <ArchiveRestore className="h-4 w-4 text-zinc-500" />
+                                                                            <ArchiveRestore className="h-4 w-4 text-muted-foreground" />
                                                                             <span className="text-sm">Réceptionner</span>
                                                                         </Link>
                                                                     </DropdownMenuItem>
@@ -263,21 +263,21 @@ export default async function ProcurementPage() {
                               </div>
 
                               {/* Mobile cards */}
-                              <div className="md:hidden divide-y divide-zinc-100">
+                              <div className="md:hidden divide-y divide-border">
                                 {orders.map((order) => {
-                                    const statusInfo = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const, icon: Clock, color: 'bg-slate-100 text-slate-500' }
+                                    const statusInfo = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const, icon: Clock, color: 'bg-muted text-muted-foreground' }
                                     return (
                                         <Link
                                             key={order.id}
                                             href={`/dashboard/procurement/${order.id}`}
-                                            className="block p-4 active:bg-zinc-50 transition-colors"
+                                            className="block p-4 active:bg-muted/50 transition-colors"
                                         >
                                             <div className="flex items-start justify-between mb-1.5">
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-semibold text-zinc-950 truncate">
+                                                    <p className="text-sm font-semibold text-foreground truncate">
                                                         {order.supplier_name || 'Fournisseur inconnu'}
                                                     </p>
-                                                    <p className="text-xs text-zinc-400 font-mono">
+                                                    <p className="text-xs text-muted-foreground/70 font-mono">
                                                         {order.order_number} · {formatDateShort(order.ordered_at)}
                                                     </p>
                                                 </div>
@@ -286,8 +286,8 @@ export default async function ProcurementPage() {
                                                 </Badge>
                                             </div>
                                             <div className="flex items-center justify-between mt-2">
-                                                <span className="text-xs text-zinc-400">{order.items_count} article{Number(order.items_count) > 1 ? 's' : ''}</span>
-                                                <span className="text-sm font-bold text-zinc-950">
+                                                <span className="text-xs text-muted-foreground/70">{order.items_count} article{Number(order.items_count) > 1 ? 's' : ''}</span>
+                                                <span className="text-sm font-bold text-foreground">
                                                     {order.total_amount ? formatMoney(order.total_amount) : '—'}
                                                 </span>
                                             </div>

@@ -50,7 +50,7 @@ export default function StockExportPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Export Stock" />
         <main className="flex-1 p-4 lg:p-6">
           <div className="max-w-4xl mx-auto">
@@ -63,7 +63,7 @@ export default function StockExportPage() {
 
   if (error || !data) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex flex-col min-h-screen bg-muted/30">
         <DashboardHeader title="Export Stock" />
         <main className="flex-1 p-4 lg:p-6">
           <ErrorState
@@ -81,7 +81,7 @@ export default function StockExportPage() {
   const lowStock = data.products.filter(p => Number(p.stock_quantity) <= Number(p.min_stock_level))
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
+    <div className="flex flex-col min-h-screen bg-muted/30">
       <div className="no-print">
         <DashboardHeader
           title="Export du stock"
@@ -104,23 +104,23 @@ export default function StockExportPage() {
       </div>
 
       <main className="flex-1 p-4 lg:p-6">
-        <div className="bg-white rounded-lg border border-zinc-200/80 max-w-4xl mx-auto print:border-none print:shadow-none print:max-w-none">
+        <div className="bg-card rounded-lg border border-border max-w-4xl mx-auto print:border-none print:shadow-none print:max-w-none">
           {/* Header */}
-          <div className="p-6 sm:p-8 border-b border-zinc-100 print:p-8">
+          <div className="p-6 sm:p-8 border-b border-border print:p-8">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="h-10 w-10 rounded-lg bg-zinc-950 flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
                     <span className="text-white text-lg font-bold">B</span>
                   </div>
-                  <h1 className="text-lg font-bold text-zinc-950">{data.company.name || 'B-Stock'}</h1>
+                  <h1 className="text-lg font-bold text-foreground">{data.company.name || 'B-Stock'}</h1>
                 </div>
-                {data.company.address && <p className="text-xs text-zinc-500">{data.company.address}</p>}
-                {data.company.phone && <p className="text-xs text-zinc-500">Tél: {data.company.phone}</p>}
+                {data.company.address && <p className="text-xs text-muted-foreground">{data.company.address}</p>}
+                {data.company.phone && <p className="text-xs text-muted-foreground">Tél: {data.company.phone}</p>}
               </div>
               <div className="text-left sm:text-right">
-                <h2 className="text-xl font-bold text-zinc-950 tracking-tight">ÉTAT DU STOCK</h2>
-                <p className="text-xs text-zinc-500 mt-1">
+                <h2 className="text-xl font-bold text-foreground tracking-tight">ÉTAT DU STOCK</h2>
+                <p className="text-xs text-muted-foreground mt-1">
                   {formatDateTime(data.exportDate)}
                 </p>
               </div>
@@ -128,30 +128,30 @@ export default function StockExportPage() {
           </div>
 
           {/* Summary */}
-          <div className="p-6 sm:p-8 border-b border-zinc-100 print:p-8">
+          <div className="p-6 sm:p-8 border-b border-border print:p-8">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Références</p>
-                <p className="text-lg font-bold text-zinc-950">{formatNumber(data.products.length)}</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Références</p>
+                <p className="text-lg font-bold text-foreground">{formatNumber(data.products.length)}</p>
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Quantité totale</p>
-                <p className="text-lg font-bold text-zinc-950">{formatNumber(totalItems)}</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Quantité totale</p>
+                <p className="text-lg font-bold text-foreground">{formatNumber(totalItems)}</p>
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Valeur totale</p>
-                <p className="text-lg font-bold text-zinc-950">{formatMoney(totalValue)}</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Valeur totale</p>
+                <p className="text-lg font-bold text-foreground">{formatMoney(totalValue)}</p>
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Stock bas</p>
-                <p className={`text-lg font-bold ${lowStock.length > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{lowStock.length}</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Stock bas</p>
+                <p className={`text-lg font-bold ${lowStock.length > 0 ? 'text-destructive' : 'text-success'}`}>{lowStock.length}</p>
               </div>
             </div>
           </div>
 
           {/* Products Table */}
           <div className="p-6 sm:p-8 print:p-8">
-            <h3 className="text-xs font-semibold text-zinc-950 uppercase tracking-wider mb-3">Détail des produits</h3>
+            <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3">Détail des produits</h3>
             {data.products.length === 0 ? (
               <EmptyState
                 title="Aucun produit en stock"
@@ -159,46 +159,46 @@ export default function StockExportPage() {
                 action={{ label: 'Retour au stock', href: '/dashboard/stock' }}
               />
             ) : (
-            <div className="border border-zinc-200 rounded-lg overflow-hidden">
+            <div className="border border-border rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-zinc-50 border-b border-zinc-200">
-                    <th className="text-left text-[10px] font-medium text-zinc-500 uppercase px-3 py-2">Produit</th>
-                    <th className="text-left text-[10px] font-medium text-zinc-500 uppercase px-3 py-2 hidden sm:table-cell">SKU</th>
-                    <th className="text-left text-[10px] font-medium text-zinc-500 uppercase px-3 py-2 hidden sm:table-cell">Catégorie</th>
-                    <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-3 py-2">Qté</th>
-                    <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-3 py-2">Prix</th>
-                    <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-3 py-2">Valeur</th>
+                  <tr className="bg-muted/50 border-b border-border">
+                    <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Produit</th>
+                    <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-3 py-2 hidden sm:table-cell">SKU</th>
+                    <th className="text-left text-[10px] font-medium text-muted-foreground uppercase px-3 py-2 hidden sm:table-cell">Catégorie</th>
+                    <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Qté</th>
+                    <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Prix</th>
+                    <th className="text-right text-[10px] font-medium text-muted-foreground uppercase px-3 py-2">Valeur</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100">
+                <tbody className="divide-y divide-border">
                   {data.products.map((p, i) => {
                     const isLow = Number(p.stock_quantity) <= Number(p.min_stock_level)
                     return (
-                      <tr key={i} className={isLow ? 'bg-red-50/50' : ''}>
-                        <td className="px-3 py-2 text-sm text-zinc-900 font-medium">
+                      <tr key={i} className={isLow ? 'bg-destructive/10' : ''}>
+                        <td className="px-3 py-2 text-sm text-foreground font-medium">
                           {p.name}
-                          {isLow && <span className="text-[10px] text-red-500 ml-1 font-normal">(bas)</span>}
+                          {isLow && <span className="text-[10px] text-destructive ml-1 font-normal">(bas)</span>}
                         </td>
-                        <td className="px-3 py-2 text-xs text-zinc-500 font-mono hidden sm:table-cell">{p.sku}</td>
-                        <td className="px-3 py-2 text-xs text-zinc-500 hidden sm:table-cell">{p.category || '—'}</td>
-                        <td className={`px-3 py-2 text-sm text-right font-medium ${isLow ? 'text-red-600' : 'text-zinc-900'}`}>
+                        <td className="px-3 py-2 text-xs text-muted-foreground font-mono hidden sm:table-cell">{p.sku}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground hidden sm:table-cell">{p.category || '—'}</td>
+                        <td className={`px-3 py-2 text-sm text-right font-medium ${isLow ? 'text-destructive' : 'text-foreground'}`}>
                           {formatNumber(p.stock_quantity)}
                         </td>
-                        <td className="px-3 py-2 text-sm text-right text-zinc-600">{formatMoney(p.selling_price)}</td>
-                        <td className="px-3 py-2 text-sm text-right font-medium text-zinc-900">{formatMoney(Number(p.stock_quantity) * Number(p.selling_price))}</td>
+                        <td className="px-3 py-2 text-sm text-right text-muted-foreground">{formatMoney(p.selling_price)}</td>
+                        <td className="px-3 py-2 text-sm text-right font-medium text-foreground">{formatMoney(Number(p.stock_quantity) * Number(p.selling_price))}</td>
                       </tr>
                     )
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-zinc-50 border-t border-zinc-200">
-                    <td colSpan={3} className="px-3 py-2 text-sm font-semibold text-zinc-950 hidden sm:table-cell">Total</td>
-                    <td className="px-3 py-2 text-sm font-semibold text-zinc-950 sm:hidden">Total</td>
-                    <td className="px-3 py-2 text-sm text-right font-bold text-zinc-950">{formatNumber(totalItems)}</td>
-                    <td className="px-3 py-2 text-sm text-right text-zinc-600">—</td>
-                    <td className="px-3 py-2 text-sm text-right font-bold text-zinc-950">{formatMoney(totalValue)}</td>
+                  <tr className="bg-muted/50 border-t border-border">
+                    <td colSpan={3} className="px-3 py-2 text-sm font-semibold text-foreground hidden sm:table-cell">Total</td>
+                    <td className="px-3 py-2 text-sm font-semibold text-foreground sm:hidden">Total</td>
+                    <td className="px-3 py-2 text-sm text-right font-bold text-foreground">{formatNumber(totalItems)}</td>
+                    <td className="px-3 py-2 text-sm text-right text-muted-foreground">—</td>
+                    <td className="px-3 py-2 text-sm text-right font-bold text-foreground">{formatMoney(totalValue)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -207,8 +207,8 @@ export default function StockExportPage() {
             )}
 
             {/* Footer */}
-            <div className="mt-8 pt-4 border-t border-zinc-100 text-center">
-              <p className="text-[10px] text-zinc-400">
+            <div className="mt-8 pt-4 border-t border-border text-center">
+              <p className="text-[10px] text-muted-foreground/70">
                 Document généré le {formatDate(new Date())} — {data.company.name || 'B-Stock'}
               </p>
             </div>
