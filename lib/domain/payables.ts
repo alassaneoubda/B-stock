@@ -3,6 +3,7 @@ import { AppError, notFound } from '../errors'
 import { recordCashMovement, type CashQueryFn } from '../cash-automation'
 import { nextDocumentNumber } from '../sequences'
 import { money } from './payments'
+import { assertPeriodOpen } from '../accounting/period-lock'
 
 /**
  * Dettes fournisseurs (comptes à payer).
@@ -234,6 +235,8 @@ export async function recordSupplierPayment(tx: Tx, input: RecordSupplierPayment
     const [{ future }] = await tx.sql<{ future: boolean }>`SELECT ${input.paidAt}::date > CURRENT_DATE AS future`
     if (future) throw new AppError(400, 'La date du règlement ne peut pas être dans le futur', 'BAD_REQUEST')
   }
+  // Règlement daté d'un mois clôturé (export comptable déjà transmis) : refusé
+  await assertPeriodOpen(tx.sql, input.companyId, input.paidAt ?? null)
 
   // Verrou du bon : deux règlements simultanés sont sérialisés.
   const [po] = await tx.sql<{ id: string; status: string; order_number: string; supplier_id: string | null; supplier_name: string | null }>`
@@ -343,6 +346,8 @@ export async function cancelSupplierPayment(
   if (payment.status === 'cancelled') {
     throw new AppError(409, 'Ce règlement est déjà annulé', 'ALREADY_CANCELLED')
   }
+  // L'annulation modifie le mois du règlement d'origine : refusée s'il est clôturé
+  await assertPeriodOpen(tx.sql, input.companyId, payment.paid_at)
 
   const amount = money(Number(payment.amount))
   const reason = input.reason?.trim() || null

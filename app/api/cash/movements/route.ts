@@ -6,6 +6,7 @@ import { AppError, handleRouteError } from '@/lib/errors'
 import { isUuid } from '@/lib/tenant'
 import { recordCashMovement } from '@/lib/cash-automation'
 import { money } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 // GET /api/cash/movements — List movements for current or specified session
 export async function GET(request: NextRequest) {
@@ -102,6 +103,8 @@ export async function POST(request: NextRequest) {
     const amount = money(data.amount)
 
     const movement = await withTransaction(async (tx) => {
+      // Mois clôturé (export comptable transmis) : opération refusée
+      await assertPeriodOpen(tx.sql, companyId)
       // Saisie manuelle : toujours soumise à validation (un client ne peut plus
       // contourner la validation en envoyant un reference_type arbitraire).
       const row = await recordCashMovement(tx.sql, {

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { withTransaction } from '@/lib/db'
 import { AppError, handleRouteError, notFound } from '@/lib/errors'
 import { isUuid } from '@/lib/tenant'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const validateSchema = z.object({
   approved: z.boolean(),
@@ -33,6 +34,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const data = validateSchema.parse(await request.json())
 
     const movement = await withTransaction(async (tx) => {
+      // Mois clôturé (export comptable transmis) : opération refusée
+      await assertPeriodOpen(tx.sql, companyId)
       // Verrou partagé sur la session : une clôture concurrente attend la fin
       // de la validation (ou la validation voit la session clôturée).
       const [current] = await tx.sql`

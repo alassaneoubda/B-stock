@@ -6,6 +6,7 @@ import { AppError, handleRouteError } from '@/lib/errors'
 import { assertOwned, isUuid } from '@/lib/tenant'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { money } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const CREDIT_STATUSES = ['pending', 'partial', 'paid', 'overdue', 'written_off'] as const
 
@@ -94,6 +95,8 @@ export async function POST(request: NextRequest) {
     const salesOrderId = data.sales_order_id || null
 
     const credit = await withTransaction(async (tx) => {
+      // Mois clôturé (export comptable transmis) : opération refusée
+      await assertPeriodOpen(tx.sql, companyId)
       await assertOwned(tx.sql, companyId, { clients: [data.client_id], salesOrders: [salesOrderId] })
       if (salesOrderId) {
         const [order] = await tx.sql`SELECT client_id FROM sales_orders WHERE id = ${salesOrderId}`

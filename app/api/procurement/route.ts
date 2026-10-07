@@ -6,6 +6,7 @@ import { AppError, badRequest, handleRouteError, notFound } from '@/lib/errors'
 import { assertOwned } from '@/lib/tenant'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { addStock } from '@/lib/domain/stock'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -88,6 +89,8 @@ async function receivePurchaseOrder(
   }
 
   return withTransaction(async (tx) => {
+    // Mois clôturé (export comptable transmis) : opération refusée
+    await assertPeriodOpen(tx.sql, companyId)
     // Verrou sur le bon de commande : deux réceptions simultanées sont sérialisées.
     const [po] = await tx.sql<{ id: string; depot_id: string; status: string; order_number: string }>`
       SELECT id, depot_id, status, order_number FROM purchase_orders
