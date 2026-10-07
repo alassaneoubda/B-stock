@@ -75,7 +75,10 @@ function AdminLoginContent() {
           setError(
             res.code === 'rate_limited'
               ? credentialsErrorMessage(res.error, res.code)
-              : 'Identifiants invalides ou compte non autorisé'
+              : res.error === 'Configuration'
+                ? // Exception côté serveur (base injoignable, migration manquante…), pas un mauvais mot de passe
+                  'Erreur serveur pendant la connexion. Vérifiez que les migrations sont appliquées et consultez les journaux du serveur.'
+                : 'Identifiants invalides ou compte non autorisé'
           )
           if (otpStep) {
             setOtpStep(false)
