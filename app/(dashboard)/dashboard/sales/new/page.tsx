@@ -37,6 +37,10 @@ import { formatMoney, formatNumber, formatSignedMoney } from '@/lib/format'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { EmptyState, TableSkeleton } from '@/components/states'
 import { cn } from '@/lib/utils'
+import { ScanButton, type ScanOutcome } from '@/components/scan/barcode-scanner'
+import { useScannerInput } from '@/components/scan/use-scanner-input'
+import { matchLabel, useBarcodeLookup, type BarcodeMatch } from '@/components/scan/use-barcode-lookup'
+import { scanFeedback } from '@/components/scan/feedback'
 
 interface Client {
     id: string
@@ -312,6 +316,46 @@ export default function NewSalePage() {
             i.variantId === variantId ? { ...i, quantity: Math.min(Math.max(1, qty), i.availableStock) } : i
         ))
     }
+
+    // ----- Scan de codes-barres (caméra ou lecteur USB/Bluetooth) -----
+    /** Ajoute la variante scannée au panier (+1 si déjà présente). */
+    function addScanned(match: BarcodeMatch): Exclude<ScanOutcome, void> {
+        const label = matchLabel(match)
+        const v = variants.find(x => x.id === match.variant_id)
+        if (!v) return { ok: false, message: `${label} : aucun stock dans ce dépôt` }
+        if (v.available_stock <= 0) return { ok: false, message: `${label} : rupture de stock` }
+        const existing = orderItems.find(i => i.variantId === v.id)
+        if (existing && existing.quantity >= v.available_stock) {
+            return { ok: false, message: `${label} : stock disponible atteint (${formatNumber(v.available_stock)})` }
+        }
+        addItem(v)
+        return { ok: true, message: `Ajouté : ${label} (${formatNumber((existing?.quantity ?? 0) + 1)} au panier)` }
+    }
+
+    const { lookup: lookupBarcode, dialog: barcodeDialog } = useBarcodeLookup({
+        onAssigned: (match) => {
+            const outcome = addScanned(match)
+            if (outcome.ok) toast.success(outcome.message)
+            else toast.error(outcome.message)
+        },
+    })
+
+    async function handleScan(code: string): Promise<Exclude<ScanOutcome, void>> {
+        const result = await lookupBarcode(code)
+        if (result.status === 'unknown') return { ok: false, message: 'Code-barres inconnu', close: true }
+        if (result.status === 'error') return { ok: false, message: result.message }
+        return addScanned(result.match)
+    }
+
+    useScannerInput(
+        async (code) => {
+            const outcome = await handleScan(code)
+            scanFeedback(outcome.ok)
+            if (outcome.ok) toast.success(outcome.message, { duration: 1500 })
+            else if (!outcome.close) toast.error(outcome.message)
+        },
+        { enabled: step === 'products' && !loadingProducts }
+    )
 
     const filteredVariants = variants.filter(v =>
         !productSearch || v.product_name.toLowerCase().includes(productSearch.toLowerCase())
@@ -616,16 +660,30 @@ export default function NewSalePage() {
                                         </CardDescription>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
-                                        <div className="relative">
-                                            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                                            <Input
-                                                placeholder="Rechercher un produit…"
-                                                aria-label="Rechercher un produit"
-                                                className="h-12 rounded-lg pl-10 text-base"
-                                                value={productSearch}
-                                                onChange={e => setProductSearch(e.target.value)}
+                                        <div className="flex gap-2">
+                                            <div className="relative min-w-0 flex-1">
+                                                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                                                <Input
+                                                    placeholder="Rechercher un produit…"
+                                                    aria-label="Rechercher un produit"
+                                                    className="h-12 rounded-lg pl-10 text-base"
+                                                    value={productSearch}
+                                                    onChange={e => setProductSearch(e.target.value)}
+                                                />
+                                            </div>
+                                            <ScanButton
+                                                size="xl"
+                                                className="h-12 shrink-0"
+                                                continuous
+                                                disabled={loadingProducts}
+                                                title="Scanner des produits"
+                                                description="Chaque article scanné est ajouté au panier (+1 s’il y est déjà)."
+                                                onDetected={handleScan}
                                             />
                                         </div>
+                                        <p className="-mt-2 text-xs text-muted-foreground">
+                                            Lecteur de codes-barres USB ou Bluetooth : scannez directement, l’article s’ajoute au panier.
+                                        </p>
 
                                         {loadingProducts ? (
                                             <TableSkeleton rows={4} columns={2} />
@@ -1076,6 +1134,8 @@ export default function NewSalePage() {
                     </aside>
                 </div>
             </PageShell>
+
+            {barcodeDialog}
 
             {/* Barre d'action collante (mobile / tablette) */}
             <div className="sticky bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:hidden">
