@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import {
     BookOpen,
     Building2,
+    Calculator,
     UserCog,
     CreditCard,
     Bell,
@@ -64,6 +65,12 @@ const settingsSections = [
         icon: CreditCard,
         title: 'Abonnement',
         description: 'Offre en cours et historique des paiements',
+    },
+    {
+        href: '/dashboard/settings/accounting',
+        icon: Calculator,
+        title: 'Comptabilité',
+        description: 'Plan de comptes SYSCOHADA et journaux de l’export comptable',
     },
     {
         href: '/dashboard/settings/notifications',

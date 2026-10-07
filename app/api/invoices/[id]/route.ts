@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { sql, withTransaction } from '@/lib/db'
 import { AppError, handleRouteError, notFound } from '@/lib/errors'
 import { isUuid } from '@/lib/tenant'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 // GET /api/invoices/[id] — Get invoice detail with items
 export async function GET(
@@ -83,6 +84,10 @@ export async function PATCH(
     if (!isUuid(id)) throw notFound('Facture')
     patchSchema.parse(await request.json())
 
+    // Annulation refusée si la facture est datée d'un mois clôturé
+    const [current] = await sql`SELECT created_at FROM invoices WHERE id = ${id} AND company_id = ${companyId}`
+    if (current) await assertPeriodOpen(sql, companyId, current.created_at)
+
     const rows = await sql`
       UPDATE invoices SET status = 'cancelled', updated_at = NOW()
       WHERE id = ${id} AND company_id = ${companyId} AND status <> 'cancelled'
@@ -115,11 +120,12 @@ export async function DELETE(
 
     await withTransaction(async (tx) => {
       const [invoice] = await tx.sql`
-        SELECT id, status, amount_paid FROM invoices
+        SELECT id, status, amount_paid, created_at FROM invoices
         WHERE id = ${id} AND company_id = ${companyId}
         FOR UPDATE
       `
       if (!invoice) throw notFound('Facture')
+      await assertPeriodOpen(tx.sql, companyId, invoice.created_at)
       if (invoice.status === 'paid' || invoice.status === 'partial' || Number(invoice.amount_paid) > 0) {
         throw new AppError(
           409,

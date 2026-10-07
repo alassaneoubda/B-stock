@@ -5,6 +5,7 @@ import { withTransaction } from '@/lib/db'
 import { AppError, handleRouteError } from '@/lib/errors'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { money } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const generateSchema = z.object({
   orderId: z.string().uuid('orderId requis'),
@@ -47,6 +48,8 @@ export async function POST(request: NextRequest) {
       if (order.status === 'cancelled') {
         throw new AppError(409, 'Commande annulée : aucune facture ne peut être générée', 'ORDER_CANCELLED')
       }
+      // Nouvelle facture datée d'aujourd'hui : refusée si le mois est clôturé
+      await assertPeriodOpen(tx.sql, companyId)
 
       // Lignes produits : variante → produit (+ conditionnement pour le libellé)
       const orderItems = await tx.sql`

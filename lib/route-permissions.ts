@@ -26,6 +26,8 @@ const ROUTE_PERMISSIONS: [prefix: string, permission: string][] = [
   ['/dashboard/procurement', 'purchases.read'],
   ['/dashboard/suppliers', 'suppliers.read'],
   ['/dashboard/reports', 'reports.view'],
+  // Permission attribuée à aucun rôle : réservé au propriétaire (owner = '*')
+  ['/dashboard/accounting', 'accounting.manage'],
   ['/dashboard/alerts', 'alerts.read'],
   ['/dashboard/audit-logs', 'audit.read'],
   ['/dashboard/vehicles', 'vehicles.read'],
@@ -35,6 +37,10 @@ const ROUTE_PERMISSIONS: [prefix: string, permission: string][] = [
   ['/dashboard/settings/users', 'users.read'],
   ['/dashboard/settings/subscription', 'subscription.manage'],
   ['/dashboard/plans', 'subscription.manage'],
+  ['/dashboard/settings/accounting', 'accounting.manage'],
+  // Permission attribuée à aucun rôle : réservé au propriétaire (owner = '*')
+  ['/dashboard/settings/payments', 'payment_settings.manage'],
+  ['/dashboard/mobile-money', 'payments.read'],
   ['/dashboard/settings/security', ''], // chacun gère son propre compte
   ['/dashboard/settings/notifications', ''],
   ['/dashboard/settings', 'settings.read'],

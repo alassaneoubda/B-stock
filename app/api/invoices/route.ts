@@ -6,6 +6,7 @@ import { AppError, handleRouteError } from '@/lib/errors'
 import { assertOwned } from '@/lib/tenant'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { money } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const INVOICE_TYPES = ['client', 'supplier'] as const
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'partial', 'cancelled'] as const
@@ -108,6 +109,8 @@ export async function POST(request: NextRequest) {
     const invoiceStatus = totalAmount > 0 && paid >= totalAmount ? 'paid' : paid > 0 ? 'partial' : 'draft'
 
     const invoice = await withTransaction(async (tx) => {
+      // Facture datée d'aujourd'hui : refusée si le mois est clôturé
+      await assertPeriodOpen(tx.sql, companyId)
       await assertOwned(tx.sql, companyId, {
         clients: [data.clientId],
         suppliers: [data.supplierId],
