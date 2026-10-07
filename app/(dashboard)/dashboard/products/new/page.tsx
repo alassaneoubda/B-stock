@@ -25,7 +25,8 @@ const productSchema = z.object({
   description: z.string().optional(),
   category: z.string().optional(),
   brand: z.string().optional(),
-  baseUnit: z.string().min(1, "L'unité de base est requise"),
+  baseUnit: z.string().min(1, 'Le conditionnement est requis'),
+  unitsPerPack: z.number().int('Nombre entier attendu').min(1, 'Au moins 1').max(100, '100 au maximum').optional(),
   purchasePrice: z.number().min(0, "Le prix d'achat doit être positif"),
   sellingPrice: z.number().min(0, 'Le prix de vente doit être positif'),
   isActive: z.boolean().default(true),
@@ -56,14 +57,18 @@ const categories = [
   'Autres',
 ]
 
+// Le stock est compté par conditionnement ; la vente à l'unité reste possible.
 const units = [
-  { value: 'bouteille', label: 'Bouteille' },
-  { value: 'canette', label: 'Canette' },
-  { value: 'pack', label: 'Pack' },
   { value: 'casier', label: 'Casier' },
+  { value: 'pack', label: 'Pack' },
   { value: 'carton', label: 'Carton' },
+  { value: 'bouteille', label: 'Bouteille (à l’unité)' },
+  { value: 'canette', label: 'Canette (à l’unité)' },
   { value: 'litre', label: 'Litre' },
 ]
+
+/** Conditionnements qui contiennent plusieurs unités (casier de 12, pack de 6…). */
+const MULTI_UNIT_PACKS = new Set(['casier', 'pack', 'carton'])
 
 export default function NewProductPage() {
   const router = useRouter()
@@ -84,12 +89,17 @@ export default function NewProductPage() {
     resolver: zodResolver(productSchema),
     defaultValues: {
       isActive: true,
+      baseUnit: 'casier',
+      unitsPerPack: 12,
       purchasePrice: 0,
       sellingPrice: 0,
     },
   })
 
   const isActive = watch('isActive')
+  const baseUnit = watch('baseUnit')
+  const isMultiPack = MULTI_UNIT_PACKS.has(baseUnit)
+  const packLabel = units.find((u) => u.value === baseUnit)?.label.split(' (')[0].toLowerCase() ?? 'conditionnement'
   const sellingPrice = watch('sellingPrice')
   const purchasePrice = watch('purchasePrice')
 
@@ -135,6 +145,8 @@ export default function NewProductPage() {
     try {
       const validVariants = variants.filter(v => v.packagingTypeId)
       const payload: Record<string, unknown> = { ...data }
+      // À l'unité : pas de contenu à décrire
+      if (!MULTI_UNIT_PACKS.has(data.baseUnit)) delete payload.unitsPerPack
 
       if (validVariants.length > 0) {
         payload.variants = validVariants.map(v => ({
@@ -248,8 +260,8 @@ export default function NewProductPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="baseUnit">Unité de base *</Label>
-                  <Select onValueChange={(value) => setValue('baseUnit', value)} disabled={isLoading}>
+                  <Label htmlFor="baseUnit">Conditionnement *</Label>
+                  <Select value={baseUnit} onValueChange={(value) => setValue('baseUnit', value, { shouldValidate: true })} disabled={isLoading}>
                     <SelectTrigger id="baseUnit" className="w-full" aria-invalid={!!errors.baseUnit}>
                       <SelectValue placeholder="Sélectionner une unité" />
                     </SelectTrigger>
@@ -264,9 +276,30 @@ export default function NewProductPage() {
                   {errors.baseUnit ? (
                     <p className="text-xs text-destructive">{errors.baseUnit.message}</p>
                   ) : (
-                    <p className="text-xs text-muted-foreground">Unité dans laquelle le stock est compté.</p>
+                    <p className="text-xs text-muted-foreground">Le stock, les achats et les ventes sont comptés dans ce conditionnement.</p>
                   )}
                 </div>
+
+                {isMultiPack && (
+                  <div className="space-y-2">
+                    <Label htmlFor="unitsPerPack">Contenu d’un {packLabel} *</Label>
+                    <Input
+                      id="unitsPerPack"
+                      type="number"
+                      min="1"
+                      max="100"
+                      className="tabular"
+                      aria-invalid={!!errors.unitsPerPack}
+                      {...register('unitsPerPack', { setValueAs: (v) => (v === '' || v == null ? undefined : Number(v)) })}
+                      disabled={isLoading}
+                    />
+                    {errors.unitsPerPack ? (
+                      <p className="text-xs text-destructive">{errors.unitsPerPack.message}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Nombre de bouteilles (ou canettes) par {packLabel} : 6, 12, 24…</p>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="description">Description</Label>
@@ -287,7 +320,7 @@ export default function NewProductPage() {
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="purchasePrice">Prix d’achat (FCFA) *</Label>
+                  <Label htmlFor="purchasePrice">Prix d’achat d’un {packLabel} (FCFA) *</Label>
                   <Input
                     id="purchasePrice"
                     type="number"
@@ -302,7 +335,7 @@ export default function NewProductPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="sellingPrice">Prix de vente (FCFA) *</Label>
+                  <Label htmlFor="sellingPrice">Prix de vente d’un {packLabel} (FCFA) *</Label>
                   <Input
                     id="sellingPrice"
                     type="number"

@@ -53,6 +53,8 @@ interface Variant {
     cost_price: number | null
     packaging_name: string
     units_per_case: number
+    /** Ex. « Casier de 12 bouteilles de 66 cl » (formats chargés depuis le catalogue). */
+    packaging_description: string | null
     deposit_price: number
 }
 
@@ -77,7 +79,7 @@ async function getProduct(productId: string, companyId: string): Promise<Product
 
 async function getVariants(productId: string): Promise<Variant[]> {
     const variants = await sql`
-        SELECT pv.*, pt.name as packaging_name, pt.units_per_case, pt.deposit_price
+        SELECT pv.*, pt.name as packaging_name, pt.units_per_case, pt.description as packaging_description, pt.deposit_price
         FROM product_variants pv
         LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
         WHERE pv.product_id = ${productId}
@@ -274,7 +276,7 @@ export default async function ProductDetailPage({
                                                     <TableCell className="pl-5">
                                                         <p className="text-sm font-medium text-foreground">{v.packaging_name}</p>
                                                         <p className="text-xs text-muted-foreground">
-                                                            {v.units_per_case} unité{v.units_per_case > 1 ? 's' : ''}/casier
+                                                            {v.packaging_description || `${v.units_per_case} unité${v.units_per_case > 1 ? 's' : ''} par conditionnement`}
                                                         </p>
                                                     </TableCell>
                                                     <TableCell className="tabular text-right text-sm font-medium text-foreground">{formatMoney(v.price)}</TableCell>

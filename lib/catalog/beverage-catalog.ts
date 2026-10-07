@@ -1,6 +1,11 @@
 /**
  * Catalogue boissons Côte d’Ivoire — identités prédéfinies, sans prix.
- * Les prix d’achat / vente sont saisis par chaque dépôt.
+ *
+ * Le stock est géré par CONDITIONNEMENT (casier, pack, carton), pas à la bouteille :
+ * un produit (ex. « Bock ») a plusieurs formats, chacun avec son conditionnement réel
+ * (66 cl → casier de 12 bouteilles, 100 cl → casier de 6). Le contenu de chaque
+ * conditionnement est propre au format et modifiable par le dépôt.
+ * Les prix d’achat / vente sont saisis par chaque dépôt, POUR UN CONDITIONNEMENT.
  */
 
 export const CATALOG_CATEGORIES = [
@@ -33,107 +38,190 @@ export const CATALOG_BRANDS = [
   'Youki',
 ] as const
 
-export const CATALOG_UNITS = [
-  'Casier 24',
-  'Casier 12',
-  'Bouteille',
-  'Canette',
-  'Pack 6',
-  'Pack 12',
-  'Carton',
-] as const
+/** Conditionnements : l'unité dans laquelle le stock est compté et vendu. */
+export const PACK_KINDS = ['Casier', 'Pack', 'Carton'] as const
+/** Ce que contient un conditionnement (sert uniquement à le décrire). */
+export const CONTENT_UNITS = ['bouteilles', 'canettes', 'briques'] as const
 
 export type CatalogCategory = (typeof CATALOG_CATEGORIES)[number]
 export type CatalogBrand = (typeof CATALOG_BRANDS)[number]
-export type CatalogUnit = (typeof CATALOG_UNITS)[number]
+export type PackKind = (typeof PACK_KINDS)[number]
+export type ContentUnit = (typeof CONTENT_UNITS)[number]
 
-export type CatalogItem = {
+/** Bornes du contenu d'un conditionnement (casier de 1 à 100 unités). */
+export const MIN_UNITS_PER_PACK = 1
+export const MAX_UNITS_PER_PACK = 100
+
+export type CatalogVariation = {
   sku: string
+  /** Contenance d'une unité, ex. « 66 cl », « 1,5 L ». */
+  volume: string
+  packKind: PackKind
+  unitsPerPack: number
+  contentUnit: ContentUnit
+}
+
+export type CatalogProduct = {
+  /** Référence du produit (stockée dans products.sku). */
+  key: string
   name: string
   brand: CatalogBrand
   category: CatalogCategory
-  baseUnit: CatalogUnit
+  variations: CatalogVariation[]
 }
 
+/** Nom de l'emballage d'une variante — c'est aussi son libellé partout (ventes, stock, caisse). */
+export function packagingLabel(v: { volume: string; packKind: string; unitsPerPack: number }): string {
+  const volume = v.volume.trim()
+  const pack = `${v.packKind} de ${v.unitsPerPack}`
+  return volume ? `${volume} · ${pack}` : pack
+}
+
+/** Description lisible : « Casier de 12 bouteilles de 66 cl ». */
+export function packagingDescription(v: {
+  volume: string
+  packKind: string
+  unitsPerPack: number
+  contentUnit: string
+}): string {
+  const volume = v.volume.trim()
+  return `${v.packKind} de ${v.unitsPerPack} ${v.contentUnit}${volume ? ` de ${volume}` : ''}`
+}
+
+/** Seul un casier (verre consigné) est un emballage retournable ; packs et cartons sont perdus. */
+export function isReturnablePack(packKind: string): boolean {
+  return packKind.toLowerCase() === 'casier'
+}
+
+/**
+ * Unités par conditionnement déduites d'un ancien libellé (« Casier 24 », « Pack 6 »).
+ * Uniquement en repli quand aucun contenu explicite n'est fourni (création manuelle ancienne).
+ */
 export function unitsPerCase(unit: string): number {
-  switch (unit) {
-    case 'Casier 24':
-      return 24
-    case 'Casier 12':
-      return 12
-    case 'Pack 6':
-      return 6
-    case 'Pack 12':
-      return 12
-    default:
-      return 1
-  }
+  const match = unit.match(/(\d+)/)
+  return match ? Math.max(1, Number(match[1])) : 1
 }
 
-export const BEVERAGE_CATALOG: CatalogItem[] = [
+const v = (
+  sku: string,
+  volume: string,
+  packKind: PackKind,
+  unitsPerPack: number,
+  contentUnit: ContentUnit = 'bouteilles'
+): CatalogVariation => ({ sku, volume, packKind, unitsPerPack, contentUnit })
+
+export const BEVERAGE_CATALOG: CatalogProduct[] = [
   // Gazeuses
-  { sku: 'COCA-33-C24', name: 'Coca-Cola 33cl casier 24', brand: 'Coca-Cola', category: 'Boissons gazeuses', baseUnit: 'Casier 24' },
-  { sku: 'COCA-33', name: 'Coca-Cola 33cl', brand: 'Coca-Cola', category: 'Boissons gazeuses', baseUnit: 'Bouteille' },
-  { sku: 'COCA-33-CAN', name: 'Coca-Cola 33cl canette', brand: 'Coca-Cola', category: 'Boissons gazeuses', baseUnit: 'Canette' },
-  { sku: 'COCA-1L', name: 'Coca-Cola 1L', brand: 'Coca-Cola', category: 'Boissons gazeuses', baseUnit: 'Bouteille' },
-  { sku: 'COCAZ-33-C24', name: 'Coca-Cola Zero 33cl casier 24', brand: 'Coca-Cola', category: 'Boissons gazeuses', baseUnit: 'Casier 24' },
-  { sku: 'FANTA-33-C24', name: 'Fanta Orange 33cl casier 24', brand: 'Fanta', category: 'Boissons gazeuses', baseUnit: 'Casier 24' },
-  { sku: 'FANTA-1L', name: 'Fanta Orange 1L', brand: 'Fanta', category: 'Boissons gazeuses', baseUnit: 'Bouteille' },
-  { sku: 'SPR-33-C24', name: 'Sprite 33cl casier 24', brand: 'Sprite', category: 'Boissons gazeuses', baseUnit: 'Casier 24' },
-  { sku: 'SPR-1L', name: 'Sprite 1L', brand: 'Sprite', category: 'Boissons gazeuses', baseUnit: 'Bouteille' },
-  { sku: 'SCHW-33-C24', name: 'Schweppes Tonic 33cl casier 24', brand: 'Schweppes', category: 'Boissons gazeuses', baseUnit: 'Casier 24' },
-  { sku: 'YOUKI-33-C24', name: 'Youki 33cl casier 24', brand: 'Youki', category: 'Boissons gazeuses', baseUnit: 'Casier 24' },
-  { sku: 'YOUKIA-33-C24', name: 'Youki Ananas 33cl casier 24', brand: 'Youki', category: 'Boissons gazeuses', baseUnit: 'Casier 24' },
+  { key: 'COCA', name: 'Coca-Cola', brand: 'Coca-Cola', category: 'Boissons gazeuses', variations: [
+    v('COCA-33-C24', '33 cl', 'Casier', 24),
+    v('COCA-33-CAN-CT24', '33 cl', 'Carton', 24, 'canettes'),
+    v('COCA-1L-P6', '1 L', 'Pack', 6),
+  ] },
+  { key: 'COCAZ', name: 'Coca-Cola Zero', brand: 'Coca-Cola', category: 'Boissons gazeuses', variations: [
+    v('COCAZ-33-C24', '33 cl', 'Casier', 24),
+  ] },
+  { key: 'FANTA', name: 'Fanta Orange', brand: 'Fanta', category: 'Boissons gazeuses', variations: [
+    v('FANTA-33-C24', '33 cl', 'Casier', 24),
+    v('FANTA-1L-P6', '1 L', 'Pack', 6),
+  ] },
+  { key: 'SPR', name: 'Sprite', brand: 'Sprite', category: 'Boissons gazeuses', variations: [
+    v('SPR-33-C24', '33 cl', 'Casier', 24),
+    v('SPR-1L-P6', '1 L', 'Pack', 6),
+  ] },
+  { key: 'SCHW', name: 'Schweppes Tonic', brand: 'Schweppes', category: 'Boissons gazeuses', variations: [
+    v('SCHW-33-C24', '33 cl', 'Casier', 24),
+  ] },
+  { key: 'YOUKI', name: 'Youki', brand: 'Youki', category: 'Boissons gazeuses', variations: [
+    v('YOUKI-33-C24', '33 cl', 'Casier', 24),
+  ] },
+  { key: 'YOUKIA', name: 'Youki Ananas', brand: 'Youki', category: 'Boissons gazeuses', variations: [
+    v('YOUKIA-33-C24', '33 cl', 'Casier', 24),
+  ] },
 
   // Bières
-  { sku: 'FLAG-60-C12', name: 'Flag Spéciale 60cl casier 12', brand: 'Solibra', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'FLAG-33-C24', name: 'Flag Spéciale 33cl casier 24', brand: 'Solibra', category: 'Bières', baseUnit: 'Casier 24' },
-  { sku: 'FLAG-60', name: 'Flag Spéciale 60cl', brand: 'Solibra', category: 'Bières', baseUnit: 'Bouteille' },
-  { sku: 'FLAGP-60-C12', name: 'Flag Pils 60cl casier 12', brand: 'Solibra', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'BEAU-60-C12', name: 'Beaufort 60cl casier 12', brand: 'Solibra', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'BOCK-60-C12', name: 'Bock 60cl casier 12', brand: 'Solibra', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'BOCK-100-C12', name: 'Bock 100cl casier 12', brand: 'Solibra', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'BOCK-100', name: 'Bock 100cl', brand: 'Solibra', category: 'Bières', baseUnit: 'Bouteille' },
-  { sku: 'CAST-65-C12', name: 'Castel Beer 65cl casier 12', brand: 'Castel', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'CAST-65', name: 'Castel Beer 65cl', brand: 'Castel', category: 'Bières', baseUnit: 'Bouteille' },
-  { sku: 'IVOI-60-C12', name: 'Ivoire 60cl casier 12', brand: 'Brassivoire', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'AWOO-60-C12', name: 'Awooyo 60cl casier 12', brand: 'Brassivoire', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'DOPP-65-C12', name: 'Doppel Munich 65cl casier 12', brand: 'Brassivoire', category: 'Bières', baseUnit: 'Casier 12' },
-  { sku: 'HEIN-33-C24', name: 'Heineken 33cl casier 24', brand: 'Heineken', category: 'Bières', baseUnit: 'Casier 24' },
-  { sku: 'HEIN-65', name: 'Heineken 65cl', brand: 'Heineken', category: 'Bières', baseUnit: 'Bouteille' },
-  { sku: 'DESP-33-C24', name: 'Desperados 33cl casier 24', brand: 'Heineken', category: 'Bières', baseUnit: 'Casier 24' },
-  { sku: 'GUI-33-C24', name: 'Guinness 33cl casier 24', brand: 'Guinness', category: 'Bières', baseUnit: 'Casier 24' },
-  { sku: 'GUI-60-C12', name: 'Guinness 60cl casier 12', brand: 'Guinness', category: 'Bières', baseUnit: 'Casier 12' },
+  { key: 'FLAG', name: 'Flag Spéciale', brand: 'Solibra', category: 'Bières', variations: [
+    v('FLAG-33-C24', '33 cl', 'Casier', 24),
+    v('FLAG-60-C12', '60 cl', 'Casier', 12),
+  ] },
+  { key: 'FLAGP', name: 'Flag Pils', brand: 'Solibra', category: 'Bières', variations: [
+    v('FLAGP-60-C12', '60 cl', 'Casier', 12),
+  ] },
+  { key: 'BEAU', name: 'Beaufort', brand: 'Solibra', category: 'Bières', variations: [
+    v('BEAU-60-C12', '60 cl', 'Casier', 12),
+  ] },
+  { key: 'BOCK', name: 'Bock', brand: 'Solibra', category: 'Bières', variations: [
+    v('BOCK-66-C12', '66 cl', 'Casier', 12),
+    v('BOCK-100-C6', '100 cl', 'Casier', 6),
+  ] },
+  { key: 'CAST', name: 'Castel Beer', brand: 'Castel', category: 'Bières', variations: [
+    v('CAST-65-C12', '65 cl', 'Casier', 12),
+  ] },
+  { key: 'IVOI', name: 'Ivoire', brand: 'Brassivoire', category: 'Bières', variations: [
+    v('IVOI-60-C12', '60 cl', 'Casier', 12),
+  ] },
+  { key: 'AWOO', name: 'Awooyo', brand: 'Brassivoire', category: 'Bières', variations: [
+    v('AWOO-60-C12', '60 cl', 'Casier', 12),
+  ] },
+  { key: 'DOPP', name: 'Doppel Munich', brand: 'Brassivoire', category: 'Bières', variations: [
+    v('DOPP-65-C12', '65 cl', 'Casier', 12),
+  ] },
+  { key: 'HEIN', name: 'Heineken', brand: 'Heineken', category: 'Bières', variations: [
+    v('HEIN-33-C24', '33 cl', 'Casier', 24),
+    v('HEIN-65-C12', '65 cl', 'Casier', 12),
+  ] },
+  { key: 'DESP', name: 'Desperados', brand: 'Heineken', category: 'Bières', variations: [
+    v('DESP-33-C24', '33 cl', 'Casier', 24),
+  ] },
+  { key: 'GUI', name: 'Guinness', brand: 'Guinness', category: 'Bières', variations: [
+    v('GUI-33-C24', '33 cl', 'Casier', 24),
+    v('GUI-60-C12', '60 cl', 'Casier', 12),
+  ] },
 
   // Vins
-  { sku: 'VALP-100-C12', name: 'Valpierre 100cl casier 12', brand: 'Valpierre', category: 'Vins', baseUnit: 'Casier 12' },
-  { sku: 'VALP-100', name: 'Valpierre 100cl', brand: 'Valpierre', category: 'Vins', baseUnit: 'Bouteille' },
-  { sku: 'VALP-50-C12', name: 'Valpierre 50cl casier 12', brand: 'Valpierre', category: 'Vins', baseUnit: 'Casier 12' },
-  { sku: 'VALP-50', name: 'Valpierre 50cl', brand: 'Valpierre', category: 'Vins', baseUnit: 'Bouteille' },
+  { key: 'VALP', name: 'Valpierre', brand: 'Valpierre', category: 'Vins', variations: [
+    v('VALP-50-C12', '50 cl', 'Casier', 12),
+    v('VALP-100-C12', '100 cl', 'Casier', 12),
+  ] },
 
   // Jus et malts
-  { sku: 'MALTA-33-C24', name: 'Malta Guinness 33cl casier 24', brand: 'Guinness', category: 'Jus et malts', baseUnit: 'Casier 24' },
-  { sku: 'DELI-1L-CT', name: 'Délifruit Cocktail carton', brand: 'Délifruit', category: 'Jus et malts', baseUnit: 'Carton' },
-  { sku: 'DELI-1L', name: 'Délifruit Cocktail 1L', brand: 'Délifruit', category: 'Jus et malts', baseUnit: 'Bouteille' },
-  { sku: 'TAMP-1L', name: 'Tampico 1L', brand: 'Tampico', category: 'Jus et malts', baseUnit: 'Bouteille' },
-  { sku: 'MM-1L', name: 'Minute Maid 1L', brand: 'Coca-Cola', category: 'Jus et malts', baseUnit: 'Bouteille' },
+  { key: 'MALTA', name: 'Malta Guinness', brand: 'Guinness', category: 'Jus et malts', variations: [
+    v('MALTA-33-C24', '33 cl', 'Casier', 24),
+  ] },
+  { key: 'DELI', name: 'Délifruit Cocktail', brand: 'Délifruit', category: 'Jus et malts', variations: [
+    v('DELI-1L-CT12', '1 L', 'Carton', 12),
+  ] },
+  { key: 'TAMP', name: 'Tampico', brand: 'Tampico', category: 'Jus et malts', variations: [
+    v('TAMP-1L-P6', '1 L', 'Pack', 6),
+  ] },
+  { key: 'MM', name: 'Minute Maid', brand: 'Coca-Cola', category: 'Jus et malts', variations: [
+    v('MM-1L-P6', '1 L', 'Pack', 6),
+  ] },
 
   // Eaux
-  { sku: 'AWA-15-P6', name: 'Awa 1,5L pack 6', brand: 'Awa', category: 'Eaux minérales', baseUnit: 'Pack 6' },
-  { sku: 'AWA-50-P12', name: 'Awa 50cl pack 12', brand: 'Awa', category: 'Eaux minérales', baseUnit: 'Pack 12' },
-  { sku: 'AWA-15', name: 'Awa 1,5L', brand: 'Awa', category: 'Eaux minérales', baseUnit: 'Bouteille' },
-  { sku: 'CEL-15-P6', name: 'Céleste 1,5L pack 6', brand: 'Céleste', category: 'Eaux minérales', baseUnit: 'Pack 6' },
-  { sku: 'CEL-50-P12', name: 'Céleste 50cl pack 12', brand: 'Céleste', category: 'Eaux minérales', baseUnit: 'Pack 12' },
-  { sku: 'OLG-15-P6', name: 'Olgane 1,5L pack 6', brand: 'Olgane', category: 'Eaux minérales', baseUnit: 'Pack 6' },
+  { key: 'AWA', name: 'Awa', brand: 'Awa', category: 'Eaux minérales', variations: [
+    v('AWA-50-P12', '50 cl', 'Pack', 12),
+    v('AWA-15-P6', '1,5 L', 'Pack', 6),
+  ] },
+  { key: 'CEL', name: 'Céleste', brand: 'Céleste', category: 'Eaux minérales', variations: [
+    v('CEL-50-P12', '50 cl', 'Pack', 12),
+    v('CEL-15-P6', '1,5 L', 'Pack', 6),
+  ] },
+  { key: 'OLG', name: 'Olgane', brand: 'Olgane', category: 'Eaux minérales', variations: [
+    v('OLG-15-P6', '1,5 L', 'Pack', 6),
+  ] },
 
   // Energy
-  { sku: 'XXL-50', name: 'XXL Energy 50cl', brand: 'XXL', category: 'Energy', baseUnit: 'Canette' },
-  { sku: 'XXL-25-C24', name: 'XXL Energy 25cl casier 24', brand: 'XXL', category: 'Energy', baseUnit: 'Casier 24' },
-  { sku: 'RB-25', name: 'Red Bull 25cl', brand: 'Red Bull', category: 'Energy', baseUnit: 'Canette' },
+  { key: 'XXL', name: 'XXL Energy', brand: 'XXL', category: 'Energy', variations: [
+    v('XXL-25-C24', '25 cl', 'Casier', 24),
+    v('XXL-50-CT24', '50 cl', 'Carton', 24, 'canettes'),
+  ] },
+  { key: 'RB', name: 'Red Bull', brand: 'Red Bull', category: 'Energy', variations: [
+    v('RB-25-CT24', '25 cl', 'Carton', 24, 'canettes'),
+  ] },
 ]
 
-const CATALOG_BY_SKU = new Map(BEVERAGE_CATALOG.map((item) => [item.sku, item]))
+const CATALOG_BY_KEY = new Map(BEVERAGE_CATALOG.map((p) => [p.key, p]))
 
-export function getCatalogItem(sku: string): CatalogItem | undefined {
-  return CATALOG_BY_SKU.get(sku)
+export function getCatalogProduct(key: string): CatalogProduct | undefined {
+  return CATALOG_BY_KEY.get(key)
 }

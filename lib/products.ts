@@ -2,7 +2,12 @@ import type { QueryResultRow } from 'pg'
 import { withTransaction, type Tx } from './db'
 import { AppError } from './errors'
 import { assertOwned } from './tenant'
-import { unitsPerCase } from './catalog/beverage-catalog'
+import {
+  isReturnablePack,
+  packagingDescription,
+  packagingLabel,
+  unitsPerCase,
+} from './catalog/beverage-catalog'
 
 export type CreateProductInput = {
   name: string
@@ -10,7 +15,10 @@ export type CreateProductInput = {
   category?: string | null
   brand?: string | null
   description?: string | null
+  /** Conditionnement dans lequel le stock est compté (casier, pack, carton…). */
   baseUnit: string
+  /** Unités contenues dans un conditionnement (ex. 12 bouteilles par casier). */
+  unitsPerPack?: number | null
   purchasePrice: number
   sellingPrice: number
   imageUrl?: string | null
@@ -91,27 +99,22 @@ export async function createProductForCompany(
   `
   const productId = product.id as string
 
-  const packagingName = `Emballage - ${data.name} ${data.baseUnit === 'bouteille' ? '' : data.baseUnit}`
-    .trim()
-    .slice(0, PACKAGING_NAME_MAX)
-
-  const [packagingType] = await tx.sql`
-    INSERT INTO packaging_types (
-      company_id, name, units_per_case, is_returnable, deposit_price
-    ) VALUES (
-      ${companyId}, ${packagingName}, ${unitsPerCase(data.baseUnit)}, true, 0
-    )
-    RETURNING id
-  `
-  const newPackagingTypeId = packagingType.id as string
-
-  await tx.sql`
-    INSERT INTO packaging_stock (depot_id, packaging_type_id, quantity)
-    SELECT d.id, ${newPackagingTypeId}::uuid, 0
-    FROM depots d
-    WHERE d.company_id = ${companyId}
-    ON CONFLICT (depot_id, packaging_type_id) DO NOTHING
-  `
+  // Contenu explicite (ex. casier de 12) : l'emballage porte ce libellé ; sinon ancien nommage
+  const explicitUnits = data.unitsPerPack && data.unitsPerPack > 0 ? Math.floor(data.unitsPerPack) : null
+  const packKind = data.baseUnit.charAt(0).toUpperCase() + data.baseUnit.slice(1)
+  const newPackagingTypeId = await createPackaging(tx, companyId, explicitUnits
+    ? {
+        name: packagingLabel({ volume: '', packKind, unitsPerPack: explicitUnits }),
+        description: null,
+        unitsPerPack: explicitUnits,
+        returnable: true,
+      }
+    : {
+        name: `Emballage - ${data.name} ${data.baseUnit === 'bouteille' ? '' : data.baseUnit}`.trim(),
+        description: null,
+        unitsPerPack: unitsPerCase(data.baseUnit),
+        returnable: true,
+      })
 
   if (variants.length > 0) {
     for (const variant of variants) {
@@ -137,4 +140,127 @@ export async function createProductForCompany(
   }
 
   return product
+}
+
+/**
+ * Crée l'emballage d'une variante (porte le nombre d'unités par conditionnement
+ * et la consigne) + son stock d'emballage à 0 dans chaque dépôt.
+ */
+async function createPackaging(
+  tx: Tx,
+  companyId: string,
+  p: { name: string; description: string | null; unitsPerPack: number; returnable: boolean }
+): Promise<string> {
+  const [packagingType] = await tx.sql`
+    INSERT INTO packaging_types (
+      company_id, name, description, units_per_case, is_returnable, deposit_price
+    ) VALUES (
+      ${companyId}, ${p.name.slice(0, PACKAGING_NAME_MAX)}, ${p.description},
+      ${p.unitsPerPack}, ${p.returnable}, 0
+    )
+    RETURNING id
+  `
+  const id = packagingType.id as string
+  await tx.sql`
+    INSERT INTO packaging_stock (depot_id, packaging_type_id, quantity)
+    SELECT d.id, ${id}::uuid, 0
+    FROM depots d
+    WHERE d.company_id = ${companyId}
+    ON CONFLICT (depot_id, packaging_type_id) DO NOTHING
+  `
+  return id
+}
+
+export type CatalogLoadVariation = {
+  /** Référence catalogue ; null pour un format ajouté par le dépôt. */
+  sku: string | null
+  volume: string
+  packKind: string
+  unitsPerPack: number
+  contentUnit: string
+  /** Prix d'un conditionnement (un casier, un pack…). */
+  purchasePrice: number
+  sellingPrice: number
+}
+
+export type CatalogLoadProduct = {
+  key: string
+  name: string
+  brand: string
+  category: string
+  variations: CatalogLoadVariation[]
+}
+
+/**
+ * Charge un produit du catalogue avec ses formats : un produit (ex. « Bock »),
+ * une variante par format (66 cl en casier de 12, 100 cl en casier de 6…).
+ * Le stock et les prix sont comptés par conditionnement.
+ *
+ * Rejouable : si le produit existe déjà (même référence), seuls les formats
+ * manquants lui sont ajoutés ; ceux déjà présents sont ignorés.
+ */
+export async function loadCatalogProduct(
+  tx: Tx,
+  companyId: string,
+  item: CatalogLoadProduct
+): Promise<{ productId: string; created: string[]; skipped: string[] }> {
+  await tx.sql`SELECT pg_advisory_xact_lock(hashtext(${`${companyId}:product-sku:${item.key}`}))`
+
+  const first = item.variations[0]
+  const [existing] = await tx.sql`
+    SELECT id FROM products
+    WHERE company_id = ${companyId} AND sku = ${item.key} AND is_active = true
+    LIMIT 1
+  `
+  let productId = existing?.id as string | undefined
+  if (!productId) {
+    const [product] = await tx.sql`
+      INSERT INTO products (
+        company_id, name, sku, category, brand, base_unit, purchase_price, selling_price
+      ) VALUES (
+        ${companyId}, ${item.name}, ${item.key}, ${item.category}, ${item.brand},
+        ${first.packKind.toLowerCase()}, ${first.purchasePrice}, ${first.sellingPrice}
+      )
+      RETURNING id
+    `
+    productId = product.id as string
+  }
+
+  // Formats déjà présents : par référence catalogue, sinon par libellé (formats ajoutés à la main)
+  const present = await tx.sql`
+    SELECT pv.sku, pt.name AS label
+    FROM product_variants pv
+    LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
+    WHERE pv.product_id = ${productId}
+  `
+  const presentSkus = new Set(present.map((r) => r.sku).filter(Boolean))
+  const presentLabels = new Set(present.map((r) => String(r.label ?? '').toLowerCase()))
+
+  const created: string[] = []
+  const skipped: string[] = []
+  for (const variation of item.variations) {
+    const label = packagingLabel(variation)
+    if ((variation.sku && presentSkus.has(variation.sku)) || presentLabels.has(label.toLowerCase())) {
+      skipped.push(`${item.name} ${label}`)
+      continue
+    }
+    const packagingTypeId = await createPackaging(tx, companyId, {
+      name: label,
+      description: packagingDescription(variation),
+      unitsPerPack: variation.unitsPerPack,
+      returnable: isReturnablePack(variation.packKind),
+    })
+    await tx.sql`
+      INSERT INTO product_variants (product_id, packaging_type_id, sku, price, cost_price)
+      VALUES (
+        ${productId}, ${packagingTypeId}, ${variation.sku},
+        ${variation.sellingPrice}, ${variation.purchasePrice}
+      )
+    `
+    presentLabels.add(label.toLowerCase())
+    if (variation.sku) presentSkus.add(variation.sku)
+    created.push(`${item.name} ${label}`)
+  }
+
+  return { productId, created, skipped }
 }

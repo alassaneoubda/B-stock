@@ -30,6 +30,8 @@ interface PackagingType {
     is_returnable: boolean
     deposit_price: number | null
     stock_quantity: number
+    /** Produits qui utilisent cet emballage (plusieurs emballages peuvent porter le même format). */
+    product_names: string | null
     equivalences: string[]
 }
 
@@ -38,7 +40,10 @@ async function getPackagingTypes(companyId: string): Promise<PackagingType[]> {
     const types = await sql`
   SELECT
     pt.*,
-    COALESCE(SUM(ps.quantity), 0) as stock_quantity
+    COALESCE(SUM(ps.quantity), 0) as stock_quantity,
+    (SELECT string_agg(DISTINCT p.name, ', ')
+       FROM product_variants pv JOIN products p ON p.id = pv.product_id
+      WHERE pv.packaging_type_id = pt.id) as product_names
   FROM packaging_types pt
   LEFT JOIN packaging_stock ps ON ps.packaging_type_id = pt.id
   WHERE pt.company_id = ${companyId}
@@ -155,6 +160,9 @@ export default async function PackagingPage() {
                                                 >
                                                     {pt.name}
                                                 </Link>
+                                                {pt.product_names && (
+                                                    <p className="truncate text-xs text-muted-foreground">{pt.product_names}</p>
+                                                )}
                                             </TableCell>
                                             <TableCell className="tabular text-right text-sm text-muted-foreground">
                                                 {pt.units_per_case ? `${formatNumber(pt.units_per_case)} u.` : '—'}
@@ -227,7 +235,7 @@ export default async function PackagingPage() {
                                             <div className="min-w-0 flex-1">
                                                 <p className="truncate text-sm font-medium text-foreground">{pt.name}</p>
                                                 <p className="text-xs text-muted-foreground">
-                                                    {pt.units_per_case ? `${formatNumber(pt.units_per_case)} unités par casier` : 'Contenance non renseignée'}
+                                                    {[pt.product_names, pt.units_per_case ? `${formatNumber(pt.units_per_case)} unités` : 'Contenance non renseignée'].filter(Boolean).join(' · ')}
                                                 </p>
                                             </div>
                                             <div className="shrink-0 text-right">
