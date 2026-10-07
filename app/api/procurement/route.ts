@@ -65,6 +65,7 @@ type PoItemRow = {
   id: string
   product_variant_id: string
   quantity_ordered: number
+  unit_price: string | null
   quantity_received: number
   quantity_damaged: number
   lot_number: string | null
@@ -105,7 +106,7 @@ async function receivePurchaseOrder(
     }
 
     const poItems = await tx.sql<PoItemRow>`
-      SELECT id, product_variant_id, quantity_ordered,
+      SELECT id, product_variant_id, quantity_ordered, unit_price,
         COALESCE(quantity_received, 0)::int AS quantity_received,
         COALESCE(quantity_damaged, 0)::int AS quantity_damaged,
         lot_number, expiry_date::text AS expiry_date
@@ -146,12 +147,14 @@ async function receivePurchaseOrder(
       `
 
       // Seules les unités en bon état entrent en stock ; la casse est juste tracée sur la ligne.
+      // Entrée valorisée au prix d'achat de la ligne : recalcule le CMP du dépôt.
       if (item.quantityReceived > 0) {
         await addStock(tx, {
           companyId,
           depotId: po.depot_id,
           variantId: poItem.product_variant_id,
           quantity: item.quantityReceived,
+          unitCost: poItem.unit_price == null ? null : Number(poItem.unit_price),
           lotNumber,
           expiryDate,
           movementType: 'purchase',

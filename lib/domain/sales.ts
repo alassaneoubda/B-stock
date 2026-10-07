@@ -3,7 +3,7 @@ import { AppError, notFound } from '../errors'
 import { nextDocumentNumber } from '../sequences'
 import { assertOwned } from '../tenant'
 import { recordCashMovement } from '../cash-automation'
-import { addStock, adjustPackagingStock, removeStock } from './stock'
+import { addStock, adjustPackagingStock, removeStock, roundCost } from './stock'
 
 /**
  * Règles métier des ventes (création, statuts, annulation).
@@ -202,13 +202,16 @@ export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<Cr
         userId,
         label,
       })
+      // Coût de revient figé au moment de la vente (CMP du dépôt)
+      const unitCost = roundCost(lots.reduce((s, l) => s + l.quantity * l.unitCost, 0) / item.quantity)
       await tx.sql`
         INSERT INTO sales_order_items (
-          sales_order_id, product_variant_id, quantity, unit_price, total_price, lot_number
+          sales_order_id, product_variant_id, quantity, unit_price, total_price, lot_number, unit_cost
         ) VALUES (
           ${orderId}, ${item.productVariantId}, ${item.quantity}, ${item.unitPrice},
           ${money(item.quantity * item.unitPrice)},
-          ${lots.length === 1 ? lots[0].lotNumber : item.lotNumber || null}
+          ${lots.length === 1 ? lots[0].lotNumber : item.lotNumber || null},
+          ${unitCost}
         )
       `
     }
@@ -439,9 +442,9 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
     )
   }
 
-  // 1. Stock : on réintègre exactement les lots sortis
+  // 1. Stock : on réintègre exactement les lots sortis, au coût figé à la vente
   const movements = await tx.sql`
-    SELECT depot_id, product_variant_id, lot_number, quantity FROM stock_movements
+    SELECT depot_id, product_variant_id, lot_number, quantity, unit_cost FROM stock_movements
     WHERE company_id = ${companyId} AND reference_type = 'sales_order'
       AND reference_id = ${order.id} AND movement_type = 'sale'
   `
@@ -454,6 +457,7 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
       variantId: m.product_variant_id,
       quantity: qty,
       lotNumber: m.lot_number,
+      unitCost: m.unit_cost == null ? null : Number(m.unit_cost),
       movementType: 'return',
       referenceType: 'sales_order',
       referenceId: order.id,
@@ -538,4 +542,17 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
   `
 
   return warnings
+}
+
+/**
+ * Coût de revient moyen d'une variante sur une vente (coût figé à la vente).
+ * Sert à réintégrer un retour client au coût d'origine. `null` si inconnu.
+ */
+export async function saleUnitCost(tx: Tx, orderId: string, variantId: string): Promise<number | null> {
+  const [row] = await tx.sql<{ unit_cost: string | null }>`
+    SELECT SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS unit_cost
+    FROM sales_order_items
+    WHERE sales_order_id = ${orderId} AND product_variant_id = ${variantId} AND unit_cost IS NOT NULL
+  `
+  return row?.unit_cost == null ? null : roundCost(Number(row.unit_cost))
 }

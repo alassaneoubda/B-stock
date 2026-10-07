@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { withTransaction, type Tx } from '@/lib/db'
 import { AppError, badRequest, handleRouteError, notFound } from '@/lib/errors'
 import { isUuid } from '@/lib/tenant'
-import { addStock, adjustPackagingStock, removeStock, type LotMovement } from '@/lib/domain/stock'
+import { addStock, adjustPackagingStock, getAvgCost, removeStock, type LotMovement } from '@/lib/domain/stock'
 
 const receiveSchema = z.object({
   // Absent ou vide : tout est considéré reçu tel qu'envoyé (cas de l'écran actuel).
@@ -41,7 +41,7 @@ function splitReceivedAcrossLots(consumed: LotMovement[], received: number): Lot
   for (const lot of consumed) {
     if (left === 0) break
     const take = Math.min(lot.quantity, left)
-    result.push({ lotNumber: lot.lotNumber, quantity: take })
+    result.push({ lotNumber: lot.lotNumber, quantity: take, unitCost: lot.unitCost })
     left -= take
   }
   return result
@@ -154,7 +154,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               quantity: sent,
               label: item.label ?? undefined,
             })
-            // Les lots (et leur péremption) suivent la marchandise jusqu'au dépôt de destination.
+            // Les lots (et leur péremption) suivent la marchandise jusqu'au dépôt de destination,
+            // valorisés au coût du dépôt source (le CMP de la destination est recalculé).
             for (const lot of splitReceivedAcrossLots(consumed, received)) {
               const expiryDate = lot.lotNumber
                 ? await lotExpiry(tx, transfer.source_depot_id, variantId, lot.lotNumber)
@@ -166,14 +167,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                 quantity: lot.quantity,
                 lotNumber: lot.lotNumber,
                 expiryDate,
+                unitCost: lot.unitCost,
               })
             }
           } else if (received > 0) {
+            // Source déjà débitée : coût de sortie du transfert, à défaut CMP du dépôt source
+            const [out] = await tx.sql<{ unit_cost: string | null }>`
+              SELECT SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS unit_cost
+              FROM stock_movements
+              WHERE company_id = ${companyId} AND reference_type = 'depot_transfer'
+                AND reference_id = ${transfer.id} AND depot_id = ${transfer.source_depot_id}
+                AND product_variant_id = ${variantId} AND quantity < 0 AND unit_cost IS NOT NULL
+            `
             await addStock(tx, {
               ...movement,
               depotId: transfer.destination_depot_id,
               variantId,
               quantity: received,
+              unitCost:
+                out?.unit_cost != null
+                  ? Number(out.unit_cost)
+                  : await getAvgCost(tx, transfer.source_depot_id, variantId),
             })
           }
         } else if (item.packaging_type_id) {

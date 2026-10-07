@@ -35,17 +35,72 @@ type MovementContext = {
   notes?: string | null
 }
 
-export type LotMovement = { lotNumber: string | null; quantity: number }
+/** Lot consommé par une sortie, avec le coût unitaire (CMP) figé au moment de la sortie. */
+export type LotMovement = { lotNumber: string | null; quantity: number; unitCost: number }
 
-async function recordMovement(tx: Tx, ctx: MovementContext, quantity: number, lotNumber: string | null) {
+// ----- Coût moyen pondéré (CMP) par dépôt et variante -----
+//
+// Invariant : la valeur du stock d'un couple (dépôt, variante) est
+// quantité × CMP, et elle est égale à la somme des mouvements valorisés
+// (quantité × unit_cost). Les entrées sont valorisées à leur coût propre
+// (prix d'achat, coût du dépôt source, coût de la vente d'origine…) et
+// recalculent le CMP ; les sorties partent au CMP et ne le modifient pas.
+
+const COST_SCALE = 10_000
+
+/** Arrondi d'un coût unitaire (4 décimales, comme la colonne NUMERIC(14,4)). */
+export function roundCost(value: number): number {
+  return Math.round(value * COST_SCALE) / COST_SCALE
+}
+
+/**
+ * Verrouille la ligne de CMP du couple (dépôt, variante) et renvoie sa valeur.
+ * La ligne est créée au besoin, initialisée au prix d'achat de la variante.
+ * Toujours appelée AVANT de verrouiller les lignes `stock` (ordre de verrouillage
+ * unique : pas d'interblocage entre une entrée et une sortie simultanées).
+ */
+async function lockAvgCost(tx: Tx, depotId: string, variantId: string): Promise<number> {
+  await tx.sql`
+    INSERT INTO stock_costs (depot_id, product_variant_id, avg_cost)
+    SELECT ${depotId}, pv.id, GREATEST(COALESCE(pv.cost_price, 0), 0)
+    FROM product_variants pv WHERE pv.id = ${variantId}
+    ON CONFLICT (depot_id, product_variant_id) DO NOTHING
+  `
+  const [row] = await tx.sql<{ avg_cost: string }>`
+    SELECT avg_cost FROM stock_costs
+    WHERE depot_id = ${depotId} AND product_variant_id = ${variantId}
+    FOR UPDATE
+  `
+  return row ? Number(row.avg_cost) : 0
+}
+
+/** CMP courant d'un couple (dépôt, variante), sans verrou (repli : prix d'achat de la variante). */
+export async function getAvgCost(tx: Tx, depotId: string, variantId: string): Promise<number> {
+  const [row] = await tx.sql<{ avg_cost: string | null }>`
+    SELECT COALESCE(
+      (SELECT avg_cost FROM stock_costs WHERE depot_id = ${depotId} AND product_variant_id = ${variantId}),
+      (SELECT cost_price FROM product_variants WHERE id = ${variantId}),
+      0
+    ) AS avg_cost
+  `
+  return Math.max(0, Number(row?.avg_cost ?? 0))
+}
+
+async function recordMovement(
+  tx: Tx,
+  ctx: MovementContext,
+  quantity: number,
+  lotNumber: string | null,
+  unitCost: number
+) {
   await tx.sql`
     INSERT INTO stock_movements (
       company_id, depot_id, product_variant_id, movement_type, quantity,
-      reference_type, reference_id, lot_number, notes, created_by
+      reference_type, reference_id, lot_number, notes, created_by, unit_cost
     ) VALUES (
       ${ctx.companyId}, ${ctx.depotId}, ${ctx.variantId}, ${ctx.movementType}, ${quantity},
       ${ctx.referenceType ?? null}, ${ctx.referenceId ?? null}, ${lotNumber}, ${ctx.notes ?? null},
-      ${ctx.userId ?? null}
+      ${ctx.userId ?? null}, ${roundCost(unitCost)}
     )
   `
 }
@@ -56,13 +111,43 @@ function assertPositiveInt(quantity: number) {
   }
 }
 
-/** Entrée de stock (réception, retour client, transfert entrant, ajustement +). */
+/**
+ * Entrée de stock (réception, retour client, transfert entrant, ajustement +).
+ * - `unitCost` fourni : entrée valorisée à ce coût, le CMP du dépôt est recalculé
+ *   CMP = (qté avant × CMP avant + qté entrée × coût) / (qté avant + qté entrée).
+ * - sinon : entrée au CMP courant (ajustement, inventaire), le CMP ne bouge pas.
+ * Renvoie le coût unitaire enregistré sur le mouvement.
+ */
 export async function addStock(
   tx: Tx,
-  ctx: MovementContext & { quantity: number; lotNumber?: string | null; expiryDate?: string | null }
-): Promise<void> {
+  ctx: MovementContext & {
+    quantity: number
+    lotNumber?: string | null
+    expiryDate?: string | null
+    unitCost?: number | null
+  }
+): Promise<number> {
   assertPositiveInt(ctx.quantity)
   const lot = ctx.lotNumber || null
+
+  const avgCost = await lockAvgCost(tx, ctx.depotId, ctx.variantId)
+  let unitCost = avgCost
+  if (ctx.unitCost != null && Number.isFinite(Number(ctx.unitCost))) {
+    unitCost = roundCost(Math.max(0, Number(ctx.unitCost)))
+    const [{ qty }] = await tx.sql<{ qty: number }>`
+      SELECT COALESCE(SUM(quantity), 0)::int AS qty FROM stock
+      WHERE depot_id = ${ctx.depotId} AND product_variant_id = ${ctx.variantId}
+    `
+    const before = Math.max(0, Number(qty))
+    const newAvg = roundCost((before * avgCost + ctx.quantity * unitCost) / (before + ctx.quantity))
+    if (newAvg !== avgCost) {
+      await tx.sql`
+        UPDATE stock_costs SET avg_cost = ${newAvg}, updated_at = NOW()
+        WHERE depot_id = ${ctx.depotId} AND product_variant_id = ${ctx.variantId}
+      `
+    }
+  }
+
   await tx.sql`
     INSERT INTO stock (depot_id, product_variant_id, lot_number, quantity, expiry_date)
     VALUES (${ctx.depotId}, ${ctx.variantId}, ${lot}, ${ctx.quantity}, ${ctx.expiryDate ?? null})
@@ -72,20 +157,23 @@ export async function addStock(
       expiry_date = COALESCE(EXCLUDED.expiry_date, stock.expiry_date),
       updated_at = NOW()
   `
-  await recordMovement(tx, ctx, ctx.quantity, lot)
+  await recordMovement(tx, ctx, ctx.quantity, lot, unitCost)
+  return unitCost
 }
 
 /**
  * Sortie de stock (vente, retour fournisseur, casse, transfert sortant).
  * - `lotNumber` fourni : sortie sur ce lot uniquement.
  * - sinon : FEFO — les lots qui expirent en premier sortent d'abord, puis les plus anciens.
- * Renvoie le détail des lots consommés.
+ * La sortie est valorisée au CMP du dépôt (inchangé par la sortie).
+ * Renvoie le détail des lots consommés avec leur coût unitaire.
  */
 export async function removeStock(
   tx: Tx,
   ctx: MovementContext & { quantity: number; lotNumber?: string | null; label?: string }
 ): Promise<LotMovement[]> {
   assertPositiveInt(ctx.quantity)
+  const unitCost = await lockAvgCost(tx, ctx.depotId, ctx.variantId)
 
   const rows = ctx.lotNumber
     ? await tx.sql<{ id: string; lot_number: string | null; quantity: number }>`
@@ -115,8 +203,8 @@ export async function removeStock(
     if (remaining === 0) break
     const take = Math.min(Number(row.quantity), remaining)
     await tx.sql`UPDATE stock SET quantity = quantity - ${take}, updated_at = NOW() WHERE id = ${row.id}`
-    await recordMovement(tx, ctx, -take, row.lot_number)
-    consumed.push({ lotNumber: row.lot_number, quantity: take })
+    await recordMovement(tx, ctx, -take, row.lot_number, unitCost)
+    consumed.push({ lotNumber: row.lot_number, quantity: take, unitCost })
     remaining -= take
   }
   return consumed
@@ -135,6 +223,8 @@ export async function setStockLevel(
     throw new AppError(400, 'Quantité invalide', 'INVALID_QUANTITY')
   }
   const lot = ctx.lotNumber || null
+  // Écart valorisé au CMP (un surplus d'inventaire ne modifie pas le coût moyen)
+  const unitCost = await lockAvgCost(tx, ctx.depotId, ctx.variantId)
   const [current] = await tx.sql<{ id: string; quantity: number }>`
     SELECT id, quantity FROM stock
     WHERE depot_id = ${ctx.depotId} AND product_variant_id = ${ctx.variantId}
@@ -152,7 +242,7 @@ export async function setStockLevel(
       INSERT INTO stock (depot_id, product_variant_id, lot_number, quantity)
       VALUES (${ctx.depotId}, ${ctx.variantId}, ${lot}, ${ctx.quantity})`
   }
-  await recordMovement(tx, ctx, delta, lot)
+  await recordMovement(tx, ctx, delta, lot, unitCost)
   return delta
 }
 

@@ -419,6 +419,16 @@ export async function payPosOrder(
 
     // Une vente encaissée au comptoir est remise immédiatement
     await tx.sql`UPDATE sales_orders SET status = 'delivered' WHERE id = ${sale.id}`
+    // Coût de revient figé sur les lignes du ticket (celui de la vente, CMP du dépôt)
+    await tx.sql`
+      UPDATE pos_order_items i SET unit_cost = c.unit_cost
+      FROM (
+        SELECT product_variant_id, SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS unit_cost
+        FROM sales_order_items WHERE sales_order_id = ${sale.id}
+        GROUP BY product_variant_id
+      ) c
+      WHERE i.pos_order_id = ${orderId} AND i.status = 'active' AND i.product_variant_id = c.product_variant_id
+    `
     await tx.sql`
       UPDATE pos_orders SET status = 'paid', sales_order_id = ${sale.id}, closed_by = ${actor.userId},
              closed_at = NOW(), updated_at = NOW()

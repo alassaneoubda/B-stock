@@ -6,6 +6,7 @@ import { AppError, handleRouteError, notFound } from '@/lib/errors'
 import { assertOwned, isUuid } from '@/lib/tenant'
 import { addStock, adjustPackagingStock } from '@/lib/domain/stock'
 import { applyCreditToOrderNotes, money } from '@/lib/domain/payments'
+import { saleUnitCost } from '@/lib/domain/sales'
 
 const returnSchema = z.object({
   items: z
@@ -125,11 +126,13 @@ export async function POST(
           const unitPrice = Number(s!.sold_value) / Number(s!.sold)
           totalProductCredit += money(quantity * unitPrice)
 
+          // Réintégré au coût de revient figé lors de la vente d'origine
           await addStock(tx, {
             companyId,
             depotId: order.depot_id,
             variantId,
             quantity,
+            unitCost: await saleUnitCost(tx, order.id, variantId),
             movementType: 'return',
             referenceType: 'sales_order',
             referenceId: order.id,

@@ -7,6 +7,8 @@ import { isUuid } from '@/lib/tenant'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { addStock, adjustPackagingStock, removeStock } from '@/lib/domain/stock'
 import { applyCreditToOrderNotes, money, type AccountType } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
+import { saleUnitCost } from '@/lib/domain/sales'
 
 const processSchema = z.object({
   action: z.enum(['approve', 'reject']).optional().default('approve'),
@@ -52,6 +54,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           WHERE id = ${returnId}
         `
         return 'Retour rejeté'
+      }
+
+      // L'avoir (AV-…) est daté d'aujourd'hui : refusé si le mois est clôturé
+      if (ret.return_type === 'client' && ret.refund_method === 'credit_note') {
+        await assertPeriodOpen(tx.sql, companyId)
       }
 
       const items = await tx.sql`
@@ -109,11 +116,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (isClient) {
           credits.product += lineTotal
           if (item.condition === 'good') {
+            // Réintégré au coût de la vente d'origine si elle est connue, sinon au CMP du dépôt
             await addStock(tx, {
               companyId,
               depotId: ret.depot_id,
               variantId: item.product_variant_id,
               quantity,
+              unitCost: ret.sales_order_id ? await saleUnitCost(tx, ret.sales_order_id, item.product_variant_id) : null,
               movementType: 'return',
               referenceType: 'return',
               referenceId: returnId,

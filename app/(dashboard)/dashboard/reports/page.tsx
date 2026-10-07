@@ -1,16 +1,52 @@
+import Link from 'next/link'
 import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { PageIntro, PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowDownRight, ArrowUpRight, BarChart3, Boxes, CreditCard, Package, Scale, ShoppingCart, Truck, Users, Wallet } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { BarChart3, Boxes, CircleAlert, CreditCard, Package, Percent, Receipt, ShoppingCart, Users, Wallet, Warehouse } from 'lucide-react'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
+import {
+    defaultPeriod,
+    getMarginReport,
+    getStockValuation,
+    isIsoDate,
+    todayIso,
+    type MarginGroup,
+} from '@/lib/domain/costing'
+
+type SearchParams = Promise<Record<string, string | string[] | undefined>>
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function param(sp: Record<string, string | string[] | undefined>, key: string): string | undefined {
+    const v = sp[key]
+    return typeof v === 'string' && v ? v : undefined
+}
+
+/** Filtres de la page, validés (valeur par défaut si absente ou invalide). */
+function readFilters(sp: Record<string, string | string[] | undefined>, depotIds: Set<string>) {
+    const period = defaultPeriod()
+    const today = todayIso()
+    let from = param(sp, 'from')
+    let to = param(sp, 'to')
+    if (!isIsoDate(from)) from = period.from
+    if (!isIsoDate(to)) to = period.to
+    if (from > to) [from, to] = [to, from]
+    const depot = param(sp, 'depot')
+    const depotId = depot && UUID_RE.test(depot) && depotIds.has(depot) ? depot : null
+    const atRaw = param(sp, 'at')
+    const at = isIsoDate(atRaw) && atRaw < today ? atRaw : null
+    return { from, to, depotId, at }
+}
 
 // Pas de try/catch : une panne SQL remonte à error.tsx au lieu d'afficher des zéros.
-async function getReportData(companyId: string) {
-    {
-        // Sales by month (last 6 months)
-        const salesByMonth = await sql`
+async function getSideData(companyId: string, from: string, to: string, depotId: string | null) {
+    const [salesByMonth, creditStats, paymentMethods] = await Promise.all([
+        sql`
       SELECT
         TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
         TO_CHAR(DATE_TRUNC('month', NOW()), 'YYYY-MM') as current_month,
@@ -19,118 +55,35 @@ async function getReportData(companyId: string) {
       FROM sales_orders
       WHERE company_id = ${companyId}
         AND status != 'cancelled'
-        AND created_at >= NOW() - INTERVAL '6 months'
+        AND created_at >= DATE_TRUNC('month', NOW()) - INTERVAL '5 months'
+        AND (${depotId}::uuid IS NULL OR depot_id = ${depotId}::uuid)
       GROUP BY DATE_TRUNC('month', created_at)
-      ORDER BY month DESC
-    `
-
-        // Top clients by sales
-        const topClients = await sql`
-      SELECT
-        c.name,
-        COALESCE(SUM(so.total_amount), 0) as total_sales,
-        COUNT(so.id) as orders_count
-      FROM clients c
-      LEFT JOIN sales_orders so ON so.client_id = c.id AND so.company_id = ${companyId} AND so.status != 'cancelled'
-      WHERE c.company_id = ${companyId}
-      GROUP BY c.id, c.name
-      HAVING COUNT(so.id) > 0
-      ORDER BY total_sales DESC
-      LIMIT 5
-    `
-
-        // Total credit outstanding
-        const creditStats = await sql`
+      ORDER BY month ASC
+    `,
+        sql`
       SELECT
         COALESCE(SUM(CASE WHEN ca.account_type = 'product' AND ca.balance < 0 THEN ABS(ca.balance) ELSE 0 END), 0) as product_debt,
         COALESCE(SUM(CASE WHEN ca.account_type = 'packaging' AND ca.balance < 0 THEN ABS(ca.balance) ELSE 0 END), 0) as packaging_debt
       FROM client_accounts ca
       JOIN clients c ON ca.client_id = c.id
       WHERE c.company_id = ${companyId}
-    `
-
-        // Stock value
-        const stockValue = await sql`
-      SELECT
-        COALESCE(SUM(s.quantity * pv.cost_price), 0) as total_value,
-        COALESCE(SUM(s.quantity), 0) as total_units
-      FROM stock s
-      JOIN product_variants pv ON s.product_variant_id = pv.id
-      JOIN products p ON pv.product_id = p.id
-      WHERE p.company_id = ${companyId}
-    `
-
-        // Payment method breakdown
-        const paymentMethods = await sql`
-      SELECT
-        payment_method,
-        COUNT(*) as count,
-        COALESCE(SUM(total_amount), 0) as total
+    `,
+        sql`
+      SELECT payment_method, COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total
       FROM sales_orders
       WHERE company_id = ${companyId}
         AND status != 'cancelled'
-        AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+        AND created_at >= ${from}::date AND created_at < ${to}::date + 1
+        AND (${depotId}::uuid IS NULL OR depot_id = ${depotId}::uuid)
       GROUP BY payment_method
-    `
-
-        // Top products by revenue this month
-        const topProducts = await sql`
-      SELECT
-        p.name as product_name,
-        pt.name as packaging_name,
-        COALESCE(SUM(soi.quantity * soi.unit_price), 0) as revenue,
-        COALESCE(SUM(soi.quantity), 0) as units_sold
-      FROM sales_order_items soi
-      JOIN product_variants pv ON soi.product_variant_id = pv.id
-      JOIN products p ON pv.product_id = p.id
-      JOIN packaging_types pt ON pv.packaging_type_id = pt.id
-      JOIN sales_orders so ON soi.sales_order_id = so.id
-      WHERE so.company_id = ${companyId}
-        AND so.status != 'cancelled'
-        AND DATE_TRUNC('month', so.created_at) = DATE_TRUNC('month', NOW())
-      GROUP BY p.name, pt.name
-      ORDER BY revenue DESC
-      LIMIT 8
-    `
-
-        // Procurement spend this month
-        const procurementSpend = await sql`
-      SELECT
-        COALESCE(SUM(total_amount), 0) as total,
-        COUNT(*) as count
-      FROM purchase_orders
-      WHERE company_id = ${companyId}
-        AND status != 'cancelled'
-        AND DATE_TRUNC('month', ordered_at) = DATE_TRUNC('month', NOW())
-    `
-
-        // Daily sales for current month
-        const dailySales = await sql`
-      SELECT
-        DATE(created_at) as day,
-        COALESCE(SUM(total_amount), 0) as total,
-        COUNT(*) as count
-      FROM sales_orders
-      WHERE company_id = ${companyId}
-        AND status != 'cancelled'
-        AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
-      GROUP BY DATE(created_at)
-      ORDER BY day ASC
-    `
-
-        return {
-            salesByMonth: salesByMonth as Array<{ month: string; current_month: string; total: number; count: number }>,
-            topClients: topClients as Array<{ name: string; total_sales: number; orders_count: number }>,
-            productDebt: Number(creditStats[0]?.product_debt || 0),
-            packagingDebt: Number(creditStats[0]?.packaging_debt || 0),
-            stockValue: Number(stockValue[0]?.total_value || 0),
-            stockUnits: Number(stockValue[0]?.total_units || 0),
-            paymentMethods: paymentMethods as Array<{ payment_method: string; count: number; total: number }>,
-            topProducts: topProducts as Array<{ product_name: string; packaging_name: string; revenue: number; units_sold: number }>,
-            procurementTotal: Number(procurementSpend[0]?.total || 0),
-            procurementCount: Number(procurementSpend[0]?.count || 0),
-            dailySales: dailySales as Array<{ day: string; total: number; count: number }>,
-        }
+      ORDER BY total DESC
+    `,
+    ])
+    return {
+        salesByMonth: salesByMonth as Array<{ month: string; current_month: string; total: number; count: number }>,
+        productDebt: Number(creditStats[0]?.product_debt || 0),
+        packagingDebt: Number(creditStats[0]?.packaging_debt || 0),
+        paymentMethods: paymentMethods as Array<{ payment_method: string; count: number; total: number }>,
     }
 }
 
@@ -148,13 +101,6 @@ function monthShort(month: string) {
     return new Date(year, m - 1, 1).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')
 }
 
-/** « 2026-10-06 » (ou Date) → jour du mois, sans décalage de fuseau. */
-function dayOfMonth(day: unknown) {
-    if (day instanceof Date) return day.getDate()
-    const n = Number(String(day).slice(8, 10))
-    return Number.isFinite(n) && n > 0 ? n : '—'
-}
-
 const paymentLabels: Record<string, string> = {
     cash: 'Espèces',
     mobile_money: 'Mobile Money',
@@ -162,13 +108,17 @@ const paymentLabels: Record<string, string> = {
     mixed: 'Mixte',
 }
 
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-
 /** Montant compact pour les étiquettes de graphique (« 125 k »). */
 function compact(n: number) {
     if (n <= 0) return '—'
     if (n >= 1_000_000) return `${formatNumber(Math.round(n / 100_000) / 10)} M`
     return `${formatNumber(Math.round(n / 1000))} k`
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+function formatRate(rate: number | null) {
+    return rate === null ? '—' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(rate)} %`
 }
 
 function ChartEmpty({ icon: Icon, text }: { icon: typeof BarChart3; text: string }) {
@@ -182,65 +132,256 @@ function ChartEmpty({ icon: Icon, text }: { icon: typeof BarChart3; text: string
     )
 }
 
-export default async function ReportsPage() {
+/** Tableau de marge (CA, coût des ventes, marge, taux) pour un axe d'analyse. */
+function MarginTable({
+    rows,
+    firstColumn,
+    limit = 10,
+    labelOf,
+    emptyIcon,
+}: {
+    rows: MarginGroup[]
+    firstColumn: string
+    limit?: number
+    labelOf?: (row: MarginGroup) => string
+    emptyIcon: typeof BarChart3
+}) {
+    if (rows.length === 0) return <ChartEmpty icon={emptyIcon} text="Aucune vente sur la période." />
+    const shown = rows.slice(0, limit)
+    return (
+        <Table>
+            <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-5">{firstColumn}</TableHead>
+                    <TableHead className="text-right">CA net</TableHead>
+                    <TableHead className="hidden text-right sm:table-cell">Coût des ventes</TableHead>
+                    <TableHead className="text-right">Marge</TableHead>
+                    <TableHead className="pr-5 text-right">Taux</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {shown.map((row) => (
+                    <TableRow key={row.key}>
+                        <TableCell className="max-w-0 w-full pl-5">
+                            <span className="block truncate font-medium text-foreground">
+                                {labelOf ? labelOf(row) : row.label}
+                            </span>
+                            {row.sublabel && <span className="block truncate text-xs text-muted-foreground">{row.sublabel}</span>}
+                        </TableCell>
+                        <TableCell className="tabular whitespace-nowrap text-right text-muted-foreground">{formatMoney(row.revenue)}</TableCell>
+                        <TableCell className="tabular hidden whitespace-nowrap text-right text-muted-foreground sm:table-cell">
+                            {formatMoney(row.cost)}
+                        </TableCell>
+                        <TableCell
+                            className={`tabular whitespace-nowrap text-right font-semibold ${row.margin < 0 ? 'text-destructive' : 'text-foreground'}`}
+                        >
+                            {formatMoney(row.margin)}
+                        </TableCell>
+                        <TableCell className="tabular whitespace-nowrap pr-5 text-right text-muted-foreground">{formatRate(row.rate)}</TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+        </Table>
+    )
+}
+
+const selectClass =
+    'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
+
+export default async function ReportsPage({ searchParams }: { searchParams: SearchParams }) {
     const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
-    const data = await getReportData(companyId)
 
-    // salesByMonth[0] n'est le mois en cours que s'il y a eu des ventes ce mois-ci
-    const currentMonthSales = data.salesByMonth.find((m) => m.month === m.current_month)
-    const salesMinusPurchases = Number(currentMonthSales?.total || 0) - data.procurementTotal
-    const currentMonthTotal = Number(currentMonthSales?.total || 0)
+    const depots = (await sql`
+      SELECT id, name FROM depots WHERE company_id = ${companyId} ORDER BY is_main DESC, name
+    `) as Array<{ id: string; name: string }>
+    const { from, to, depotId, at } = readFilters(await searchParams, new Set(depots.map((d) => d.id)))
 
-    // Graphique mensuel : du plus ancien au plus récent
-    const months = [...data.salesByMonth].reverse()
+    const [margin, stock, side] = await Promise.all([
+        getMarginReport(companyId, { from, to, depotId }),
+        getStockValuation(companyId, { at, depotId }),
+        getSideData(companyId, from, to, depotId),
+    ])
+
+    const t = margin.totals
+    const depotName = depotId ? depots.find((d) => d.id === depotId)?.name : null
+    const periodTitle = from === to ? formatDate(from) : `Du ${formatDate(from)} au ${formatDate(to)}`
+
+    const months = side.salesByMonth
     const maxMonth = Math.max(...months.map((m) => Number(m.total)), 1)
     const sixMonthsTotal = months.reduce((sum, m) => sum + Number(m.total), 0)
-
-    const maxDay = Math.max(...data.dailySales.map((d) => Number(d.total)), 1)
-    const todayOfMonth = new Date().getDate()
-
-    const maxClient = Number(data.topClients[0]?.total_sales || 0)
-    const maxProduct = Math.max(...data.topProducts.map((p) => Number(p.revenue)), 0)
-    const paymentsTotal = data.paymentMethods.reduce((sum, pm) => sum + Number(pm.total), 0)
-    const currentMonthName = capitalize(new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))
+    const paymentsTotal = side.paymentMethods.reduce((sum, pm) => sum + Number(pm.total), 0)
 
     return (
         <div className="flex min-h-screen flex-col">
-            <DashboardHeader title="Rapports" description="Performance commerciale et santé financière" />
+            <DashboardHeader title="Rapports" description="Chiffre d’affaires, marge brute et valeur du stock" />
 
             <PageShell>
-                <PageIntro eyebrow="Période en cours" title={currentMonthName} />
+                <PageIntro
+                    eyebrow={depotName ? `Période · ${depotName}` : 'Période · tous les dépôts'}
+                    title={periodTitle}
+                    description="Marge brute réelle : chaque vente porte le coût moyen pondéré du stock au moment de la vente. Un changement de prix fournisseur ne modifie pas les marges passées."
+                />
 
-                {/* Indicateurs du mois */}
+                {/* Filtres (formulaire GET : l'URL est partageable) */}
+                <form method="get" className="grid gap-3 rounded-xl border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end">
+                    <div className="space-y-1.5">
+                        <Label htmlFor="from">Du</Label>
+                        <Input id="from" name="from" type="date" defaultValue={from} max={todayIso()} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="to">Au</Label>
+                        <Input id="to" name="to" type="date" defaultValue={to} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="depot">Dépôt</Label>
+                        <select id="depot" name="depot" defaultValue={depotId ?? ''} className={selectClass}>
+                            <option value="">Tous les dépôts</option>
+                            {depots.map((d) => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="at">Valeur du stock au</Label>
+                        <Input id="at" name="at" type="date" defaultValue={at ?? ''} max={todayIso()} aria-describedby="at-hint" />
+                        <span id="at-hint" className="sr-only">Laissez vide pour la valeur actuelle</span>
+                    </div>
+                    <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
+                        <Button type="submit" variant="brand" className="flex-1 lg:flex-none">Appliquer</Button>
+                        <Button asChild variant="outline">
+                            <Link href="/dashboard/reports">Réinitialiser</Link>
+                        </Button>
+                    </div>
+                </form>
+
+                {/* Indicateurs */}
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <StatCard
                         emphasis
-                        label="Ventes du mois"
-                        value={formatMoney(currentMonthTotal)}
-                        hint={`${formatNumber(currentMonthSales?.count || 0)} commande(s) non annulée(s)`}
+                        label="Chiffre d’affaires net"
+                        value={formatMoney(t.revenue)}
+                        hint={`${formatNumber(t.quantity)} unité(s) vendue(s), retours déduits`}
                         icon={ShoppingCart}
                     />
                     <StatCard
-                        label="Achats du mois"
-                        value={formatMoney(data.procurementTotal)}
-                        hint={`${formatNumber(data.procurementCount)} commande(s) fournisseur`}
-                        icon={Truck}
+                        label="Coût des ventes"
+                        value={formatMoney(t.cost)}
+                        hint="Au coût moyen pondéré figé à la vente"
+                        icon={Receipt}
                     />
                     <StatCard
-                        label="Ventes − achats"
-                        value={formatMoney(salesMinusPurchases)}
-                        hint="Écart du mois (ce n’est pas une marge comptable)"
-                        icon={Scale}
-                        tone={salesMinusPurchases >= 0 ? 'success' : 'danger'}
+                        label="Marge brute"
+                        value={formatMoney(t.margin)}
+                        hint={`Taux de marge : ${formatRate(t.rate)} du CA`}
+                        icon={Percent}
+                        tone={t.margin >= 0 ? 'success' : 'danger'}
                     />
                     <StatCard
-                        label="Valeur du stock"
-                        value={formatMoney(data.stockValue)}
-                        hint={`${formatNumber(data.stockUnits)} unités au prix de revient`}
+                        label={at ? `Valeur du stock au ${formatDate(at)}` : 'Valeur du stock'}
+                        value={formatMoney(stock.totalValue)}
+                        hint={`${formatNumber(stock.totalQuantity)} unité(s) au coût moyen pondéré`}
                         icon={Boxes}
                     />
                 </div>
+
+                {t.missingCost > 0 && (
+                    <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground">
+                        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        {formatNumber(t.missingCost)} ligne(s) de vente sans coût de revient connu (produit sans prix d’achat) :
+                        elles sont comptées à coût nul, la marge est donc surestimée d’autant.
+                    </p>
+                )}
+
+                {/* Marge par mois */}
+                <Panel title="Marge par mois" description="Sur la période sélectionnée">
+                    <MarginTable
+                        rows={margin.byMonth}
+                        firstColumn="Mois"
+                        limit={24}
+                        labelOf={(row) => capitalize(monthLabel(row.label))}
+                        emptyIcon={BarChart3}
+                    />
+                </Panel>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                    <Panel title="Marge par produit" description="Les 10 meilleures marges de la période">
+                        <MarginTable rows={margin.byProduct} firstColumn="Produit" emptyIcon={Package} />
+                    </Panel>
+                    <Panel title="Marge par client" description="Les 10 meilleures marges de la période">
+                        <MarginTable rows={margin.byClient} firstColumn="Client" emptyIcon={Users} />
+                    </Panel>
+                    <Panel title="Marge par commercial" description="Ventes rattachées à un commercial">
+                        <MarginTable rows={margin.byAgent} firstColumn="Commercial" emptyIcon={Users} />
+                    </Panel>
+                    <Panel title="Marge par dépôt" description="Dépôt de sortie de la marchandise">
+                        <MarginTable rows={margin.byDepot} firstColumn="Dépôt" emptyIcon={Warehouse} />
+                    </Panel>
+                </div>
+
+                {/* Valeur du stock */}
+                <Panel
+                    title={at ? `Valeur du stock au ${formatDate(at)} (fin de journée)` : 'Valeur du stock actuelle'}
+                    description={
+                        at
+                            ? 'Reconstituée à partir des mouvements de stock et de leurs coûts figés'
+                            : 'Quantités en stock × coût moyen pondéré de chaque dépôt'
+                    }
+                >
+                    {stock.lines.length === 0 ? (
+                        <ChartEmpty icon={Boxes} text={at ? 'Aucun stock à cette date.' : 'Aucun stock.'} />
+                    ) : (
+                        <>
+                            {stock.byDepot.length > 1 && (
+                                <ul className="grid divide-y divide-border border-b border-border sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4">
+                                    {stock.byDepot.map((d) => (
+                                        <li key={d.depotId} className="space-y-1 px-5 py-4">
+                                            <p className="text-sm font-medium text-foreground">{d.depotName}</p>
+                                            <p className="tabular text-lg font-semibold tracking-tight text-foreground">{formatMoney(d.value)}</p>
+                                            <p className="text-xs text-muted-foreground">{formatNumber(d.quantity)} unité(s)</p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="pl-5">Produit</TableHead>
+                                        {stock.byDepot.length > 1 && <TableHead className="hidden md:table-cell">Dépôt</TableHead>}
+                                        <TableHead className="text-right">Quantité</TableHead>
+                                        <TableHead className="hidden text-right sm:table-cell">Coût moyen</TableHead>
+                                        <TableHead className="pr-5 text-right">Valeur</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {stock.lines.slice(0, 15).map((l) => (
+                                        <TableRow key={`${l.depotId}-${l.variantId}`}>
+                                            <TableCell className="max-w-0 w-full pl-5">
+                                                <span className="block truncate font-medium text-foreground">{l.productName}</span>
+                                                {l.packagingName && <span className="block truncate text-xs text-muted-foreground">{l.packagingName}</span>}
+                                            </TableCell>
+                                            {stock.byDepot.length > 1 && (
+                                                <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{l.depotName}</TableCell>
+                                            )}
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(l.quantity)}</TableCell>
+                                            <TableCell className="tabular hidden whitespace-nowrap text-right text-muted-foreground sm:table-cell">
+                                                {l.unitCost === null ? '—' : formatMoney(l.unitCost)}
+                                            </TableCell>
+                                            <TableCell className="tabular whitespace-nowrap pr-5 text-right font-semibold text-foreground">
+                                                {formatMoney(l.value)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            {stock.lines.length > 15 && (
+                                <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
+                                    15 premières lignes sur {formatNumber(stock.lines.length)} (par valeur décroissante) — le total couvre tout le stock.
+                                </p>
+                            )}
+                        </>
+                    )}
+                </Panel>
 
                 <div className="grid gap-4 lg:grid-cols-3">
                     {/* Ventes par mois */}
@@ -281,7 +422,7 @@ export default async function ReportsPage() {
                     </Panel>
 
                     {/* Encours */}
-                    <Panel title="Encours clients" description="Montants restant à recouvrer">
+                    <Panel title="Encours clients" description="Montants restant à recouvrer, à ce jour">
                         <ul className="divide-y divide-border">
                             <li className="flex items-start gap-3 px-5 py-4">
                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
@@ -291,7 +432,7 @@ export default async function ReportsPage() {
                                     <p className="text-sm font-medium text-foreground">Créances produits</p>
                                     <p className="text-xs text-muted-foreground">Ventes non encore payées</p>
                                 </div>
-                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(data.productDebt)}</span>
+                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(side.productDebt)}</span>
                             </li>
                             <li className="flex items-start gap-3 px-5 py-4">
                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-warning-soft text-warning-foreground">
@@ -301,194 +442,19 @@ export default async function ReportsPage() {
                                     <p className="text-sm font-medium text-foreground">Dettes emballages</p>
                                     <p className="text-xs text-muted-foreground">Casiers et bouteilles à récupérer</p>
                                 </div>
-                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(data.packagingDebt)}</span>
+                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(side.packagingDebt)}</span>
                             </li>
                         </ul>
                     </Panel>
                 </div>
 
-                {/* Détail mensuel */}
-                {data.salesByMonth.length > 0 && (
-                    <Panel title="Détail mensuel" description="Variation par rapport au mois précédent">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="hover:bg-transparent">
-                                    <TableHead className="pl-5">Mois</TableHead>
-                                    <TableHead className="text-right">Commandes</TableHead>
-                                    <TableHead className="text-right">Montant</TableHead>
-                                    <TableHead className="pr-5 text-right">Variation</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {data.salesByMonth.map((month, index) => {
-                                    // Variation réelle par rapport au mois précédent (liste triée du plus récent au plus ancien)
-                                    const previous = data.salesByMonth[index + 1]
-                                    const previousTotal = Number(previous?.total || 0)
-                                    const variation = previous && previousTotal > 0
-                                        ? Math.round(((Number(month.total) - previousTotal) / previousTotal) * 100)
-                                        : null
-                                    return (
-                                        <TableRow key={month.month}>
-                                            <TableCell className="pl-5 font-medium capitalize text-foreground">
-                                                {monthLabel(month.month)}
-                                                {month.month === month.current_month && (
-                                                    <span className="ml-2 align-middle">
-                                                        <StatusBadge label="En cours" tone="brand" />
-                                                    </span>
-                                                )}
-                                            </TableCell>
-                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(month.count)}</TableCell>
-                                            <TableCell className="tabular text-right font-semibold text-foreground">{formatMoney(Number(month.total))}</TableCell>
-                                            <TableCell className="pr-5 text-right">
-                                                {variation === null ? (
-                                                    <span className="text-muted-foreground">—</span>
-                                                ) : (
-                                                    <span
-                                                        className={`tabular inline-flex items-center gap-1 text-xs font-semibold ${variation >= 0 ? 'text-success' : 'text-destructive'}`}
-                                                    >
-                                                        {variation >= 0 ? (
-                                                            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-                                                        ) : (
-                                                            <ArrowDownRight className="h-3.5 w-3.5" aria-hidden="true" />
-                                                        )}
-                                                        {variation >= 0 ? '+' : '−'}{Math.abs(variation)} %
-                                                    </span>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    )
-                                })}
-                            </TableBody>
-                        </Table>
-                    </Panel>
-                )}
-
-                {/* Ventes journalières */}
-                <Panel
-                    title="Ventes journalières"
-                    description="Jours avec ventes du mois en cours"
-                    bodyClassName="px-5 pb-5 pt-6"
-                >
-                    {data.dailySales.length === 0 ? (
-                        <ChartEmpty icon={BarChart3} text="Aucune vente ce mois-ci." />
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <div
-                                className="flex h-48 min-w-max items-end gap-1.5 sm:min-w-0"
-                                role="img"
-                                aria-label={`Ventes journalières du mois en cours, ${data.dailySales.length} jour(s) avec ventes`}
-                            >
-                                {data.dailySales.map((day) => {
-                                    const total = Number(day.total)
-                                    const isToday = dayOfMonth(day.day) === todayOfMonth
-                                    const hPct = total > 0 ? Math.max(4, (total / maxDay) * 100) : 2
-                                    return (
-                                        <div key={String(day.day)} className="group flex h-full min-w-6 flex-1 flex-col items-center justify-end gap-2">
-                                            <span className="tabular whitespace-nowrap text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                                                {compact(total)}
-                                            </span>
-                                            <div
-                                                className={isToday ? 'w-full rounded-md bg-brand' : 'w-full rounded-md bg-primary/80 transition-colors group-hover:bg-primary'}
-                                                style={{ height: `${hPct}%` }}
-                                                title={`${formatDate(day.day)} : ${formatMoney(day.total)} (${formatNumber(day.count)} cmd)`}
-                                            />
-                                            <span className={isToday ? 'tabular text-[11px] font-semibold text-foreground' : 'tabular text-[11px] text-muted-foreground'}>
-                                                {dayOfMonth(day.day)}
-                                            </span>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-                    )}
-                </Panel>
-
-                <div className="grid gap-4 lg:grid-cols-2">
-                    {/* Meilleurs clients */}
-                    <Panel title="Meilleurs clients" description="Par chiffre d’affaires, toutes périodes">
-                        {data.topClients.length === 0 ? (
-                            <ChartEmpty icon={Users} text="Aucun historique client pour l’instant." />
-                        ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="hover:bg-transparent">
-                                        <TableHead className="w-10 pl-5">#</TableHead>
-                                        <TableHead>Client</TableHead>
-                                        <TableHead className="text-right">Commandes</TableHead>
-                                        <TableHead className="pr-5 text-right">Montant</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {data.topClients.map((client, i) => (
-                                        <TableRow key={`${client.name}-${i}`}>
-                                            <TableCell className="tabular pl-5 text-muted-foreground">{i + 1}</TableCell>
-                                            <TableCell className="max-w-0 w-full">
-                                                <span className="block truncate font-medium text-foreground">{client.name}</span>
-                                                <span className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                                                    <span
-                                                        className="block h-full rounded-full bg-primary/70"
-                                                        style={{ width: `${maxClient > 0 ? (Number(client.total_sales) / maxClient) * 100 : 0}%` }}
-                                                    />
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(client.orders_count)}</TableCell>
-                                            <TableCell className="tabular pr-5 text-right font-semibold text-foreground">
-                                                {formatMoney(Number(client.total_sales))}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </Panel>
-
-                    {/* Produits du mois */}
-                    <Panel title="Produits les plus vendus" description="Par chiffre d’affaires, mois en cours">
-                        {data.topProducts.length === 0 ? (
-                            <ChartEmpty icon={Package} text="Aucune vente ce mois-ci." />
-                        ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="hover:bg-transparent">
-                                        <TableHead className="w-10 pl-5">#</TableHead>
-                                        <TableHead>Produit</TableHead>
-                                        <TableHead className="text-right">Vendus</TableHead>
-                                        <TableHead className="pr-5 text-right">Montant</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {data.topProducts.map((prod, i) => (
-                                        <TableRow key={`${prod.product_name}-${prod.packaging_name}`}>
-                                            <TableCell className="tabular pl-5 text-muted-foreground">{i + 1}</TableCell>
-                                            <TableCell className="max-w-0 w-full">
-                                                <span className="block truncate font-medium text-foreground">{prod.product_name}</span>
-                                                <span className="block truncate text-xs text-muted-foreground">{prod.packaging_name}</span>
-                                                <span className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                                                    <span
-                                                        className="block h-full rounded-full bg-primary/70"
-                                                        style={{ width: `${maxProduct > 0 ? (Number(prod.revenue) / maxProduct) * 100 : 0}%` }}
-                                                    />
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(prod.units_sold)}</TableCell>
-                                            <TableCell className="tabular pr-5 text-right font-semibold text-foreground">
-                                                {formatMoney(Number(prod.revenue))}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </Panel>
-                </div>
-
                 {/* Moyens de paiement */}
-                <Panel title="Moyens de paiement" description="Répartition des ventes du mois en cours">
-                    {data.paymentMethods.length === 0 ? (
-                        <ChartEmpty icon={Wallet} text="Aucune vente ce mois-ci." />
+                <Panel title="Moyens de paiement" description="Répartition des ventes de la période (montants facturés)">
+                    {side.paymentMethods.length === 0 ? (
+                        <ChartEmpty icon={Wallet} text="Aucune vente sur la période." />
                     ) : (
                         <ul className="grid divide-y divide-border sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4">
-                            {data.paymentMethods.map((pm) => {
+                            {side.paymentMethods.map((pm) => {
                                 const share = paymentsTotal > 0 ? Math.round((Number(pm.total) / paymentsTotal) * 100) : 0
                                 return (
                                     <li key={pm.payment_method ?? 'unknown'} className="space-y-2 px-5 py-4">
@@ -509,6 +475,14 @@ export default async function ReportsPage() {
                         </ul>
                     )}
                 </Panel>
+
+                <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <StatusBadge label="Méthode" tone="info" />
+                    <span>
+                        Coût moyen pondéré par dépôt : recalculé à chaque réception, transfert entrant ou retour ; les sorties partent au coût moyen du moment.
+                        Les ventes antérieures à la mise en place de ce calcul sont valorisées au prix d’achat de la fiche produit.
+                    </span>
+                </p>
             </PageShell>
         </div>
     )
