@@ -264,3 +264,110 @@ export async function loadCatalogProduct(
 
   return { productId, created, skipped }
 }
+
+// ---------------------------------------------------------------------------
+// Vente à l'unité (déconditionnement)
+// ---------------------------------------------------------------------------
+
+export type UnitVariantInput = {
+  /** Variante conditionnement (casier, pack, carton) à ouvrir. */
+  packVariantId: string
+  /** Prix de vente d'une unité (bouteille, canette). */
+  price: number
+  /**
+   * Emballage unité consigné (bouteille en verre) ou perdu (canette, plastique).
+   * Par défaut : comme le conditionnement — un casier est consigné (verre),
+   * un pack ou un carton ne l'est pas.
+   */
+  returnable?: boolean
+  /** Consigne d'une bouteille (0 par défaut, modifiable dans Emballages). */
+  depositPrice?: number
+  /** Lier une variante unité déjà existante du même produit au lieu d'en créer une. */
+  existingVariantId?: string | null
+}
+
+const UNIT_NAMES: Record<string, string> = {
+  bouteilles: 'Bouteille',
+  canettes: 'Canette',
+  briques: 'Brique',
+}
+
+/** « 66 cl · Casier de 12 » + « Casier de 12 bouteilles de 66 cl » → { volume: '66 cl', unitName: 'Bouteille' }. */
+export function unitNaming(packagingName: string | null, packagingDescription: string | null) {
+  const name = packagingName ?? ''
+  const volume = name.includes(' · ') ? name.split(' · ')[0].trim() : ''
+  const contentUnit = (packagingDescription ?? '').toLowerCase().match(/(bouteilles|canettes|briques)/)?.[1]
+  const unitName = (contentUnit && UNIT_NAMES[contentUnit]) || 'Bouteille'
+  return { volume, unitName }
+}
+
+/**
+ * Active la vente à l'unité d'un conditionnement : crée (ou relie) la variante
+ * « unité » du même produit et la lie au conditionnement (unit_variant_id).
+ * - emballage unité : 1 unité, consigné ou non selon `returnable` ;
+ * - prix d'achat indicatif = prix d'achat du conditionnement / unités ;
+ * - le stock des unités naît uniquement de l'ouverture de casiers (unpackStock).
+ */
+export async function createUnitVariant(
+  tx: Tx,
+  companyId: string,
+  input: UnitVariantInput
+): Promise<{ unitVariantId: string; created: boolean }> {
+  const [pack] = await tx.sql`
+    SELECT pv.id, pv.product_id, pv.sku, pv.cost_price, pv.unit_variant_id,
+           pt.name AS packaging_name, pt.description AS packaging_description,
+           pt.units_per_case, pt.is_returnable
+    FROM product_variants pv
+    JOIN products p ON p.id = pv.product_id
+    LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
+    WHERE pv.id = ${input.packVariantId} AND p.company_id = ${companyId}
+    FOR UPDATE OF pv
+  `
+  if (!pack) throw new AppError(404, 'Variante introuvable', 'NOT_FOUND')
+  const unitsPerPack = Number(pack.units_per_case ?? 1)
+  if (unitsPerPack <= 1) {
+    throw new AppError(409, 'Ce format ne contient qu’une unité : il ne peut pas être vendu au détail', 'NOT_A_PACK')
+  }
+  if (pack.unit_variant_id) {
+    throw new AppError(409, 'La vente à l’unité est déjà activée pour ce format', 'UNIT_VARIANT_EXISTS')
+  }
+
+  let unitVariantId: string
+  let created = false
+  if (input.existingVariantId) {
+    const [existing] = await tx.sql`
+      SELECT pv.id, pt.units_per_case FROM product_variants pv
+      LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
+      WHERE pv.id = ${input.existingVariantId} AND pv.product_id = ${pack.product_id}
+    `
+    if (!existing) throw new AppError(404, 'Variante unité introuvable sur ce produit', 'NOT_FOUND')
+    if (existing.id === pack.id || Number(existing.units_per_case ?? 1) !== 1) {
+      throw new AppError(409, 'La variante choisie doit être un format à l’unité', 'NOT_A_UNIT')
+    }
+    unitVariantId = existing.id
+    await tx.sql`UPDATE product_variants SET price = ${input.price} WHERE id = ${unitVariantId}`
+  } else {
+    const { volume, unitName } = unitNaming(pack.packaging_name, pack.packaging_description)
+    const returnable = input.returnable ?? pack.is_returnable !== false
+    const packagingTypeId = await createPackaging(tx, companyId, {
+      name: volume ? `${volume} · ${unitName}` : unitName,
+      description: `${unitName}${volume ? ` de ${volume}` : ''} à l’unité (${pack.packaging_name ?? 'conditionnement'} ouvert)`,
+      unitsPerPack: 1,
+      returnable,
+    })
+    if (input.depositPrice && input.depositPrice > 0) {
+      await tx.sql`UPDATE packaging_types SET deposit_price = ${input.depositPrice} WHERE id = ${packagingTypeId}`
+    }
+    const unitCost = pack.cost_price == null ? null : Math.round((Number(pack.cost_price) / unitsPerPack) * 100) / 100
+    const [row] = await tx.sql`
+      INSERT INTO product_variants (product_id, packaging_type_id, sku, price, cost_price)
+      VALUES (${pack.product_id}, ${packagingTypeId}, ${pack.sku ? `${pack.sku}-U`.slice(0, 100) : null}, ${input.price}, ${unitCost})
+      RETURNING id
+    `
+    unitVariantId = row.id
+    created = true
+  }
+
+  await tx.sql`UPDATE product_variants SET unit_variant_id = ${unitVariantId} WHERE id = ${pack.id}`
+  return { unitVariantId, created }
+}

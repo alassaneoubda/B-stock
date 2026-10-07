@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import useSWR from 'swr'
 import { useSession } from 'next-auth/react'
@@ -16,8 +15,14 @@ import { ApiError, apiFetch, toastError, toastWarnings } from '@/lib/api-client'
 import { PosFloor } from './floor'
 import { PosOrderView } from './order-view'
 import { PaymentDialog, type PaymentMethod } from './payment-dialog'
-import { ClientPickerDialog, PaidDialog, ReasonDialog, RenameDialog, TablePickerDialog, TablesSetupDialog } from './dialogs'
-import { Receipt } from './receipt'
+import { ClientPickerDialog, PaidDialog, ReasonDialog, RenameDialog, TablePickerDialog, TablesSetupDialog, UnpackDialog, type UnpackProposal } from './dialogs'
+import { useTicketPrinter } from '@/components/print/ticket-printer'
+import { posTicketToTicket } from '@/components/print/pos-ticket'
+import { isBluetoothPrintingSupported } from '@/lib/print/bluetooth'
+import { useScannerInput } from '@/components/scan/use-scanner-input'
+import { matchLabel, useBarcodeLookup } from '@/components/scan/use-barcode-lookup'
+import { scanFeedback } from '@/components/scan/feedback'
+import type { ScanOutcome } from '@/components/scan/barcode-scanner'
 import { orderTitle, variantLabel, type PaidTicket, type PosOrder, type PosOrderItem, type PosState, type PosTable } from './types'
 
 const CORRECTION_WINDOW_MS = 5 * 60 * 1000
@@ -34,6 +39,7 @@ type Dialog =
   | { type: 'rename' }
   | { type: 'client' }
   | { type: 'tables' }
+  | { type: 'unpack'; proposal: UnpackProposal; quantity: number }
 
 export function PosApp() {
   const { data: session } = useSession()
@@ -45,12 +51,14 @@ export function PosApp() {
   const [pendingVariantId, setPendingVariantId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [paidTicket, setPaidTicket] = useState<PaidTicket | null>(null)
-  const [printTicket, setPrintTicket] = useState<PaidTicket | null>(null)
+  const printer = useTicketPrinter()
+  const [btPrint, setBtPrint] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const [online, setOnline] = useState(true)
 
   // Dépôt mémorisé par appareil ; ticket ouvert repris après un rafraîchissement
   useEffect(() => {
+    setBtPrint(isBluetoothPrintingSupported())
     setDepotId(localStorage.getItem(DEPOT_KEY))
     const ticket = new URLSearchParams(window.location.search).get('ticket')
     if (ticket) setOrderId(ticket)
@@ -133,12 +141,91 @@ export function PosApp() {
       void mutateOrder(res.data, { revalidate: false })
       void mutateState()
     } catch (e) {
-      toastError(e, 'Ajout impossible')
+      // Plus assez de bouteilles mais un casier peut être ouvert : on demande confirmation
+      if (e instanceof ApiError && e.code === 'UNPACK_REQUIRED' && e.details) {
+        setDialog({ type: 'unpack', proposal: e.details as UnpackProposal, quantity })
+      } else {
+        toastError(e, 'Ajout impossible')
+      }
       void mutateState()
     } finally {
       setPendingVariantId(null)
     }
   }
+
+  /** Ouverture de casier confirmée : ajout avec ouverture (et réglage automatique si demandé). */
+  async function confirmUnpack(alwaysAuto: boolean) {
+    if (!orderId || dialog.type !== 'unpack') return
+    const { proposal, quantity } = dialog
+    setSubmitting(true)
+    try {
+      if (alwaysAuto) {
+        await apiFetch('/api/pos/settings', { method: 'PATCH', body: { autoUnpack: true } })
+      }
+      const res = await apiFetch<{ data: PosOrder }>(`/api/pos/orders/${orderId}/items`, {
+        method: 'POST',
+        body: { items: [{ variantId: proposal.variantId, quantity }], unpack: true },
+      })
+      void mutateOrder(res.data, { revalidate: false })
+      toast.success(`${proposal.packs} × ${proposal.packLabel} ouvert${proposal.packs > 1 ? 's' : ''}`)
+      setDialog({ type: 'none' })
+    } catch (e) {
+      toastError(e, 'Ouverture impossible')
+    } finally {
+      setSubmitting(false)
+      void mutateState()
+    }
+  }
+
+  // ----- Scan de codes-barres : ajout au ticket ouvert -----
+  // Les scans rapides (lecteur USB) sont mis en file : aucun article n'est perdu
+  const scanQueueRef = useRef<Promise<unknown>>(Promise.resolve())
+  const { lookup: lookupBarcode, dialog: barcodeDialog } = useBarcodeLookup({
+    depotId: state?.depotId,
+    onAssigned: (match) => void scanToTicket(match.barcode).then(reportScan),
+  })
+
+  function scanToTicket(code: string): Promise<Exclude<ScanOutcome, void>> {
+    const run = async (): Promise<Exclude<ScanOutcome, void>> => {
+      if (!orderId) return { ok: false, message: 'Ouvrez d’abord un ticket (table ou comptoir).' }
+      const result = await lookupBarcode(code)
+      if (result.status === 'unknown') return { ok: false, message: 'Code-barres inconnu', close: true }
+      if (result.status === 'error') return { ok: false, message: result.message }
+      const label = matchLabel(result.match)
+      const item = state?.catalog.find((c) => c.variant_id === result.match.variant_id)
+      if (!item) return { ok: false, message: `${label} : non disponible dans ce dépôt` }
+      if (item.available <= 0 && !(item.openable > 0)) return { ok: false, message: `${label} : rupture de stock` }
+      try {
+        const res = await apiFetch<{ data: PosOrder }>(`/api/pos/orders/${orderId}/items`, {
+          method: 'POST',
+          body: { items: [{ variantId: item.variant_id, quantity: 1 }] },
+        })
+        void mutateOrder(res.data, { revalidate: false })
+        void mutateState()
+        return { ok: true, message: `Ajouté : ${label}` }
+      } catch (e) {
+        void mutateState()
+        if (e instanceof ApiError && e.code === 'UNPACK_REQUIRED' && e.details) {
+          setDialog({ type: 'unpack', proposal: e.details as UnpackProposal, quantity: 1 })
+          return { ok: false, message: 'Ouverture de casier à confirmer', close: true }
+        }
+        return { ok: false, message: e instanceof Error ? e.message : 'Ajout impossible' }
+      }
+    }
+    const next = scanQueueRef.current.then(run, run)
+    scanQueueRef.current = next.catch(() => {})
+    return next
+  }
+
+  function reportScan(outcome: Exclude<ScanOutcome, void>) {
+    scanFeedback(outcome.ok)
+    if (outcome.ok) toast.success(outcome.message, { duration: 1500 })
+    else if (!outcome.close) toast.error(outcome.message)
+  }
+
+  useScannerInput((code) => void scanToTicket(code).then(reportScan), {
+    enabled: Boolean(orderId && order?.status === 'open') && dialog.type === 'none' && !paidTicket,
+  })
 
   async function reduceItem(item: PosOrderItem, newQuantity: number, reason?: string) {
     if (!orderId) return
@@ -246,8 +333,7 @@ export function PosApp() {
   }
 
   function printReceipt(ticket: PaidTicket) {
-    setPrintTicket(ticket)
-    setTimeout(() => window.print(), 50)
+    printer.printBrowser(posTicketToTicket(ticket))
   }
 
   function finishPaid() {
@@ -259,6 +345,8 @@ export function PosApp() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (dialog.type !== 'none' || paidTicket) return
+      // Scanner caméra ou « Code inconnu » ouvert : Échap ferme la boîte, pas le ticket
+      if (document.querySelector('[role="dialog"]')) return
       if (e.key === 'F9' && order && order.items.some((i) => i.status === 'active')) {
         e.preventDefault()
         setDialog({ type: 'pay' })
@@ -355,6 +443,7 @@ export function PosApp() {
             pendingVariantId={pendingVariantId}
             onBack={() => void backToFloor()}
             onAdd={addItem}
+            onScan={scanToTicket}
             onReduce={(item, q) => void reduceItem(item, q)}
             onCheckout={() => setDialog({ type: 'pay' })}
             onTransfer={() => setDialog({ type: 'transfer' })}
@@ -444,6 +533,18 @@ export function PosApp() {
             onOpenChange={(o) => !o && close()}
             onPick={(clientId) => void updateOrder({ clientId }, clientId ? 'Client rattaché' : 'Client retiré')}
           />
+          <UnpackDialog
+            proposal={dialog.type === 'unpack' ? dialog.proposal : null}
+            productLabel={(() => {
+              if (dialog.type !== 'unpack') return ''
+              const item = state?.catalog.find((c) => c.variant_id === dialog.proposal.variantId)
+              return item ? variantLabel(item) : 'Ce produit'
+            })()}
+            canManage={Boolean(state?.canManage) && !state?.autoUnpack}
+            submitting={submitting}
+            onOpenChange={(o) => !o && close()}
+            onConfirm={(alwaysAuto) => void confirmUnpack(alwaysAuto)}
+          />
         </>
       )}
 
@@ -456,16 +557,16 @@ export function PosApp() {
         }}
       />
 
-      <PaidDialog ticket={paidTicket} onPrint={() => paidTicket && printReceipt(paidTicket)} onClose={finishPaid} />
+      <PaidDialog
+        ticket={paidTicket}
+        onPrint={() => paidTicket && printReceipt(paidTicket)}
+        onPrintBluetooth={btPrint ? () => paidTicket && void printer.printBluetooth(posTicketToTicket(paidTicket)) : undefined}
+        printingBluetooth={printer.btBusy}
+        onClose={finishPaid}
+      />
 
-      {printTicket &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div className="pos-print-root hidden">
-            <Receipt ticket={printTicket} companyName={me?.companyName ?? 'B-Stock'} />
-          </div>,
-          document.body
-        )}
+      {barcodeDialog}
+      {printer.portal}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import type { Tx } from '../db'
-import { AppError } from '../errors'
+import { AppError, notFound } from '../errors'
 
 /**
  * Point d'entrée UNIQUE pour toute modification de stock.
@@ -23,6 +23,7 @@ export type StockMovementType =
   | 'transfer'
   | 'damage'
   | 'inventory'
+  | 'unpack'
 
 type MovementContext = {
   companyId: string
@@ -72,6 +73,17 @@ async function lockAvgCost(tx: Tx, depotId: string, variantId: string): Promise<
     FOR UPDATE
   `
   return row ? Number(row.avg_cost) : 0
+}
+
+/**
+ * Verrouille les lignes de CMP de plusieurs variantes d'un dépôt, dans un ordre
+ * déterministe (par identifiant). À appeler AVANT tout verrou sur `stock` quand
+ * une opération touche plusieurs variantes (ouverture de casier, point de vente).
+ */
+export async function lockStockCosts(tx: Tx, depotId: string, variantIds: string[]): Promise<void> {
+  for (const id of [...new Set(variantIds)].sort()) {
+    await lockAvgCost(tx, depotId, id)
+  }
 }
 
 /** CMP courant d'un couple (dépôt, variante), sans verrou (repli : prix d'achat de la variante). */
@@ -244,6 +256,150 @@ export async function setStockLevel(
   }
   await recordMovement(tx, ctx, delta, lot, unitCost)
   return delta
+}
+
+// ----- Ouverture de casier (déconditionnement) -----
+
+export type UnpackLink = {
+  packVariantId: string
+  unitVariantId: string
+  unitsPerPack: number
+  /** « Bock — 66 cl · Casier de 12 » */
+  label: string
+}
+
+/** Lien conditionnement → unité d'une variante de l'entreprise (erreurs métier explicites). */
+export async function getUnpackLink(tx: Tx, companyId: string, packVariantId: string): Promise<UnpackLink> {
+  const [row] = await tx.sql<{
+    unit_variant_id: string | null
+    units_per_case: number | null
+    product_name: string
+    packaging_name: string | null
+    same_product: boolean | null
+  }>`
+    SELECT pv.unit_variant_id, pt.units_per_case, p.name AS product_name, pt.name AS packaging_name,
+           (uv.product_id = pv.product_id) AS same_product
+    FROM product_variants pv
+    JOIN products p ON p.id = pv.product_id
+    LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
+    LEFT JOIN product_variants uv ON uv.id = pv.unit_variant_id
+    WHERE pv.id = ${packVariantId} AND p.company_id = ${companyId}
+  `
+  if (!row) throw notFound('Variante')
+  const label = `${row.product_name}${row.packaging_name ? ` — ${row.packaging_name}` : ''}`
+  const unitsPerPack = Number(row.units_per_case ?? 1)
+  if (unitsPerPack <= 1) {
+    throw new AppError(409, `${label} : ce format ne contient qu'une unité, il ne peut pas être ouvert`, 'NOT_A_PACK')
+  }
+  if (!row.unit_variant_id || !row.same_product) {
+    throw new AppError(
+      409,
+      `${label} : activez d'abord la vente à l'unité (« Vendre aussi à la bouteille ») sur la fiche produit`,
+      'NO_UNIT_VARIANT'
+    )
+  }
+  return { packVariantId, unitVariantId: row.unit_variant_id, unitsPerPack, label }
+}
+
+export type UnpackResult = {
+  unpackId: string
+  packVariantId: string
+  unitVariantId: string
+  packs: number
+  units: number
+  /** Coût d'un conditionnement sorti (CMP du dépôt). */
+  packUnitCost: number
+  /** Coût d'une unité entrée = coût du conditionnement / unités par conditionnement. */
+  unitCost: number
+}
+
+/**
+ * Ouvre N conditionnements (casiers, packs…) : sortie de N conditionnements et
+ * entrée de N × units_per_case unités, dans la transaction de l'appelant.
+ * - mouvements de stock typés 'unpack', référencés sur la ligne stock_unpacks ;
+ * - les unités entrent au coût du conditionnement / units_per_case : la valeur
+ *   du stock du dépôt est conservée (au centime de coût près, 4 décimales) ;
+ * - le lot et la date de péremption du conditionnement suivent les unités ;
+ * - verrous : CMP des deux variantes (ordre déterministe) puis lignes de stock.
+ */
+export async function unpackStock(
+  tx: Tx,
+  ctx: {
+    companyId: string
+    depotId: string
+    packVariantId: string
+    packs: number
+    userId?: string | null
+    notes?: string | null
+    source?: 'manual' | 'pos'
+    posOrderId?: string | null
+  }
+): Promise<UnpackResult> {
+  assertPositiveInt(ctx.packs)
+  const link = await getUnpackLink(tx, ctx.companyId, ctx.packVariantId)
+  await lockStockCosts(tx, ctx.depotId, [link.packVariantId, link.unitVariantId])
+
+  const units = ctx.packs * link.unitsPerPack
+  const [unpack] = await tx.sql<{ id: string }>`
+    INSERT INTO stock_unpacks (
+      company_id, depot_id, pack_variant_id, unit_variant_id, packs, units, source, pos_order_id, notes, created_by
+    ) VALUES (
+      ${ctx.companyId}, ${ctx.depotId}, ${link.packVariantId}, ${link.unitVariantId}, ${ctx.packs}, ${units},
+      ${ctx.source ?? 'manual'}, ${ctx.posOrderId ?? null}, ${ctx.notes ?? null}, ${ctx.userId ?? null}
+    )
+    RETURNING id
+  `
+  const notes = ctx.notes?.trim() || `Ouverture de ${ctx.packs} × ${link.label}`
+  const common = {
+    companyId: ctx.companyId,
+    depotId: ctx.depotId,
+    movementType: 'unpack' as const,
+    referenceType: 'stock_unpack',
+    referenceId: unpack.id,
+    userId: ctx.userId ?? null,
+    notes,
+  }
+
+  const lots = await removeStock(tx, {
+    ...common,
+    variantId: link.packVariantId,
+    quantity: ctx.packs,
+    label: link.label,
+  })
+
+  let packValue = 0
+  for (const lot of lots) {
+    packValue += lot.quantity * lot.unitCost
+    const [source] = await tx.sql<{ expiry_date: string | null }>`
+      SELECT expiry_date FROM stock
+      WHERE depot_id = ${ctx.depotId} AND product_variant_id = ${link.packVariantId}
+        AND COALESCE(lot_number, '') = ${lot.lotNumber ?? ''}
+      LIMIT 1
+    `
+    await addStock(tx, {
+      ...common,
+      variantId: link.unitVariantId,
+      quantity: lot.quantity * link.unitsPerPack,
+      lotNumber: lot.lotNumber,
+      expiryDate: source?.expiry_date ?? null,
+      unitCost: lot.unitCost / link.unitsPerPack,
+    })
+  }
+
+  const packUnitCost = roundCost(packValue / ctx.packs)
+  const unitCost = roundCost(packUnitCost / link.unitsPerPack)
+  await tx.sql`
+    UPDATE stock_unpacks SET pack_unit_cost = ${packUnitCost}, unit_cost = ${unitCost} WHERE id = ${unpack.id}
+  `
+  return {
+    unpackId: unpack.id,
+    packVariantId: link.packVariantId,
+    unitVariantId: link.unitVariantId,
+    packs: ctx.packs,
+    units,
+    packUnitCost,
+    unitCost,
+  }
 }
 
 // ----- Emballages vides (consignes) -----

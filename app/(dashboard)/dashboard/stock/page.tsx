@@ -26,6 +26,7 @@ import {
   Clock,
   Printer,
   CheckCircle2,
+  PackageOpen,
 } from 'lucide-react'
 import {
   Select,
@@ -40,6 +41,12 @@ import { apiFetch } from '@/lib/api-client'
 import { formatMoney, formatNumber } from '@/lib/format'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import { toast } from 'sonner'
+import { ScanButton, type ScanOutcome } from '@/components/scan/barcode-scanner'
+import { useScannerInput } from '@/components/scan/use-scanner-input'
+import { matchLabel, useBarcodeLookup, type BarcodeMatch } from '@/components/scan/use-barcode-lookup'
+import { scanFeedback } from '@/components/scan/feedback'
+import { UnpackHistory, UnpackStockDialog, type UnpackOption } from '@/components/stock/unpack'
 
 interface ProductOption {
   id: string
@@ -56,6 +63,12 @@ interface StockItem {
   variant_id: string
   price: number
   cost_price: number | null
+  /** Coût moyen pondéré du dépôt (repli : prix d'achat catalogue). */
+  avg_cost: number
+  /** Quantité × CMP. */
+  stock_value: number
+  /** Variante unité liée : ce conditionnement peut être ouvert. */
+  unit_variant_id: string | null
   barcode: string | null
   product_id: string
   product_name: string
@@ -85,6 +98,8 @@ export default function StockPage() {
   const [packagingError, setPackagingError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [activeTab, setActiveTab] = useState('products')
+  const [unpackOpen, setUnpackOpen] = useState(false)
+  const [unpackKey, setUnpackKey] = useState<string | null>(null)
   const companyId = session?.user?.companyId
 
   // Options des filtres (catégories / produits) et stock emballages : chargés une fois
@@ -155,11 +170,59 @@ export default function StockPage() {
     return daysUntilExpiry >= 0 && daysUntilExpiry <= 30
   })
 
-  const totalValue = stockItems.reduce(
-    (sum, s) => sum + s.quantity * s.price,
-    0
-  )
+  // Valeur au coût moyen pondéré (CMP) du dépôt, comme les rapports de valorisation
+  const totalValue = stockItems.reduce((sum, s) => sum + Number(s.stock_value || 0), 0)
 
+  // Conditionnements ouvrables (vente à la bouteille), agrégés par (variante, dépôt)
+  const unpackOptions = Object.values(
+    stockItems.reduce<Record<string, UnpackOption>>((acc, s) => {
+      if (!s.unit_variant_id || !s.depot_id || Number(s.units_per_case ?? 1) <= 1) return acc
+      const key = `${s.variant_id}:${s.depot_id}`
+      acc[key] ??= {
+        packVariantId: s.variant_id,
+        depotId: s.depot_id,
+        depotName: s.depot_name,
+        label: `${s.product_name}${s.packaging_name ? ` — ${s.packaging_name}` : ''}`,
+        available: 0,
+        unitsPerPack: Number(s.units_per_case),
+      }
+      acc[key].available += Number(s.quantity)
+      return acc
+    }, {})
+  ).filter((o) => o.available > 0)
+  const openUnpack = (key: string | null = null) => {
+    setUnpackKey(key)
+    setUnpackOpen(true)
+  }
+
+
+  // ----- Scan : filtre le stock sur le produit scanné -----
+  function showScanned(match: BarcodeMatch): Exclude<ScanOutcome, void> {
+    setActiveTab((t) => (t === 'packaging' ? 'products' : t))
+    setSearch('')
+    setCategory(ALL)
+    setLowStockOnly(false)
+    setProductId(match.product_id)
+    return { ok: true, message: `Stock de ${matchLabel(match)}` }
+  }
+
+  const { lookup: lookupBarcode, dialog: barcodeDialog } = useBarcodeLookup({
+    onAssigned: (match) => void showScanned(match),
+  })
+
+  async function handleScan(code: string): Promise<Exclude<ScanOutcome, void>> {
+    const result = await lookupBarcode(code)
+    if (result.status === 'unknown') return { ok: false, message: 'Code-barres inconnu', close: true }
+    if (result.status === 'error') return { ok: false, message: result.message }
+    return showScanned(result.match)
+  }
+
+  useScannerInput(async (code) => {
+    const outcome = await handleScan(code)
+    scanFeedback(outcome.ok)
+    if (outcome.ok) toast.success(outcome.message, { duration: 1500 })
+    else if (!outcome.close) toast.error(outcome.message)
+  })
 
   const resetFilters = () => {
     setSearch('')
@@ -188,19 +251,33 @@ export default function StockPage() {
         title="Stock"
         description="Inventaire produits et emballages en temps réel"
         actions={
-          <Button variant="outline" size="sm" asChild className="h-9">
-            <Link href="/dashboard/stock/export" aria-label="Imprimer l'état du stock">
-              <Printer className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">État du stock</span>
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => openUnpack()}
+              disabled={unpackOptions.length === 0}
+              aria-label="Ouvrir un casier"
+              title={unpackOptions.length === 0 ? 'Aucun casier ouvrable en stock (activez la vente à la bouteille sur la fiche produit)' : undefined}
+            >
+              <PackageOpen className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Ouvrir un casier</span>
+            </Button>
+            <Button variant="outline" size="sm" asChild className="h-9">
+              <Link href="/dashboard/stock/export" aria-label="Imprimer l'état du stock">
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">État du stock</span>
+              </Link>
+            </Button>
+          </div>
         }
       />
 
       <PageShell>
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard label="Références en stock" value={formatNumber(totalProducts)} hint="Variantes produit" icon={Package} />
-          <StatCard label="Valeur du stock" value={formatMoney(totalValue)} hint="Au prix de vente" icon={Warehouse} tone="success" />
+          <StatCard label="Valeur du stock" value={formatMoney(totalValue)} hint="Au coût moyen pondéré (CMP)" icon={Warehouse} tone="success" />
           <StatCard
             label="Stock bas"
             value={formatNumber(lowStockItems.length)}
@@ -235,20 +312,33 @@ export default function StockPage() {
                 Alertes
                 <span className="tabular text-muted-foreground">{formatNumber(alertCount)}</span>
               </TabsTrigger>
+              <TabsTrigger value="unpacks">
+                <PackageOpen aria-hidden="true" />
+                Casiers ouverts
+              </TabsTrigger>
             </TabsList>
           </div>
 
           {/* Barre d'outils (filtres du stock produits et des alertes) */}
-          {activeTab !== 'packaging' && (
+          {activeTab !== 'packaging' && activeTab !== 'unpacks' && (
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative w-full lg:max-w-xs">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  placeholder="Rechercher un produit…"
-                  aria-label="Rechercher un produit"
-                  className="h-10 pl-9"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+              <div className="flex w-full gap-2 lg:max-w-sm">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    placeholder="Rechercher un produit…"
+                    aria-label="Rechercher un produit"
+                    className="h-10 pl-9"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <ScanButton
+                  size="lg"
+                  className="h-10 shrink-0"
+                  title="Rechercher par code-barres"
+                  description="Scannez un article pour afficher son stock."
+                  onDetected={handleScan}
                 />
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -334,7 +424,7 @@ export default function StockPage() {
                         <TableHead>Format</TableHead>
                         <TableHead>Dépôt</TableHead>
                         <TableHead className="text-right">Quantité</TableHead>
-                        <TableHead className="text-right">Prix</TableHead>
+                        <TableHead className="text-right">Coût moyen</TableHead>
                         <TableHead className="text-right">Valeur</TableHead>
                         <TableHead>Lot</TableHead>
                         <TableHead className="pr-5">Statut</TableHead>
@@ -361,13 +451,27 @@ export default function StockPage() {
                             >
                               {formatNumber(item.quantity)}
                             </TableCell>
-                            <TableCell className="tabular text-right text-sm text-muted-foreground">{formatMoney(item.price)}</TableCell>
+                            <TableCell className="tabular text-right text-sm text-muted-foreground">{formatMoney(item.avg_cost)}</TableCell>
                             <TableCell className="tabular text-right text-sm font-medium text-foreground">
-                              {formatMoney(item.quantity * item.price)}
+                              {formatMoney(item.stock_value)}
                             </TableCell>
                             <TableCell className="font-mono text-xs text-muted-foreground">{item.lot_number || '—'}</TableCell>
                             <TableCell className="pr-5">
-                              <StatusBadge label={status.label} tone={status.tone} />
+                              <div className="flex items-center gap-2">
+                                <StatusBadge label={status.label} tone={status.tone} />
+                                {item.unit_variant_id && item.depot_id && item.quantity > 0 && Number(item.units_per_case ?? 1) > 1 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs"
+                                    onClick={() => openUnpack(`${item.variant_id}:${item.depot_id}`)}
+                                    aria-label={`Ouvrir un casier de ${item.product_name}`}
+                                  >
+                                    <PackageOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                                    Ouvrir
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         )
@@ -394,7 +498,7 @@ export default function StockPage() {
                               </p>
                             </div>
                             <div className="shrink-0 text-right">
-                              <p className="tabular text-sm font-semibold text-foreground">{formatMoney(item.quantity * item.price)}</p>
+                              <p className="tabular text-sm font-semibold text-foreground">{formatMoney(item.stock_value)}</p>
                               <p className={`tabular text-xs ${status.tone === 'danger' ? 'text-destructive' : 'text-muted-foreground'}`}>
                                 {formatNumber(item.quantity)} unités
                               </p>
@@ -541,7 +645,22 @@ export default function StockPage() {
               </div>
             )}
           </TabsContent>
+
+          {/* Onglet ouvertures de casier */}
+          <TabsContent value="unpacks" className="mt-0">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+              {activeTab === 'unpacks' && <UnpackHistory reloadKey={reloadKey} />}
+            </div>
+          </TabsContent>
         </Tabs>
+        <UnpackStockDialog
+          open={unpackOpen}
+          onOpenChange={setUnpackOpen}
+          options={unpackOptions}
+          defaultKey={unpackKey}
+          onDone={retry}
+        />
+        {barcodeDialog}
       </PageShell>
     </div>
   )

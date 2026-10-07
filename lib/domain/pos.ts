@@ -3,6 +3,7 @@ import { AppError, notFound } from '../errors'
 import { nextDocumentNumber } from '../sequences'
 import { assertOwned } from '../tenant'
 import { createSaleInTx, money } from './sales'
+import { lockStockCosts, unpackStock } from './stock'
 
 /**
  * Point de vente (maquis, bars, comptoir).
@@ -63,7 +64,9 @@ export async function getPosCatalog(companyId: string, depotId: string) {
            COALESCE(NULLIF(pv.price, 0), p.selling_price, 0)::float AS price,
            COALESCE(st.qty, 0)::int AS stock,
            COALESCE(rs.qty, 0)::int AS reserved,
-           GREATEST(COALESCE(st.qty, 0) - COALESCE(rs.qty, 0), 0)::int AS available
+           GREATEST(COALESCE(st.qty, 0) - COALESCE(rs.qty, 0), 0)::int AS available,
+           -- Unités supplémentaires obtenables en ouvrant les casiers liés (vente à la bouteille)
+           COALESCE(op.units, 0)::int AS openable
     FROM product_variants pv
     JOIN products p ON p.id = pv.product_id
     LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
@@ -77,9 +80,61 @@ export async function getPosCatalog(companyId: string, depotId: string) {
       WHERE o.company_id = ${companyId} AND o.depot_id = ${depotId} AND o.status = 'open' AND i.status = 'active'
       GROUP BY i.product_variant_id
     ) rs ON rs.product_variant_id = pv.id
+    LEFT JOIN (
+      SELECT pk.unit_variant_id,
+             SUM(GREATEST(COALESCE(ks.qty, 0) - COALESCE(kr.qty, 0), 0) * COALESCE(kpt.units_per_case, 1)) AS units
+      FROM product_variants pk
+      JOIN products kp ON kp.id = pk.product_id AND kp.company_id = ${companyId}
+      LEFT JOIN packaging_types kpt ON kpt.id = pk.packaging_type_id
+      LEFT JOIN (
+        SELECT product_variant_id, SUM(quantity) AS qty FROM stock
+        WHERE depot_id = ${depotId} GROUP BY product_variant_id
+      ) ks ON ks.product_variant_id = pk.id
+      LEFT JOIN (
+        SELECT i.product_variant_id, SUM(i.quantity) AS qty
+        FROM pos_order_items i JOIN pos_orders o ON o.id = i.pos_order_id
+        WHERE o.company_id = ${companyId} AND o.depot_id = ${depotId} AND o.status = 'open' AND i.status = 'active'
+        GROUP BY i.product_variant_id
+      ) kr ON kr.product_variant_id = pk.id
+      WHERE pk.unit_variant_id IS NOT NULL
+      GROUP BY pk.unit_variant_id
+    ) op ON op.unit_variant_id = pv.id
     WHERE p.company_id = ${companyId} AND p.is_active = true
     ORDER BY p.category NULLS LAST, p.name, pt.name
   `
+}
+
+/** Réglage « ouvrir automatiquement un casier » du point de vente. */
+export async function getPosAutoUnpack(companyId: string): Promise<boolean> {
+  const [row] = await sql`SELECT pos_auto_unpack FROM companies WHERE id = ${companyId}`
+  return row?.pos_auto_unpack === true
+}
+
+export async function setPosAutoUnpack(companyId: string, enabled: boolean): Promise<void> {
+  await sql`UPDATE companies SET pos_auto_unpack = ${enabled} WHERE id = ${companyId}`
+}
+
+/** Casiers liés à une variante unité, du plus petit au plus grand (on ouvre le moins possible). */
+async function packsForUnit(tx: Tx, unitVariantId: string) {
+  return tx.sql<{ id: string; units_per_case: number; label: string }>`
+    SELECT pk.id, COALESCE(pt.units_per_case, 1)::int AS units_per_case,
+           p.name || COALESCE(' — ' || pt.name, '') AS label
+    FROM product_variants pk
+    JOIN products p ON p.id = pk.product_id
+    LEFT JOIN packaging_types pt ON pt.id = pk.packaging_type_id
+    WHERE pk.unit_variant_id = ${unitVariantId} AND COALESCE(pt.units_per_case, 1) > 1
+    ORDER BY pt.units_per_case ASC, pk.id
+  `
+}
+
+async function reservedQty(tx: Tx, companyId: string, depotId: string, variantId: string): Promise<number> {
+  const [row] = await tx.sql`
+    SELECT COALESCE(SUM(i.quantity), 0)::int AS qty
+    FROM pos_order_items i JOIN pos_orders o ON o.id = i.pos_order_id
+    WHERE o.company_id = ${companyId} AND o.depot_id = ${depotId}
+      AND o.status = 'open' AND i.status = 'active' AND i.product_variant_id = ${variantId}
+  `
+  return Number(row.qty)
 }
 
 /** Vue « salle » : tables avec leur ticket ouvert + tickets sans table (comptoir). */
@@ -199,19 +254,34 @@ export async function openPosOrder(
   })
 }
 
-/** Ajoute des articles (prix catalogue), en respectant le stock disponible du dépôt. */
+/**
+ * Ajoute des articles (prix catalogue), en respectant le stock disponible du dépôt.
+ *
+ * Vente à la bouteille : si le stock à l'unité ne suffit pas mais qu'un casier lié
+ * est disponible, le casier est ouvert dans la même transaction quand
+ * `options.unpack` est vrai ou que le réglage « ouverture automatique » de
+ * l'entreprise est actif ; sinon 409 UNPACK_REQUIRED (le POS demande confirmation).
+ */
 export async function addPosItems(
   actor: PosActor,
   orderId: string,
-  items: { variantId: string; quantity: number }[]
+  items: { variantId: string; quantity: number }[],
+  options: { unpack?: boolean } = {}
 ) {
   return withTransaction(async (tx) => {
     const order = await lockOpenOrder(tx, actor.companyId, orderId)
     const variantIds = [...new Set(items.map((i) => i.variantId))]
     await assertOwned(tx.sql, actor.companyId, { variants: variantIds })
+    let autoUnpack: boolean | null = null
 
     for (const variantId of variantIds) {
       const quantity = items.filter((i) => i.variantId === variantId).reduce((s, i) => s + i.quantity, 0)
+
+      // Variante unité liée à des casiers : CMP verrouillés AVANT le stock (ordre stock_costs → stock)
+      const packs = await packsForUnit(tx, variantId)
+      if (packs.length > 0) {
+        await lockStockCosts(tx, order.depot_id, [variantId, ...packs.map((p) => p.id)])
+      }
 
       // Verrou sur le stock de la variante : sérialise les ajouts concurrents
       const stockRows = await tx.sql`
@@ -231,7 +301,50 @@ export async function addPosItems(
         FROM product_variants pv JOIN products p ON p.id = pv.product_id
         WHERE pv.id = ${variantId}
       `
-      const available = stock - Number(reserved.qty)
+      let available = stock - Number(reserved.qty)
+      if (quantity > available && packs.length > 0) {
+        const shortfall = quantity - Math.max(available, 0)
+        for (const pack of packs) {
+          const packRows = await tx.sql`
+            SELECT quantity FROM stock
+            WHERE depot_id = ${order.depot_id} AND product_variant_id = ${pack.id}
+            FOR UPDATE
+          `
+          const packStock = packRows.reduce((s, r) => s + Number(r.quantity), 0)
+          const packAvailable = packStock - (await reservedQty(tx, actor.companyId, order.depot_id, pack.id))
+          const packsNeeded = Math.ceil(shortfall / pack.units_per_case)
+          if (packAvailable < packsNeeded) continue
+
+          if (autoUnpack === null) autoUnpack = await getPosAutoUnpack(actor.companyId)
+          if (!options.unpack && !autoUnpack) {
+            throw new AppError(
+              409,
+              `${variant.name} : ${Math.max(available, 0)} disponible(s) à l'unité. Ouvrir ${packsNeeded} × ${pack.label} ?`,
+              'UNPACK_REQUIRED',
+              {
+                variantId,
+                available: Math.max(available, 0),
+                packVariantId: pack.id,
+                packLabel: pack.label,
+                packs: packsNeeded,
+                unitsPerPack: pack.units_per_case,
+              }
+            )
+          }
+          const opened = await unpackStock(tx, {
+            companyId: actor.companyId,
+            depotId: order.depot_id,
+            packVariantId: pack.id,
+            packs: packsNeeded,
+            userId: actor.userId,
+            source: 'pos',
+            posOrderId: orderId,
+            notes: `Ouverture au point de vente (ticket ${order.ticket_number})`,
+          })
+          available += opened.units
+          break
+        }
+      }
       if (quantity > available) {
         throw new AppError(
           409,

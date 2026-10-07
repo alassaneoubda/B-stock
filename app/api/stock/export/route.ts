@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
         COALESCE(p.sku, '') AS sku,
         p.category,
         pv.price AS selling_price,
-        COALESCE(pv.cost_price, p.purchase_price, 0) AS purchase_price,
+        -- Valorisation au coût moyen pondéré du dépôt (repli : prix d'achat catalogue)
+        COALESCE(MAX(sc.avg_cost), pv.cost_price, p.purchase_price, 0) AS purchase_price,
         SUM(s.quantity)::int AS stock_quantity,
         COALESCE(MAX(s.min_stock_alert), 0)::int AS min_stock_level,
         p.base_unit AS unit
@@ -49,6 +50,7 @@ export async function GET(request: NextRequest) {
       JOIN product_variants pv ON pv.id = s.product_variant_id
       JOIN products p ON p.id = pv.product_id
       LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
+      LEFT JOIN stock_costs sc ON sc.depot_id = d.id AND sc.product_variant_id = pv.id
       WHERE d.company_id = ${companyId}
         AND p.company_id = ${companyId}
         AND p.is_active = true

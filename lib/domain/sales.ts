@@ -442,14 +442,40 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
     )
   }
 
-  // 1. Stock : on réintègre exactement les lots sortis, au coût figé à la vente
+  // 1. Stock : on réintègre les lots sortis, au coût figé à la vente, SAUF ce qui
+  //    est déjà revenu par un retour (sinon la marchandise serait comptée deux fois) :
+  //    - retours directs (/api/sales/[id]/return) : mouvements 'return' référencés sur la vente ;
+  //    - retours /api/returns non rejetés liés à la vente (même règle que le plafond des retours).
   const movements = await tx.sql`
     SELECT depot_id, product_variant_id, lot_number, quantity, unit_cost FROM stock_movements
     WHERE company_id = ${companyId} AND reference_type = 'sales_order'
       AND reference_id = ${order.id} AND movement_type = 'sale'
+    ORDER BY created_at, id
   `
+  const returnedRows = await tx.sql`
+    SELECT product_variant_id, SUM(qty)::int AS qty FROM (
+      SELECT sm.product_variant_id, sm.quantity AS qty FROM stock_movements sm
+      WHERE sm.company_id = ${companyId} AND sm.movement_type = 'return'
+        AND sm.reference_type = 'sales_order' AND sm.reference_id = ${order.id}
+      UNION ALL
+      SELECT ri.product_variant_id, ri.quantity AS qty FROM return_items ri
+      JOIN returns r ON r.id = ri.return_id
+      WHERE r.sales_order_id = ${order.id} AND r.company_id = ${companyId}
+        AND r.status <> 'rejected' AND ri.item_type = 'product' AND ri.product_variant_id IS NOT NULL
+    ) t
+    GROUP BY product_variant_id
+  `
+  const alreadyReturned = new Map<string, number>(
+    returnedRows.map((r) => [r.product_variant_id as string, Math.max(0, Number(r.qty))])
+  )
   for (const m of movements) {
-    const qty = -Number(m.quantity)
+    let qty = -Number(m.quantity)
+    if (qty <= 0) continue
+    // Le déjà-retourné est imputé sur les premiers lots sortis
+    const returned = alreadyReturned.get(m.product_variant_id) ?? 0
+    const skip = Math.min(returned, qty)
+    if (skip > 0) alreadyReturned.set(m.product_variant_id, returned - skip)
+    qty -= skip
     if (qty <= 0) continue
     await addStock(tx, {
       companyId,

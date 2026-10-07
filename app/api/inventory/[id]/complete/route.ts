@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { withTransaction } from '@/lib/db'
 import { AppError, handleRouteError, notFound } from '@/lib/errors'
 import { isUuid } from '@/lib/tenant'
-import { addStock, removeStock, setPackagingStockLevel } from '@/lib/domain/stock'
+import { addStock, lockStockCosts, removeStock, setPackagingStockLevel } from '@/lib/domain/stock'
 
 const completeSchema = z.object({
   apply_adjustments: z.boolean().optional().default(false),
@@ -93,6 +93,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
 
         for (const [variantId, counted] of countedByVariant) {
+          // Ordre de verrouillage : CMP (stock_costs) avant les lignes de stock
+          await lockStockCosts(tx, inv.depot_id, [variantId])
           // Stock ACTUEL (verrouillé), tous lots confondus — et non la photo de début d'inventaire.
           const rows = await tx.sql<{ quantity: number }>`
             SELECT quantity FROM stock
@@ -125,6 +127,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             quantity: counted,
           })
         }
+      }
+
+      // Inventaire tournant : date du dernier comptage des variantes comptées (et d'elles seules)
+      const countedVariantIds = [
+        ...new Set(items.filter((i) => i.item_type !== 'packaging' && i.product_variant_id).map((i) => i.product_variant_id as string)),
+      ]
+      if (countedVariantIds.length > 0) {
+        await tx.sql`
+          INSERT INTO stock_counts (depot_id, product_variant_id, last_counted_at, last_inventory_id)
+          SELECT ${inv.depot_id}, v.id, NOW(), ${inv.id}
+          FROM unnest(${countedVariantIds}::uuid[]) AS v(id)
+          ON CONFLICT (depot_id, product_variant_id)
+          DO UPDATE SET last_counted_at = EXCLUDED.last_counted_at, last_inventory_id = EXCLUDED.last_inventory_id
+        `
       }
 
       await tx.sql`

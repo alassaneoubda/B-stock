@@ -48,7 +48,10 @@ export async function GET(request: NextRequest) {
       SELECT
         s.id, s.quantity, s.lot_number, s.expiry_date, s.min_stock_alert,
         s.product_variant_id,
-        pv.id as variant_id, pv.price, pv.cost_price, pv.barcode,
+        pv.id as variant_id, pv.price, pv.cost_price, pv.barcode, pv.unit_variant_id,
+        -- Coût moyen pondéré du dépôt (repli : prix d'achat catalogue) et valeur du lot au CMP
+        COALESCE(sc.avg_cost, pv.cost_price, 0)::float AS avg_cost,
+        (s.quantity * COALESCE(sc.avg_cost, pv.cost_price, 0))::float AS stock_value,
         p.id as product_id, p.name as product_name, p.category, p.brand, p.sku,
         pt.name as packaging_name, pt.units_per_case,
         d.name as depot_name, d.id as depot_id
@@ -57,6 +60,7 @@ export async function GET(request: NextRequest) {
       JOIN products p ON pv.product_id = p.id
       LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
       JOIN depots d ON s.depot_id = d.id
+      LEFT JOIN stock_costs sc ON sc.depot_id = s.depot_id AND sc.product_variant_id = pv.id
       WHERE d.company_id = ${companyId}
         AND p.company_id = ${companyId}
         AND p.is_active = true

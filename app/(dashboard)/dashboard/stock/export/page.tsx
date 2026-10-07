@@ -92,7 +92,8 @@ export default function StockExportPage() {
     )
   }
 
-  const totalValue = data.products.reduce((s, p) => s + Number(p.stock_quantity) * Number(p.selling_price), 0)
+  // Valeur au coût moyen pondéré (CMP) du dépôt
+  const totalValue = data.products.reduce((s, p) => s + Number(p.stock_quantity) * Number(p.purchase_price), 0)
   const totalItems = data.products.reduce((s, p) => s + Number(p.stock_quantity), 0)
   const lowStock = data.products.filter(p => Number(p.stock_quantity) <= Number(p.min_stock_level))
 
@@ -147,7 +148,7 @@ export default function StockExportPage() {
                 <dd className="tabular text-lg font-semibold text-foreground">{formatNumber(totalItems)}</dd>
               </div>
               <div className="space-y-1">
-                <dt className="text-xs text-muted-foreground">Valeur totale</dt>
+                <dt className="text-xs text-muted-foreground">Valeur totale (CMP)</dt>
                 <dd className="tabular text-lg font-semibold text-foreground">{formatMoney(totalValue)}</dd>
               </div>
               <div className="space-y-1">
@@ -178,7 +179,7 @@ export default function StockExportPage() {
                     <th className="hidden px-3 py-2 text-left text-xs font-medium text-muted-foreground sm:table-cell">SKU</th>
                     <th className="hidden px-3 py-2 text-left text-xs font-medium text-muted-foreground sm:table-cell">Catégorie</th>
                     <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Qté</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Prix</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Coût moyen</th>
                     <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Valeur</th>
                   </tr>
                 </thead>
@@ -196,8 +197,8 @@ export default function StockExportPage() {
                         <td className={`tabular px-3 py-2 text-right text-sm font-medium ${isLow ? 'text-destructive' : 'text-foreground'}`}>
                           {formatNumber(p.stock_quantity)}
                         </td>
-                        <td className="tabular px-3 py-2 text-right text-sm text-muted-foreground">{formatMoney(p.selling_price)}</td>
-                        <td className="tabular px-3 py-2 text-right text-sm font-medium text-foreground">{formatMoney(Number(p.stock_quantity) * Number(p.selling_price))}</td>
+                        <td className="tabular px-3 py-2 text-right text-sm text-muted-foreground">{formatMoney(p.purchase_price)}</td>
+                        <td className="tabular px-3 py-2 text-right text-sm font-medium text-foreground">{formatMoney(Number(p.stock_quantity) * Number(p.purchase_price))}</td>
                       </tr>
                     )
                   })}

@@ -9,6 +9,8 @@ export type PosCatalogItem = {
   stock: number
   reserved: number
   available: number
+  /** Unités obtenables en ouvrant les casiers liés (vente à la bouteille). */
+  openable: number
 }
 
 export type PosTable = {
@@ -39,6 +41,8 @@ export type PosState = {
   depotId: string
   depots: { id: string; name: string; is_main: boolean }[]
   canManage: boolean
+  /** Ouverture automatique d'un casier quand les bouteilles manquent (réglage entreprise). */
+  autoUnpack?: boolean
   tables: PosTable[]
   openOrders: PosOpenOrder[]
   catalog: PosCatalogItem[]

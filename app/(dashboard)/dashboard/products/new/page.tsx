@@ -18,6 +18,8 @@ import { AlertTriangle, ArrowLeft, BoxesIcon, Loader2, Plus, RotateCw, Trash2 } 
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
+import { BarcodeInput } from '@/components/scan/barcode-input'
+import { normalizeBarcode } from '@/components/scan/barcode-format'
 
 const productSchema = z.object({
   name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
@@ -119,6 +121,14 @@ export default function NewProductPage() {
 
   useEffect(() => {
     loadPackaging()
+  }, [])
+
+  // Arrivée depuis « Code-barres inconnu » (?barcode=…) : variante préremplie avec le code scanné
+  useEffect(() => {
+    const code = normalizeBarcode(new URLSearchParams(window.location.search).get('barcode') ?? '')
+    if (!code) return
+    setVariants((prev) => (prev.length > 0 ? prev : [{ packagingTypeId: '', price: 0, costPrice: 0, barcode: code }]))
+    toast.info('Code-barres scanné prérempli', { description: 'Choisissez l’emballage de la variante.' })
   }, [])
 
   function addVariant() {
@@ -461,6 +471,16 @@ export default function NewProductPage() {
                           >
                             <Trash2 aria-hidden="true" />
                           </Button>
+                        </div>
+                        <div className="col-span-12 space-y-2">
+                          <Label htmlFor={`variant-${idx}-barcode`} className="text-xs">Code-barres (facultatif)</Label>
+                          <BarcodeInput
+                            id={`variant-${idx}-barcode`}
+                            value={variant.barcode}
+                            onChange={(v) => updateVariant(idx, 'barcode', v)}
+                            placeholder="Scannez ou saisissez le code (EAN-13…)"
+                            disabled={isLoading}
+                          />
                         </div>
                       </div>
                     ))}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Loader2, Printer, Search } from 'lucide-react'
+import { Bluetooth, CheckCircle2, Loader2, Printer, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -340,10 +340,15 @@ export function ClientPickerDialog({
 export function PaidDialog({
   ticket,
   onPrint,
+  onPrintBluetooth,
+  printingBluetooth = false,
   onClose,
 }: {
   ticket: PaidTicket | null
   onPrint: () => void
+  /** Impression directe sur imprimante Bluetooth (si le navigateur la permet). */
+  onPrintBluetooth?: () => void
+  printingBluetooth?: boolean
   onClose: () => void
 }) {
   return (
@@ -375,6 +380,85 @@ export function PaidDialog({
             Terminer
           </Button>
         </div>
+        {onPrintBluetooth && (
+          <Button variant="ghost" onClick={onPrintBluetooth} disabled={printingBluetooth}>
+            {printingBluetooth ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Bluetooth aria-hidden="true" />}
+            Imprimante Bluetooth
+          </Button>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Détail renvoyé par l'API quand le stock à l'unité ne suffit pas mais qu'un casier peut être ouvert. */
+export type UnpackProposal = {
+  variantId: string
+  available: number
+  packVariantId: string
+  packLabel: string
+  packs: number
+  unitsPerPack: number
+}
+
+/** Confirmation d'ouverture de casier (vente à la bouteille). */
+export function UnpackDialog({
+  proposal,
+  productLabel,
+  canManage,
+  submitting,
+  onOpenChange,
+  onConfirm,
+}: {
+  proposal: UnpackProposal | null
+  productLabel: string
+  canManage: boolean
+  submitting: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: (alwaysAuto: boolean) => void
+}) {
+  const [alwaysAuto, setAlwaysAuto] = useState(false)
+  useEffect(() => {
+    if (proposal) setAlwaysAuto(false)
+  }, [proposal])
+  const units = proposal ? proposal.packs * proposal.unitsPerPack : 0
+
+  return (
+    <Dialog open={Boolean(proposal)} onOpenChange={(o) => !submitting && onOpenChange(o)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Ouvrir un casier ?</DialogTitle>
+          <DialogDescription>
+            {proposal
+              ? `${productLabel} : ${proposal.available} disponible(s) à l’unité. Ouvrir ${proposal.packs} × ${proposal.packLabel} ajoute ${units} unités au stock.`
+              : ''}
+          </DialogDescription>
+        </DialogHeader>
+        {canManage && (
+          <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-brand"
+              checked={alwaysAuto}
+              onChange={(e) => setAlwaysAuto(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium text-foreground">Toujours ouvrir automatiquement</span>
+              <span className="block text-xs text-muted-foreground">
+                Pour toute l’entreprise : le casier est ouvert sans confirmation quand les bouteilles manquent.
+              </span>
+            </span>
+          </label>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Retour
+          </Button>
+          <Button variant="brand" onClick={() => onConfirm(alwaysAuto)} disabled={submitting}>
+            {submitting && <Loader2 className="animate-spin" aria-hidden="true" />}
+            Ouvrir et ajouter
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

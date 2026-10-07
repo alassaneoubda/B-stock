@@ -28,6 +28,8 @@ import Link from 'next/link'
 import { isUuid } from '@/lib/tenant'
 import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
 import { DeleteProductButton } from './delete-product-button'
+import { VariantBarcodeEditor } from '@/components/scan/variant-barcode-editor'
+import { ProductUnpackPanel } from '@/components/stock/unpack'
 
 interface ProductDetail {
     id: string
@@ -56,6 +58,9 @@ interface Variant {
     /** Ex. « Casier de 12 bouteilles de 66 cl » (formats chargés depuis le catalogue). */
     packaging_description: string | null
     deposit_price: number
+    is_returnable: boolean | null
+    /** Variante unité liée (vente à la bouteille après ouverture du casier). */
+    unit_variant_id: string | null
 }
 
 interface StockItem {
@@ -66,6 +71,7 @@ interface StockItem {
     min_stock_alert: number
     depot_name: string
     depot_id: string
+    product_variant_id: string
 }
 
 // Pas de try/catch : une panne SQL doit afficher la page d'erreur, pas des listes vides.
@@ -79,7 +85,8 @@ async function getProduct(productId: string, companyId: string): Promise<Product
 
 async function getVariants(productId: string): Promise<Variant[]> {
     const variants = await sql`
-        SELECT pv.*, pt.name as packaging_name, pt.units_per_case, pt.description as packaging_description, pt.deposit_price
+        SELECT pv.*, pt.name as packaging_name, pt.units_per_case, pt.description as packaging_description, pt.deposit_price,
+               pt.is_returnable
         FROM product_variants pv
         LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
         WHERE pv.product_id = ${productId}
@@ -132,6 +139,8 @@ const movementTypeLabels: Record<string, { label: string; tone: Tone }> = {
     damage: { label: 'Casse', tone: 'danger' },
     adjustment: { label: 'Ajustement', tone: 'default' },
     transfer: { label: 'Transfert', tone: 'info' },
+    inventory: { label: 'Inventaire', tone: 'default' },
+    unpack: { label: 'Ouverture casier', tone: 'brand' },
 }
 
 function SummaryRow({ label, children }: { label: string; children: ReactNode }) {
@@ -282,7 +291,11 @@ export default async function ProductDetailPage({
                                                     <TableCell className="tabular text-right text-sm font-medium text-foreground">{formatMoney(v.price)}</TableCell>
                                                     <TableCell className="tabular text-right text-sm text-muted-foreground">{formatMoney(v.deposit_price)}</TableCell>
                                                     <TableCell className="pr-5 text-right">
-                                                        <span className="font-mono text-xs text-muted-foreground">{v.barcode || '—'}</span>
+                                                        <VariantBarcodeEditor
+                                                            variantId={v.id}
+                                                            barcode={v.barcode}
+                                                            variantLabel={`${product.name} · ${v.packaging_name}`}
+                                                        />
                                                     </TableCell>
                                                 </TableRow>
                                             ))}
@@ -291,6 +304,30 @@ export default async function ProductDetailPage({
                                 </div>
                             )}
                         </Panel>
+
+                        <ProductUnpackPanel
+                            productId={id}
+                            productName={product.name}
+                            variants={variants.map((v) => ({
+                                id: v.id,
+                                packaging_name: v.packaging_name,
+                                units_per_case: v.units_per_case,
+                                unit_variant_id: v.unit_variant_id,
+                                price: Number(v.price),
+                                is_returnable: v.is_returnable,
+                            }))}
+                            stock={Object.values(
+                                stock.reduce<Record<string, { variantId: string; depotId: string; depotName: string; quantity: number }>>(
+                                    (acc, s) => {
+                                        const key = `${s.product_variant_id}:${s.depot_id}`
+                                        acc[key] ??= { variantId: s.product_variant_id, depotId: s.depot_id, depotName: s.depot_name, quantity: 0 }
+                                        acc[key].quantity += Number(s.quantity)
+                                        return acc
+                                    },
+                                    {}
+                                )
+                            )}
+                        />
 
                         <Panel title="Stock par dépôt" description="Quantités disponibles">
                             {stock.length === 0 ? (
