@@ -1,57 +1,47 @@
-import Image from 'next/image'
-import { Check } from 'lucide-react'
+import { AlertTriangle, PackageX, Receipt } from 'lucide-react'
 
-const POINTS = [
+const PAINS = [
   {
-    title: 'Multi-dépôts',
-    body: 'Plusieurs sites, un seul compte. Transférez le stock sans perdre le fil.',
+    icon: PackageX,
+    problem: 'Des écarts de stock que personne n’explique',
+    solution:
+      'Chaque entrée et chaque sortie est tracée, lot par lot et dépôt par dépôt. Un inventaire montre l’écart réel, et le stock ne peut jamais devenir négatif.',
   },
   {
-    title: 'Équipe & rôles',
-    body: 'Gérant, caissier, magasinier : chacun voit ce dont il a besoin.',
+    icon: AlertTriangle,
+    problem: 'Des casiers qui dorment chez les clients',
+    solution:
+      'Les emballages consignés ont leur propre compte : ce qui est sorti, ce qui est revenu, ce que chaque client doit encore. Plus de casiers oubliés.',
   },
   {
-    title: 'Suivi partagé',
-    body: 'Les mêmes chiffres pour le bureau et pour la tournée.',
+    icon: Receipt,
+    problem: 'Des crédits notés sur un cahier',
+    solution:
+      'Chaque vente à crédit crée une créance avec son échéance. Vous savez qui doit combien, depuis quand, et à qui ne plus livrer.',
   },
 ]
 
+/** « Ce que B-Stock règle » : les problèmes du terrain, en face de la solution. */
 export function LandingFeatureBand() {
   return (
-    <section className="bg-[#F7F4EF] pb-8 lg:pb-12">
-      <div className="mx-auto max-w-[1180px] px-6">
-        <div className="overflow-hidden rounded-[2rem] bg-[#2563EB] text-white lg:grid lg:grid-cols-2">
-          <div className="flex flex-col justify-center p-8 sm:p-12 lg:p-14">
-            <h2 className="text-[clamp(1.7rem,3vw,2.4rem)] font-bold leading-[1.15] tracking-tight">
-              Simplifiez le travail entre le dépôt et l&apos;équipe
-            </h2>
-            <p className="mt-4 text-base leading-relaxed text-blue-100">
-              Quand le stock, les ventes et les consignes vivent au même endroit, les
-              discussions deviennent plus courtes — et les pertes plus rares.
-            </p>
-            <ul className="mt-8 space-y-5">
-              {POINTS.map((p) => (
-                <li key={p.title} className="flex gap-3">
-                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/15">
-                    <Check className="h-3.5 w-3.5" />
-                  </span>
-                  <div>
-                    <p className="font-semibold">{p.title}</p>
-                    <p className="mt-0.5 text-sm text-blue-100/90">{p.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="relative min-h-[280px] sm:min-h-[360px]">
-            <Image
-              src="/images/landing/landing-equipe.jpg"
-              alt="Équipe dans un dépôt de boissons"
-              fill
-              className="object-cover"
-              sizes="(max-width: 1024px) 100vw, 50vw"
-            />
-          </div>
+    <section className="border-y border-border bg-card py-20 lg:py-24">
+      <div className="mx-auto max-w-[1200px] px-5 sm:px-8">
+        <div className="max-w-2xl">
+          <p className="text-sm font-semibold text-brand-strong">Pourquoi B-Stock</p>
+          <h2 className="mt-3 text-balance text-[clamp(1.75rem,3.2vw,2.5rem)] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+            Là où un dépôt perd de l’argent sans le voir
+          </h2>
+        </div>
+        <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3">
+          {PAINS.map((p) => (
+            <div key={p.problem} className="flex flex-col bg-card p-7">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
+                <p.icon className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <h3 className="mt-5 text-lg font-semibold tracking-tight text-foreground">{p.problem}</h3>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{p.solution}</p>
+            </div>
+          ))}
         </div>
       </div>
     </section>

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { AppError, handleRouteError } from '@/lib/errors'
+import { assertOwned, isUuid } from '@/lib/tenant'
+import { nextDocumentNumber } from '@/lib/sequences'
+import { money } from '@/lib/domain/payments'
+
+const CREDIT_STATUSES = ['pending', 'partial', 'paid', 'overdue', 'written_off'] as const
 
 // GET /api/credits — List credit notes with client info
 export async function GET(request: NextRequest) {
@@ -10,8 +17,15 @@ export async function GET(request: NextRequest) {
     const { companyId } = authz
 
     const { searchParams } = new URL(request.url)
-    const status = searchParams.get('status')
-    const clientId = searchParams.get('client_id')
+    const statusParam = searchParams.get('status')
+    const status = statusParam && (CREDIT_STATUSES as readonly string[]).includes(statusParam) ? statusParam : null
+    const clientIdParam = searchParams.get('client_id')
+    const clientId = isUuid(clientIdParam) ? clientIdParam : null
+    if ((statusParam && !status) || (clientIdParam && !clientId)) {
+      return NextResponse.json({ error: 'Filtre invalide' }, { status: 400 })
+    }
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '100', 10) || 100, 1), 500)
+    const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0)
 
     const credits = await sql`
       SELECT cn.*,
@@ -27,9 +41,11 @@ export async function GET(request: NextRequest) {
       WHERE cn.company_id = ${companyId}
         AND (${status}::text IS NULL OR cn.status = ${status}::text)
         AND (${clientId}::uuid IS NULL OR cn.client_id = ${clientId}::uuid)
-      ORDER BY 
+      ORDER BY
         CASE WHEN cn.status = 'overdue' THEN 0 WHEN cn.status = 'pending' THEN 1 WHEN cn.status = 'partial' THEN 2 ELSE 3 END,
-        cn.due_date ASC NULLS LAST
+        cn.due_date ASC NULLS LAST,
+        cn.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
     `
 
     // Summary stats
@@ -48,50 +64,71 @@ export async function GET(request: NextRequest) {
       data: { credits, stats: stats[0] },
     })
   } catch (error) {
-    console.error('Credits error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'credits.list')
   }
 }
 
-// POST /api/credits — Create a credit note
+const creditSchema = z.object({
+  client_id: z.string().uuid(),
+  sales_order_id: z.string().uuid().optional().nullable(),
+  total_amount: z.coerce.number().positive('Montant invalide'),
+  account_type: z.enum(['product', 'packaging']).optional().default('product'),
+  due_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide (AAAA-MM-JJ)')
+    .optional()
+    .nullable()
+    .or(z.literal('')),
+  notes: z.string().max(2000).optional().nullable(),
+})
+
+// POST /api/credits — Create a credit note (manual debt)
 export async function POST(request: NextRequest) {
   try {
     const authz = await requirePermission('credits.write')
     if (!authz.ok) return authz.response
     const { companyId, userId } = authz
 
-    const body = await request.json()
-    const { client_id, sales_order_id, total_amount, due_date, notes } = body
+    const data = creditSchema.parse(await request.json())
+    const amount = money(data.total_amount)
+    const salesOrderId = data.sales_order_id || null
 
-    if (!client_id || !total_amount || total_amount <= 0) {
-      return NextResponse.json({ error: 'Client et montant requis' }, { status: 400 })
-    }
+    const credit = await withTransaction(async (tx) => {
+      await assertOwned(tx.sql, companyId, { clients: [data.client_id], salesOrders: [salesOrderId] })
+      if (salesOrderId) {
+        const [order] = await tx.sql`SELECT client_id FROM sales_orders WHERE id = ${salesOrderId}`
+        if (order.client_id !== data.client_id) {
+          throw new AppError(400, "Cette commande n'appartient pas à ce client", 'ORDER_CLIENT_MISMATCH')
+        }
+      }
 
-    // Generate credit number
-    const countResult = await sql`
-      SELECT COUNT(*) as count FROM credit_notes WHERE company_id = ${companyId}
-    `
-    const creditNumber = `CR-${String(Number(countResult[0].count) + 1).padStart(5, '0')}`
+      const creditNumber = await nextDocumentNumber(tx, companyId, 'credit')
+      const [row] = await tx.sql`
+        INSERT INTO credit_notes (
+          company_id, client_id, sales_order_id, credit_number, account_type,
+          total_amount, due_date, notes, created_by
+        )
+        VALUES (
+          ${companyId}, ${data.client_id}, ${salesOrderId}, ${creditNumber}, ${data.account_type},
+          ${amount}, ${data.due_date || null}, ${data.notes || null}, ${userId}
+        )
+        RETURNING *
+      `
 
-    const result = await sql`
-      INSERT INTO credit_notes (company_id, client_id, sales_order_id, credit_number, total_amount, due_date, notes, created_by)
-      VALUES (${companyId}, ${client_id}, ${sales_order_id || null}, ${creditNumber}, ${total_amount}, ${due_date || null}, ${notes || null}, ${userId})
-      RETURNING *
-    `
+      // La créance augmente la dette du client (solde négatif = le client doit)
+      await tx.sql`
+        INSERT INTO client_accounts (client_id, account_type, balance, last_transaction_at)
+        VALUES (${data.client_id}, ${data.account_type}, ${-amount}, NOW())
+        ON CONFLICT (client_id, account_type) DO UPDATE
+        SET balance = client_accounts.balance + EXCLUDED.balance,
+            last_transaction_at = NOW(),
+            updated_at = NOW()
+      `
+      return row
+    })
 
-    // Update client account balance
-    await sql`
-      INSERT INTO client_accounts (client_id, account_type, balance)
-      VALUES (${client_id}, 'product', ${-total_amount})
-      ON CONFLICT (client_id, account_type) DO UPDATE
-      SET balance = client_accounts.balance - ${total_amount},
-          last_transaction_at = NOW(),
-          updated_at = NOW()
-    `
-
-    return NextResponse.json({ success: true, data: result[0] })
+    return NextResponse.json({ success: true, data: credit })
   } catch (error) {
-    console.error('Create credit error:', error)
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    return handleRouteError(error, 'credits.create')
   }
 }

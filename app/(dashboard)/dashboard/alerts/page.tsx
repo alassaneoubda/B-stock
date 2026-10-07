@@ -1,11 +1,14 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Bell, AlertTriangle, CheckCircle, Package, CreditCard, ArchiveRestore, X, Info, ShieldAlert, History } from 'lucide-react'
+import { Bell, CheckCircle, Package, CreditCard, ArchiveRestore, ShieldAlert, History, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
-import { GenerateAlertsButton, MarkAllReadButton } from '@/components/dashboard/alerts-actions'
+import { GenerateAlertsButton, MarkAllReadButton, MarkAlertReadButton } from '@/components/dashboard/alerts-actions'
+import { PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
+import { EmptyState } from '@/components/states'
+import { formatDateTime, formatNumber, formatRelative } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 interface Alert {
     id: string
@@ -20,41 +23,61 @@ interface Alert {
     created_at: string
 }
 
+// Pas de try/catch : une panne SQL remonte à error.tsx au lieu d'afficher
+// « Système opérationnel » à tort.
 async function getAlerts(companyId: string): Promise<Alert[]> {
-    try {
-        const alerts = await sql`
+    const alerts = await sql`
       SELECT *
       FROM alerts
       WHERE company_id = ${companyId}
-      ORDER BY 
+      ORDER BY
         CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
         created_at DESC
       LIMIT 100
     `
-        return alerts as Alert[]
-    } catch {
-        return []
+    return alerts as Alert[]
+}
+
+/**
+ * Lien vers l'entité liée, selon reference_type écrit par lib/domain/alerts.ts :
+ * 'stock' (ligne de stock : low_stock, expiry), 'client' (credit_limit,
+ * packaging_debt), 'sales_order' (payment_overdue). Type inconnu : pas de lien.
+ */
+function alertEntityHref(alert: Alert): string | null {
+    switch (alert.reference_type) {
+        case 'stock':
+            return '/dashboard/stock'
+        case 'client':
+            return alert.reference_id ? `/dashboard/clients/${alert.reference_id}` : null
+        case 'sales_order':
+            return alert.reference_id ? `/dashboard/sales/${alert.reference_id}` : null
+        case 'credit_note':
+            return '/dashboard/credits'
+        default:
+            return null
     }
 }
 
-const alertTypeConfig: Record<string, { label: string; icon: any; bg: string; text: string }> = {
-    low_stock: { label: 'Stock critique', icon: Package, bg: 'bg-rose-50', text: 'text-rose-600' },
-    expiry: { label: 'Péremption', icon: History, bg: 'bg-amber-50', text: 'text-amber-600' },
-    credit_limit: { label: 'Limite Crédit', icon: CreditCard, bg: 'bg-indigo-50', text: 'text-indigo-600' },
-    packaging_debt: { label: 'Dette Emballage', icon: ArchiveRestore, bg: 'bg-orange-50', text: 'text-orange-600' },
-    payment_overdue: { label: 'Retard Paiement', icon: CreditCard, bg: 'bg-rose-50', text: 'text-rose-600' },
-    low_packaging: { label: 'Emballages', icon: Package, bg: 'bg-slate-50', text: 'text-slate-600' },
+type Tone = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
+
+const alertTypeConfig: Record<string, { label: string; icon: LucideIcon }> = {
+    low_stock: { label: 'Stock bas', icon: Package },
+    expiry: { label: 'Péremption', icon: History },
+    credit_limit: { label: 'Limite de crédit', icon: CreditCard },
+    packaging_debt: { label: 'Dette d’emballages', icon: ArchiveRestore },
+    payment_overdue: { label: 'Retard de paiement', icon: CreditCard },
+    low_packaging: { label: 'Emballages', icon: Package },
 }
 
-const severityConfig: Record<string, { label: string; bg: string; text: string; ring: string }> = {
-    low: { label: 'Mineur', bg: 'bg-slate-100', text: 'text-slate-500', ring: 'ring-slate-200' },
-    medium: { label: 'Modéré', bg: 'bg-blue-100', text: 'text-blue-600', ring: 'ring-blue-200' },
-    high: { label: 'Élevé', bg: 'bg-orange-100', text: 'text-orange-600', ring: 'ring-orange-200' },
-    critical: { label: 'Urgent', bg: 'bg-rose-100', text: 'text-rose-600', ring: 'ring-rose-200' },
+const severityConfig: Record<string, { label: string; tone: Tone; icon: string }> = {
+    low: { label: 'Mineure', tone: 'default', icon: 'bg-muted text-muted-foreground' },
+    medium: { label: 'Modérée', tone: 'info', icon: 'bg-info-soft text-info' },
+    high: { label: 'Élevée', tone: 'warning', icon: 'bg-warning-soft text-warning-foreground' },
+    critical: { label: 'Urgente', tone: 'danger', icon: 'bg-destructive/10 text-destructive' },
 }
 
 export default async function AlertsPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const alerts = await getAlerts(companyId)
 
@@ -62,188 +85,134 @@ export default async function AlertsPage() {
     const criticalCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length
     const resolvedCount = alerts.filter(a => a.is_resolved).length
 
-    const statsCards = [
-        {
-            title: "Actions Requises",
-            value: unreadCount,
-            description: "Notifications non lues",
-            icon: Bell,
-            color: "text-rose-600",
-            bg: "bg-rose-600/10"
-        },
-        {
-            title: "Niveau Critique",
-            value: criticalCount,
-            description: "Priorité absolue",
-            icon: ShieldAlert,
-            color: "text-orange-600",
-            bg: "bg-orange-600/10"
-        },
-        {
-            title: "Résolutions",
-            value: resolvedCount,
-            description: "Alertes traitées",
-            icon: CheckCircle,
-            color: "text-emerald-600",
-            bg: "bg-emerald-600/10"
-        }
-    ]
-
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Centre de Surveillance"
-                description="Suivi intelligent des points de vigilance opérationnels"
+                title="Alertes"
+                description="Points de vigilance : stock, crédits, emballages et paiements"
                 actions={<GenerateAlertsButton />}
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                {/* Stats Grid */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {statsCards.map((stat) => (
-                        <div
-                            key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
-                        >
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.bg} ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <stat.icon className="h-7 w-7" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
-                                    <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
-                                </div>
-                            </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
-                        </div>
-                    ))}
+            <PageShell>
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <StatCard
+                        label="Non lues"
+                        value={formatNumber(unreadCount)}
+                        hint="À examiner"
+                        icon={Bell}
+                        tone={unreadCount > 0 ? 'brand' : 'default'}
+                    />
+                    <StatCard
+                        label="Priorité élevée"
+                        value={formatNumber(criticalCount)}
+                        hint="Urgentes ou élevées"
+                        icon={ShieldAlert}
+                        tone={criticalCount > 0 ? 'danger' : 'default'}
+                    />
+                    <StatCard
+                        label="Résolues"
+                        value={formatNumber(resolvedCount)}
+                        hint="Traitées automatiquement ou manuellement"
+                        icon={CheckCircle}
+                        tone="success"
+                    />
                 </div>
 
-                {/* Alerts List */}
-                <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="px-8 py-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div>
-                            <h3 className="text-2xl font-semibold text-slate-950 tracking-tight">Flux d&apos;Alertes</h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Intelligence opérationnelle et diagnostics</p>
-                        </div>
-                        <MarkAllReadButton hasUnread={unreadCount > 0} />
-                    </div>
+                {alerts.length === 0 ? (
+                    <EmptyState
+                        icon={CheckCircle}
+                        title="Aucune alerte"
+                        description="Aucune anomalie détectée. Lancez une analyse pour vérifier à nouveau votre activité."
+                    />
+                ) : (
+                    <Panel
+                        title="Toutes les alertes"
+                        description={`${formatNumber(alerts.length)} alerte${alerts.length > 1 ? 's' : ''}, les plus urgentes en premier`}
+                        action={<MarkAllReadButton hasUnread={unreadCount > 0} />}
+                    >
+                        <ul className="divide-y divide-border">
+                            {alerts.map((alert) => {
+                                const typeInfo = alertTypeConfig[alert.alert_type] || { label: alert.alert_type, icon: Bell }
+                                const severityInfo = severityConfig[alert.severity] || {
+                                    label: alert.severity,
+                                    tone: 'default' as Tone,
+                                    icon: 'bg-muted text-muted-foreground',
+                                }
+                                const AlertIcon = typeInfo.icon
+                                const entityHref = alertEntityHref(alert)
+                                const muted = alert.is_read || alert.is_resolved
 
-                    <div className="p-8 space-y-4">
-                        {alerts.length === 0 ? (
-                            <div className="text-center py-24 flex flex-col items-center">
-                                <div className="h-24 w-24 rounded-full bg-emerald-50 flex items-center justify-center mb-6">
-                                    <CheckCircle className="h-10 w-10 text-emerald-500" />
-                                </div>
-                                <h3 className="text-xl font-semibold text-slate-950">Système opérationnel</h3>
-                                <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
-                                    Bravo ! Aucune anomalie n&apos;a été détectée dans votre flux de gestion actuel.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-4">
-                                {alerts.map((alert) => {
-                                    const typeInfo = alertTypeConfig[alert.alert_type] || {
-                                        label: alert.alert_type,
-                                        icon: Bell,
-                                        bg: 'bg-slate-50',
-                                        text: 'text-slate-400'
-                                    }
-                                    const severityInfo = severityConfig[alert.severity] || {
-                                        label: alert.severity,
-                                        bg: 'bg-slate-100',
-                                        text: 'text-slate-500',
-                                        ring: 'ring-slate-200'
-                                    }
-                                    const AlertIcon = typeInfo.icon
-
-                                    return (
-                                        <div
-                                            key={alert.id}
-                                            className={`group relative flex items-start gap-6 p-6 rounded-lg border transition-all duration-300 ${!alert.is_read
-                                                    ? 'bg-white border-slate-200/80 shadow-md hover:shadow-md hover:border-blue-200'
-                                                    : 'bg-slate-50/50 border-transparent opacity-75 grayscale-[0.5]'
-                                                } ${alert.is_resolved ? 'opacity-40 grayscale' : ''}`}
+                                return (
+                                    <li
+                                        key={alert.id}
+                                        className={cn(
+                                            'flex items-start gap-3 px-4 py-4 transition-colors sm:gap-4 sm:px-5',
+                                            !alert.is_read && 'bg-brand-soft/30',
+                                        )}
+                                    >
+                                        <span
+                                            className={cn(
+                                                'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                                                muted ? 'bg-muted text-muted-foreground' : severityInfo.icon,
+                                            )}
                                         >
-                                            <div className={`mt-0.5 shrink-0 h-14 w-14 rounded-md flex items-center justify-center transition-transform group-hover:scale-105 ${typeInfo.bg} ${typeInfo.text} shadow-sm border border-white/50`}>
-                                                <AlertIcon className="h-7 w-7" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                                                    <div>
-                                                        <div className="flex items-center gap-3 mb-1.5">
-                                                            <h4 className="text-lg font-semibold text-slate-950 tracking-tight leading-tight">
-                                                                {alert.title}
-                                                            </h4>
-                                                            <Badge className={`rounded-full px-3 py-0.5 font-semibold uppercase text-[9px] tracking-wider border-none ring-1 ${severityInfo.ring} ${severityInfo.bg} ${severityInfo.text}`}>
-                                                                {severityInfo.label}
-                                                            </Badge>
-                                                        </div>
-                                                        {alert.message && (
-                                                            <p className="text-sm font-medium text-slate-500 leading-relaxed max-w-2xl">{alert.message}</p>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between gap-3 shrink-0">
-                                                        <div className="flex items-center gap-2">
-                                                            {!alert.is_read && (
-                                                                <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                                                            )}
-                                                            <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
-                                                                {new Date(alert.created_at).toLocaleDateString('fr-FR', {
-                                                                    day: '2-digit',
-                                                                    month: 'short',
-                                                                    hour: '2-digit',
-                                                                    minute: '2-digit',
-                                                                })}
-                                                            </span>
-                                                        </div>
-                                                        {alert.is_resolved && (
-                                                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600">
-                                                                <CheckCircle className="h-3 w-3" />
-                                                                <span className="text-[10px] font-semibold uppercase tracking-wider">Résolu</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
+                                            <AlertIcon className="h-4 w-4" aria-hidden="true" />
+                                        </span>
 
-                                                <div className="mt-6 flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <Badge variant="outline" className="rounded-lg bg-white border-slate-100 text-[10px] font-semibold uppercase text-slate-400 tracking-wider h-7 px-3 flex items-center gap-2 shadow-sm">
-                                                            <Info className="h-3 w-3" />
-                                                            {typeInfo.label}
-                                                        </Badge>
-                                                        {alert.reference_id && (
-                                                            <Link
-                                                                href={`/dashboard/${alert.reference_type === 'product' ? 'products' : alert.reference_type === 'client' ? 'clients' : 'sales'}/${alert.reference_id}`}
-                                                                className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider hover:underline hover:text-blue-700 transition-colors"
-                                                            >
-                                                                Voir l&apos;entité associée
-                                                            </Link>
+                                        <div className="min-w-0 flex-1 space-y-1.5">
+                                            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                    {!alert.is_read && (
+                                                        <span className="h-2 w-2 shrink-0 rounded-full bg-brand" aria-hidden="true" />
+                                                    )}
+                                                    <h4
+                                                        className={cn(
+                                                            'text-sm leading-snug',
+                                                            muted ? 'font-medium text-muted-foreground' : 'font-semibold text-foreground',
                                                         )}
-                                                    </div>
-                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {!alert.is_read && (
-                                                            <Button variant="ghost" size="sm" className="h-8 rounded-xl text-[10px] font-semibold uppercase tracking-wider text-slate-400 hover:text-blue-600 transition-colors">
-                                                                Marquer comme lu
-                                                            </Button>
-                                                        )}
-                                                        {!alert.is_resolved && (
-                                                            <Button size="sm" className="h-8 rounded-xl bg-slate-900 text-white font-semibold text-[10px] uppercase tracking-wider px-4 shadow-lg active:scale-95 transition-all">
-                                                                Traiter
-                                                            </Button>
-                                                        )}
-                                                    </div>
+                                                    >
+                                                        {!alert.is_read && <span className="sr-only">Non lue : </span>}
+                                                        {alert.title}
+                                                    </h4>
+                                                    <StatusBadge label={severityInfo.label} tone={alert.is_resolved ? 'default' : severityInfo.tone} />
+                                                    {alert.is_resolved && <StatusBadge label="Résolue" tone="success" />}
+                                                </div>
+                                                <time
+                                                    dateTime={new Date(alert.created_at).toISOString()}
+                                                    title={formatDateTime(alert.created_at)}
+                                                    className="tabular shrink-0 text-xs text-muted-foreground"
+                                                >
+                                                    {formatRelative(alert.created_at)}
+                                                </time>
+                                            </div>
+
+                                            {alert.message && (
+                                                <p className="max-w-3xl text-sm text-muted-foreground">{alert.message}</p>
+                                            )}
+
+                                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                                <span className="text-xs text-muted-foreground">{typeInfo.label}</span>
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    {!alert.is_read && <MarkAlertReadButton alertId={alert.id} />}
+                                                    {entityHref && (alert.is_resolved ? (
+                                                        <Button asChild variant="ghost" size="sm" className="h-8">
+                                                            <Link href={entityHref}>Voir</Link>
+                                                        </Button>
+                                                    ) : (
+                                                        <Button asChild variant="outline" size="sm" className="h-8">
+                                                            <Link href={entityHref}>Traiter</Link>
+                                                        </Button>
+                                                    ))}
                                                 </div>
                                             </div>
                                         </div>
-                                    )
-                                })}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </main>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    </Panel>
+                )}
+            </PageShell>
         </div>
     )
 }

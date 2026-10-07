@@ -3,6 +3,8 @@
 // Usage :
 //   npm run admin:create -- <email> <motdepasse> "<Nom complet>"
 //   ex : npm run admin:create -- ops@bstock.ci "MotDePasseFort123!" "Djama Ops"
+//   Base locale (Docker) : npm run admin:create -- --dev <email> <motdepasse> "<Nom>"
+//   (sans --dev, le script vise la base de .env / .env.local, c.-à-d. la production)
 //
 // Si l'email existe déjà, le mot de passe et le nom sont mis à jour.
 
@@ -15,7 +17,9 @@ import { fileURLToPath } from 'node:url'
 const scriptsDir = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(scriptsDir, '..')
 
-for (const name of ['.env', '.env.local']) {
+const argv = process.argv.slice(2)
+const dev = argv.includes('--dev')
+for (const name of dev ? ['.env.development.local'] : ['.env', '.env.local']) {
   const p = join(projectRoot, name)
   if (!existsSync(p)) continue
   for (const line of readFileSync(p, 'utf8').split('\n')) {
@@ -30,7 +34,7 @@ for (const name of ['.env', '.env.local']) {
   }
 }
 
-const [email, password, ...nameParts] = process.argv.slice(2)
+const [email, password, ...nameParts] = argv.filter((a) => a !== '--dev')
 const fullName = nameParts.join(' ').trim()
 
 if (!email || !password || !fullName) {
@@ -47,7 +51,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 const pool = new pg.Pool({
-  connectionString: (() => {
+  connectionString: dev ? process.env.DATABASE_URL : (() => {
     const url = process.env.DATABASE_URL
     try {
       const u = new URL(url)
@@ -59,7 +63,7 @@ const pool = new pg.Pool({
       return url
     }
   })(),
-  ssl: { rejectUnauthorized: false },
+  ssl: dev ? false : { rejectUnauthorized: false },
   connectionTimeoutMillis: 20_000,
 })
 

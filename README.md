@@ -44,6 +44,8 @@ Voir `.env.example`. Ne jamais committer `.env.local`.
 | `NEXTAUTH_URL` | URL publique |
 | `GOOGLE_CLIENT_ID` / `SECRET` | OAuth |
 | `GENIUSPAY_*` | Paiements abonnement |
+| `CRON_SECRET` | Authentifie les tâches planifiées (rapprochement des paiements) |
+| `UPSTASH_REDIS_REST_*` | Limitation de débit partagée entre instances |
 
 ## Scripts
 
@@ -52,7 +54,8 @@ Voir `.env.example`. Ne jamais committer `.env.local`.
 | `npm run dev` | Serveur de développement |
 | `npm run build` | Build production |
 | `npm run start` | Serveur production |
-| `npm run lint` | ESLint |
+| `pnpm test` | Tests d’intégration (base Docker locale) |
+| `pnpm typecheck` | Vérification TypeScript |
 | `npm run db:migrate` | Applique `scripts/*.sql` |
 | `npm run admin:create` | Crée un platform admin |
 

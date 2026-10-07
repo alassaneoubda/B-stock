@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin } from '@/lib/admin-auth'
+import { requireAdmin } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 import { ensureUsersFullNameColumn } from '@/lib/ensure-users-schema'
 
 // GET /api/admin/users — Global user list across all tenants
 export async function GET(request: NextRequest) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('users.read')
   if (!authz.ok) return authz.response
 
   try {

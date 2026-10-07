@@ -1,100 +1,95 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { handleRouteError } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
+import { applyClientPayment, PAYMENT_METHODS } from '@/lib/domain/payments'
+
+function pagination(searchParams: URLSearchParams) {
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '100', 10) || 100, 1), 500)
+  const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0)
+  return { limit, offset }
+}
 
 // GET /api/payments — List payments
 export async function GET(request: NextRequest) {
-    try {
-        const authz = await requirePermission('payments.read')
-        if (!authz.ok) return authz.response
-        const { session } = authz
+  try {
+    const authz = await requirePermission('payments.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
 
-        const { searchParams } = new URL(request.url)
-        const clientId = searchParams.get('clientId')
-
-        let payments
-        if (clientId) {
-            payments = await sql`
-        SELECT p.*, c.name as client_name, so.order_number,
-               u.full_name as received_by_name
-        FROM payments p
-        LEFT JOIN clients c ON p.client_id = c.id
-        LEFT JOIN sales_orders so ON p.sales_order_id = so.id
-        LEFT JOIN users u ON p.received_by = u.id
-        WHERE p.company_id = ${session.user.companyId}
-          AND p.client_id = ${clientId}
-        ORDER BY p.created_at DESC
-      `
-        } else {
-            payments = await sql`
-        SELECT p.*, c.name as client_name, so.order_number,
-               u.full_name as received_by_name
-        FROM payments p
-        LEFT JOIN clients c ON p.client_id = c.id
-        LEFT JOIN sales_orders so ON p.sales_order_id = so.id
-        LEFT JOIN users u ON p.received_by = u.id
-        WHERE p.company_id = ${session.user.companyId}
-        ORDER BY p.created_at DESC
-        LIMIT 100
-      `
-        }
-
-        return NextResponse.json({ success: true, data: payments })
-    } catch (error) {
-        console.error('Error fetching payments:', error)
-        return NextResponse.json({ error: 'Erreur' }, { status: 500 })
+    const { searchParams } = new URL(request.url)
+    const clientIdParam = searchParams.get('clientId')
+    const clientId = isUuid(clientIdParam) ? clientIdParam : null
+    if (clientIdParam && !clientId) {
+      return NextResponse.json({ error: 'Client : identifiant invalide' }, { status: 400 })
     }
+    const { limit, offset } = pagination(searchParams)
+
+    const payments = await sql`
+      SELECT p.*, c.name as client_name, so.order_number,
+             u.full_name as received_by_name
+      FROM payments p
+      LEFT JOIN clients c ON p.client_id = c.id
+      LEFT JOIN sales_orders so ON p.sales_order_id = so.id
+      LEFT JOIN users u ON p.received_by = u.id
+      WHERE p.company_id = ${companyId}
+        AND (${clientId}::uuid IS NULL OR p.client_id = ${clientId}::uuid)
+      ORDER BY p.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `
+
+    return NextResponse.json({ success: true, data: payments })
+  } catch (error) {
+    return handleRouteError(error, 'payments.list')
+  }
 }
 
-// POST /api/payments — Record a standalone payment
+const paymentSchema = z.object({
+  clientId: z.string().uuid(),
+  salesOrderId: z.string().uuid().optional().nullable(),
+  amount: z.coerce.number().positive('Le montant doit être positif'),
+  paymentMethod: z.enum(PAYMENT_METHODS),
+  paymentType: z.enum(['product', 'packaging']).optional().default('product'),
+  reference: z.string().max(100).optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+})
+
+// POST /api/payments — Record a client payment (allocated to open credit notes)
 export async function POST(request: NextRequest) {
-    try {
-        const authz = await requirePermission('payments.write')
-        if (!authz.ok) return authz.response
-        const { session } = authz
+  try {
+    const authz = await requirePermission('payments.write')
+    if (!authz.ok) return authz.response
+    const { companyId, userId } = authz
 
-        const body = await request.json()
-        const { clientId, salesOrderId, amount, paymentMethod, paymentType, reference, notes } = body
+    const data = paymentSchema.parse(await request.json())
 
-        if (!clientId || !amount || !paymentMethod) {
-            return NextResponse.json({ error: 'Données manquantes' }, { status: 400 })
-        }
+    const result = await withTransaction((tx) =>
+      applyClientPayment(tx, {
+        companyId,
+        clientId: data.clientId,
+        amount: data.amount,
+        accountType: data.paymentType,
+        method: data.paymentMethod,
+        reference: data.reference || null,
+        notes: data.notes || null,
+        userId,
+        salesOrderId: data.salesOrderId || null,
+      })
+    )
 
-        const payments = await sql`
-      INSERT INTO payments (
-        company_id, client_id, sales_order_id, amount,
-        payment_method, payment_type, status, reference, notes, received_by
-      ) VALUES (
-        ${session.user.companyId}, ${clientId}, ${salesOrderId || null},
-        ${amount}, ${paymentMethod}, ${paymentType || 'product'},
-        'completed', ${reference || null}, ${notes || null}, ${session.user.id}
-      )
-      RETURNING *
-    `
-
-        // Update client account balance
-        await sql`
-      UPDATE client_accounts
-      SET balance = balance + ${amount}, last_transaction_at = NOW(), updated_at = NOW()
-      WHERE client_id = ${clientId} AND account_type = ${paymentType || 'product'}
-    `
-
-        // If linked to a sales order, update paid_amount
-        if (salesOrderId) {
-            await sql`
-        UPDATE sales_orders
-        SET paid_amount = paid_amount + ${amount}, updated_at = NOW()
-        WHERE id = ${salesOrderId}
-      `
-        }
-
-        return NextResponse.json({
-            success: true,
-            data: payments[0],
-            message: 'Paiement enregistré',
-        }, { status: 201 })
-    } catch (error) {
-        console.error('Error creating payment:', error)
-        return NextResponse.json({ error: 'Erreur lors de l\'enregistrement du paiement' }, { status: 500 })
-    }
+    return NextResponse.json(
+      {
+        success: true,
+        data: result.payment,
+        allocations: result.allocations,
+        warnings: result.warnings,
+        message: 'Paiement enregistré',
+      },
+      { status: 201 }
+    )
+  } catch (error) {
+    return handleRouteError(error, 'payments.create')
+  }
 }

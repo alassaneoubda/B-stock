@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
 import { useRouter } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,7 +18,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Truck, MapPin } from 'lucide-react'
+import { ArrowLeft, Loader2, Truck, MapPin, RotateCw } from 'lucide-react'
 import Link from 'next/link'
 
 interface Vehicle {
@@ -40,6 +43,7 @@ export default function NewDeliveryPage() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([])
     const [depots, setDepots] = useState<Depot[]>([])
     const [loadingData, setLoadingData] = useState(true)
+    const [loadError, setLoadError] = useState(false)
 
     // Form state
     const [tourDate, setTourDate] = useState(new Date().toISOString().split('T')[0])
@@ -51,26 +55,27 @@ export default function NewDeliveryPage() {
     // Validation
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
-    useEffect(() => {
-        async function fetchData() {
-            try {
-                const [vehiclesRes, depotsRes] = await Promise.all([
-                    fetch('/api/vehicles'),
-                    fetch('/api/depots'),
-                ])
-                const vehiclesData = await vehiclesRes.json()
-                const depotsData = await depotsRes.json()
-
-                setVehicles(vehiclesData.data || vehiclesData.vehicles || [])
-                setDepots(depotsData.data || depotsData.depots || [])
-            } catch (err) {
-                console.error('Error loading form data:', err)
-            } finally {
-                setLoadingData(false)
-            }
+    const loadFormData = useCallback(async () => {
+        setLoadingData(true)
+        setLoadError(false)
+        try {
+            const [vehiclesData, depotsData] = await Promise.all([
+                apiFetch('/api/vehicles'),
+                apiFetch('/api/depots'),
+            ])
+            setVehicles(vehiclesData?.data || vehiclesData?.vehicles || [])
+            setDepots(depotsData?.data || depotsData?.depots || [])
+        } catch (err) {
+            setLoadError(true)
+            toastError(err, 'Chargement des véhicules et dépôts impossible')
+        } finally {
+            setLoadingData(false)
         }
-        fetchData()
     }, [])
+
+    useEffect(() => {
+        loadFormData()
+    }, [loadFormData])
 
     // Auto-fill driver name when vehicle is selected
     useEffect(() => {
@@ -98,64 +103,65 @@ export default function NewDeliveryPage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/deliveries', {
+            const result = await apiFetch('/api/deliveries', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: {
                     tourDate,
                     driverName: driverName.trim(),
                     vehicleId: vehicleId || null,
                     depotId: depotId || null,
                     notes: notes.trim() || undefined,
-                }),
+                },
             })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            toast.success('Tournée planifiée')
+            toastWarnings(result?.warnings)
             router.push('/dashboard/deliveries')
             router.refresh()
-        } catch {
-            setError('Une erreur réseau est survenue.')
-        } finally {
+        } catch (err) {
+            // Erreur affichée en ligne au-dessus du formulaire
+            setError(errorMessage(err))
             setIsLoading(false)
         }
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Planifier une tournée"
                 description="Créer une nouvelle tournée de livraison"
             />
-            <main className="flex-1 p-4 lg:p-6 ">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
+            <PageShell>
+                <form onSubmit={onSubmit} className="mx-auto w-full max-w-3xl space-y-6">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
                         <Link href="/dashboard/deliveries">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Retour
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Livraisons
                         </Link>
                     </Button>
-                </div>
 
-                <form onSubmit={onSubmit} className="max-w-2xl space-y-6">
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
+                        <div role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
                             {error}
+                        </div>
+                    )}
+
+                    {loadError && (
+                        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm text-warning-foreground">
+                            <span>Les véhicules et dépôts n&apos;ont pas pu être chargés.</span>
+                            <Button type="button" size="sm" variant="outline" onClick={loadFormData}>
+                                <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
+                                Réessayer
+                            </Button>
                         </div>
                     )}
 
                     <Card>
                         <CardHeader>
-                            <CardTitle className="text-lg">Nouvelle tournée de livraison</CardTitle>
-                            <CardDescription>Renseignez les détails de la tournée</CardDescription>
+                            <CardTitle>Planning</CardTitle>
+                            <CardDescription>Date de départ et chauffeur responsable de la tournée.</CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="grid gap-4 sm:grid-cols-2">
+                        <CardContent>
+                            <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="tourDate">Date de la tournée *</Label>
                                     <Input
@@ -164,9 +170,10 @@ export default function NewDeliveryPage() {
                                         value={tourDate}
                                         onChange={e => setTourDate(e.target.value)}
                                         disabled={isLoading}
+                                        aria-invalid={!!fieldErrors.tourDate}
                                     />
                                     {fieldErrors.tourDate && (
-                                        <p className="text-sm text-destructive">{fieldErrors.tourDate}</p>
+                                        <p className="text-xs text-destructive">{fieldErrors.tourDate}</p>
                                     )}
                                 </div>
 
@@ -178,24 +185,37 @@ export default function NewDeliveryPage() {
                                         value={driverName}
                                         onChange={e => setDriverName(e.target.value)}
                                         disabled={isLoading}
+                                        aria-invalid={!!fieldErrors.driverName}
                                     />
-                                    {fieldErrors.driverName && (
-                                        <p className="text-sm text-destructive">{fieldErrors.driverName}</p>
+                                    {fieldErrors.driverName ? (
+                                        <p className="text-xs text-destructive">{fieldErrors.driverName}</p>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground">Prérempli avec le chauffeur habituel du véhicule.</p>
                                     )}
                                 </div>
                             </div>
+                        </CardContent>
+                    </Card>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Véhicule et dépôt</CardTitle>
+                            <CardDescription>Optionnels : véhicule utilisé et dépôt de départ des marchandises.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label>Véhicule</Label>
                                     {loadingData ? (
-                                        <div className="h-9 rounded-md border border-input bg-muted animate-pulse" />
+                                        <div className="h-9 animate-pulse rounded-lg border border-input bg-muted" aria-hidden="true" />
                                     ) : vehicles.length === 0 ? (
-                                        <p className="text-sm text-muted-foreground py-2">Aucun véhicule enregistré</p>
+                                        <p className="py-2 text-sm text-muted-foreground">
+                                            {loadError ? 'Liste indisponible' : 'Aucun véhicule enregistré'}
+                                        </p>
                                     ) : (
                                         <Select value={vehicleId} onValueChange={setVehicleId}>
-                                            <SelectTrigger className="w-full">
-                                                <Truck className="h-4 w-4 text-muted-foreground" />
+                                            <SelectTrigger className="w-full" aria-label="Véhicule">
+                                                <Truck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                                                 <SelectValue placeholder="Sélectionner un véhicule" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -212,13 +232,15 @@ export default function NewDeliveryPage() {
                                 <div className="space-y-2">
                                     <Label>Dépôt source</Label>
                                     {loadingData ? (
-                                        <div className="h-9 rounded-md border border-input bg-muted animate-pulse" />
+                                        <div className="h-9 animate-pulse rounded-lg border border-input bg-muted" aria-hidden="true" />
                                     ) : depots.length === 0 ? (
-                                        <p className="text-sm text-muted-foreground py-2">Aucun dépôt enregistré</p>
+                                        <p className="py-2 text-sm text-muted-foreground">
+                                            {loadError ? 'Liste indisponible' : 'Aucun dépôt enregistré'}
+                                        </p>
                                     ) : (
                                         <Select value={depotId} onValueChange={setDepotId}>
-                                            <SelectTrigger className="w-full">
-                                                <MapPin className="h-4 w-4 text-muted-foreground" />
+                                            <SelectTrigger className="w-full" aria-label="Dépôt source">
+                                                <MapPin className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                                                 <SelectValue placeholder="Sélectionner un dépôt" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -237,7 +259,7 @@ export default function NewDeliveryPage() {
                                 <Label htmlFor="notes">Notes</Label>
                                 <Textarea
                                     id="notes"
-                                    placeholder="Instructions particulières..."
+                                    placeholder="Instructions particulières…"
                                     value={notes}
                                     onChange={e => setNotes(e.target.value)}
                                     rows={3}
@@ -247,15 +269,15 @@ export default function NewDeliveryPage() {
                         </CardContent>
                     </Card>
 
-                    <div className="flex justify-end gap-3">
+                    <div className="flex justify-end gap-2">
                         <Button type="button" variant="outline" asChild disabled={isLoading}>
                             <Link href="/dashboard/deliveries">Annuler</Link>
                         </Button>
-                        <Button type="submit" disabled={isLoading}>
+                        <Button type="submit" variant="brand" disabled={isLoading}>
                             {isLoading ? (
                                 <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Création...
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                    Création…
                                 </>
                             ) : (
                                 'Planifier la tournée'
@@ -263,7 +285,7 @@ export default function NewDeliveryPage() {
                         </Button>
                     </div>
                 </form>
-            </main>
+            </PageShell>
         </div>
     )
 }

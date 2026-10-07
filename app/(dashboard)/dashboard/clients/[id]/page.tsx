@@ -1,10 +1,9 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { notFound } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
     Table,
     TableBody,
@@ -14,18 +13,21 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import {
+    ArrowLeft,
     Edit,
     Phone,
     MapPin,
     ShoppingCart,
-    Package,
-    CreditCard,
     Plus,
-    History,
     AlertTriangle,
+    ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { CollectDebtDialog } from '@/components/dashboard/collect-debt-dialog'
+import { isUuid } from '@/lib/tenant'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { balanceLabel } from '../balance-text'
 
 interface ClientDetail {
     id: string
@@ -47,17 +49,17 @@ interface ClientDetail {
     created_at: string
 }
 
+// Pas de try/catch : une panne de base doit afficher l'écran d'erreur, pas « introuvable ».
 async function getClientDetail(clientId: string, companyId: string): Promise<ClientDetail | null> {
-    try {
-        const clients = await sql`
+    const clients = await sql`
       SELECT
         c.*,
         COALESCE(
-          (SELECT balance FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'product'),
+          (SELECT SUM(balance) FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'product'),
           0
         ) as product_balance,
         COALESCE(
-          (SELECT balance FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'packaging'),
+          (SELECT SUM(balance) FROM client_accounts ca WHERE ca.client_id = c.id AND ca.account_type = 'packaging'),
           0
         ) as packaging_balance,
         COALESCE(
@@ -67,35 +69,28 @@ async function getClientDetail(clientId: string, companyId: string): Promise<Cli
       FROM clients c
       WHERE c.id = ${clientId} AND c.company_id = ${companyId}
     `
-        return (clients[0] as ClientDetail) || null
-    } catch {
-        return null
-    }
+    return (clients[0] as ClientDetail) || null
 }
 
-async function getClientOrders(clientId: string) {
-    try {
-        const orders = await sql`
+async function getClientOrders(clientId: string, companyId: string) {
+    return sql`
       SELECT id, order_number, subtotal, packaging_total, total_amount,
              paid_amount, paid_amount_products, paid_amount_packaging,
              payment_method, status, created_at
       FROM sales_orders
-      WHERE client_id = ${clientId}
+      WHERE client_id = ${clientId} AND company_id = ${companyId}
       ORDER BY created_at DESC
       LIMIT 10
     `
-        return orders
-    } catch {
-        return []
-    }
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
+const formatCurrency = formatMoney
+
+const paymentLabels: Record<string, string> = {
+    cash: 'Espèces',
+    mobile_money: 'Mobile Money',
+    credit: 'Crédit',
+    mixed: 'Mixte',
 }
 
 const typeLabels: Record<string, string> = {
@@ -106,11 +101,23 @@ const typeLabels: Record<string, string> = {
     subdepot: 'Sous-dépôt',
 }
 
-const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-    pending: { label: 'En attente', variant: 'secondary' },
-    confirmed: { label: 'Confirmée', variant: 'default' },
-    delivered: { label: 'Livrée', variant: 'default' },
-    cancelled: { label: 'Annulée', variant: 'destructive' },
+/** Jauge d'utilisation d'un plafond (libellé chiffré toujours affiché). */
+function UsageBar({ pct, alertClass }: { pct: number; alertClass: string }) {
+    return (
+        <div
+            className="h-1.5 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-valuenow={Math.round(pct)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Utilisation du plafond"
+        >
+            <div
+                className={cn('h-full rounded-full', pct >= 90 ? alertClass : 'bg-brand')}
+                style={{ width: `${pct}%` }}
+            />
+        </div>
+    )
 }
 
 export default async function ClientDetailPage({
@@ -119,12 +126,13 @@ export default async function ClientDetailPage({
     params: Promise<{ id: string }>
 }) {
     const { id } = await params
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
+    if (!isUuid(id)) notFound()
 
     const [client, orders] = await Promise.all([
         getClientDetail(id, companyId),
-        getClientOrders(id),
+        getClientOrders(id, companyId),
     ])
 
     if (!client) notFound()
@@ -135,273 +143,323 @@ export default async function ClientDetailPage({
     const packagingDebt = packagingBalance < 0 ? Math.abs(packagingBalance) : 0
     const creditPct = client.credit_limit > 0 ? Math.min((creditUsed / Number(client.credit_limit)) * 100, 100) : 0
     const packagingPct = client.packaging_credit_limit > 0 ? Math.min((packagingDebt / Number(client.packaging_credit_limit)) * 100, 100) : 0
+    const productLabel = balanceLabel(productBalance)
+    const packagingLabel = balanceLabel(packagingBalance)
+    const typeLabel = typeLabels[client.client_type] || client.client_type
+    const hasDebt = creditUsed > 0 || packagingDebt > 0
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title={client.name}
-                description={`${typeLabels[client.client_type] || client.client_type} — ${client.total_orders} commande${Number(client.total_orders) > 1 ? 's' : ''}`}
-                actions={
-                    <div className="flex gap-2 flex-wrap">
-                        <Button variant="outline" asChild>
-                            <Link href={`/dashboard/clients/${id}/edit`}>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Modifier
-                            </Link>
-                        </Button>
-                        {(creditUsed > 0 || packagingDebt > 0) && (
-                            <CollectDebtDialog
-                                clientId={id}
-                                clientName={client.name}
-                                productDebt={creditUsed}
-                                packagingDebt={packagingDebt}
-                            />
-                        )}
-                        <Button asChild>
-                            <Link href={`/dashboard/sales/new?client=${id}`}>
-                                <Plus className="h-4 w-4 mr-2" />
-                                Nouvelle vente
-                            </Link>
-                        </Button>
-                    </div>
-                }
+                description={`${typeLabel} — ${formatNumber(client.total_orders)} commande${Number(client.total_orders) > 1 ? 's' : ''}`}
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6">
-                {/* Total debt banner */}
-                {(creditUsed > 0 || packagingDebt > 0) && (
-                    <Card className="border-rose-200/60 bg-gradient-to-r from-rose-50 to-amber-50">
-                        <CardContent className="p-6">
-                            <div className="grid grid-cols-3 gap-6">
-                                <div>
-                                    <p className="text-xs font-bold uppercase tracking-wider text-rose-400">Dette Produits</p>
-                                    <p className="text-2xl font-semibold text-rose-600">{formatCurrency(creditUsed)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold uppercase tracking-wider text-amber-400">Dette Emballages</p>
-                                    <p className="text-2xl font-semibold text-amber-600">{formatCurrency(packagingDebt)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Dette Totale</p>
-                                    <p className="text-2xl font-semibold text-slate-950">{formatCurrency(creditUsed + packagingDebt)}</p>
-                                </div>
+            <PageShell>
+                <div className="space-y-3">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
+                        <Link href="/dashboard/clients">
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Clients
+                        </Link>
+                    </Button>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <h2 className="truncate text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                                    {client.name}
+                                </h2>
+                                <StatusBadge
+                                    label={client.is_active ? 'Actif' : 'Inactif'}
+                                    tone={client.is_active ? 'success' : 'default'}
+                                />
                             </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                <div className="grid gap-6 lg:grid-cols-3">
-                    {/* Info client */}
-                    <Card className="lg:col-span-1">
-                        <CardHeader>
-                            <CardTitle className="text-base">Informations</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="flex items-center gap-2">
-                                <Badge variant={client.is_active ? 'default' : 'secondary'}>
-                                    {client.is_active ? 'Actif' : 'Inactif'}
-                                </Badge>
-                                <Badge variant="outline">{typeLabels[client.client_type] || client.client_type}</Badge>
-                            </div>
-
-                            {client.phone && (
-                                <div className="flex items-center gap-2 text-sm">
-                                    <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                                    <a href={`tel:${client.phone}`} className="hover:text-accent transition-colors">
-                                        {client.phone}
-                                    </a>
-                                </div>
+                            <p className="text-sm text-muted-foreground">
+                                {typeLabel}
+                                {client.zone ? ` · ${client.zone}` : ''}
+                                {` · ${formatNumber(client.total_orders)} commande${Number(client.total_orders) > 1 ? 's' : ''}`}
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button variant="outline" asChild>
+                                <Link href={`/dashboard/clients/${id}/edit`}>
+                                    <Edit className="h-4 w-4" aria-hidden="true" />
+                                    Modifier
+                                </Link>
+                            </Button>
+                            <Button variant={hasDebt ? 'default' : 'brand'} asChild>
+                                <Link href={`/dashboard/sales/new?client=${id}`}>
+                                    <Plus className="h-4 w-4" aria-hidden="true" />
+                                    Nouvelle vente
+                                </Link>
+                            </Button>
+                            {hasDebt && (
+                                <CollectDebtDialog
+                                    clientId={id}
+                                    clientName={client.name}
+                                    productDebt={creditUsed}
+                                    packagingDebt={packagingDebt}
+                                />
                             )}
-                            {client.address && (
-                                <div className="flex items-start gap-2 text-sm">
-                                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                                    <span className="text-muted-foreground">{client.address}</span>
-                                </div>
-                            )}
-                            {client.zone && (
-                                <div className="text-sm">
-                                    <span className="text-muted-foreground">Zone : </span>
-                                    <span className="font-medium">{client.zone}</span>
-                                </div>
-                            )}
-                            {client.notes && (
-                                <div className="pt-2 border-t border-border/50">
-                                    <p className="text-xs text-muted-foreground">{client.notes}</p>
-                                </div>
-                            )}
-                            <div className="pt-2 border-t border-border/50 text-xs text-muted-foreground">
-                                Client depuis le {new Date(client.created_at).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Comptes */}
-                    <div className="lg:col-span-2 space-y-4">
-                        {/* Compte produits */}
-                        <Card className={creditPct >= 90 ? 'border-destructive/40' : ''}>
-                            <CardHeader className="pb-3">
-                                <div className="flex items-center justify-between">
-                                    <CardTitle className="text-base flex items-center gap-2">
-                                        <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-                                        Compte produits
-                                    </CardTitle>
-                                    {creditPct >= 90 && (
-                                        <AlertTriangle className="h-4 w-4 text-destructive" />
-                                    )}
-                                </div>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid grid-cols-3 gap-4">
-                                    <div>
-                                        <p className="text-xs text-muted-foreground">Solde</p>
-                                        <p className={`text-xl font-bold ${productBalance < 0 ? 'text-destructive' : 'text-success'}`}>
-                                            {productBalance < 0 ? `-${formatCurrency(Math.abs(productBalance))}` : formatCurrency(productBalance)}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                            {productBalance < 0 ? 'Doit' : 'Crédit'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-muted-foreground">Plafond crédit</p>
-                                        <p className="text-xl font-bold">{formatCurrency(Number(client.credit_limit))}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-muted-foreground">Utilisé</p>
-                                        <p className={`text-xl font-bold ${creditPct >= 90 ? 'text-destructive' : ''}`}>
-                                            {creditPct.toFixed(0)}%
-                                        </p>
-                                        <div className="mt-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full rounded-full transition-all ${creditPct >= 90 ? 'bg-destructive' : 'bg-accent'}`}
-                                                style={{ width: `${creditPct}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Compte emballages */}
-                        <Card className={packagingPct >= 90 ? 'border-warning/40' : ''}>
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-base flex items-center gap-2">
-                                    <Package className="h-4 w-4 text-muted-foreground" />
-                                    Compte emballages
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid grid-cols-3 gap-4">
-                                    <div>
-                                        <p className="text-xs text-muted-foreground">Solde emballages</p>
-                                        <p className={`text-xl font-bold ${packagingBalance < 0 ? 'text-warning-foreground' : 'text-success'}`}>
-                                            {packagingBalance < 0 ? `-${formatCurrency(Math.abs(packagingBalance))}` : formatCurrency(packagingBalance)}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                            {packagingBalance < 0 ? 'Casiers dus' : 'Crédit'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-muted-foreground">Plafond emballages</p>
-                                        <p className="text-xl font-bold">{formatCurrency(Number(client.packaging_credit_limit))}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-muted-foreground">Utilisé</p>
-                                        <p className={`text-xl font-bold ${packagingPct >= 90 ? 'text-warning-foreground' : ''}`}>
-                                            {packagingPct.toFixed(0)}%
-                                        </p>
-                                        <div className="mt-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full rounded-full transition-all ${packagingPct >= 90 ? 'bg-warning' : 'bg-accent'}`}
-                                                style={{ width: `${packagingPct}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
+                        </div>
                     </div>
                 </div>
 
-                {/* Historique des commandes */}
-                <Card>
-                    <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="flex items-center gap-2">
-                                <History className="h-4 w-4" />
-                                Dernières commandes
-                            </CardTitle>
-                            <Button variant="outline" size="sm" asChild>
-                                <Link href={`/dashboard/sales?client=${id}`}>
-                                    Voir tout
-                                </Link>
-                            </Button>
+                <div className="grid gap-4 lg:grid-cols-3">
+                    {/* Contenu principal (2/3) */}
+                    <div className="space-y-4 lg:col-span-2">
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {/* Compte produits */}
+                            <Panel
+                                title="Compte produits"
+                                action={creditPct >= 90 ? <StatusBadge label="Plafond presque atteint" tone="danger" /> : undefined}
+                                bodyClassName="space-y-4 p-5"
+                            >
+                                <div>
+                                    <p className={cn(
+                                        'tabular text-2xl font-semibold tracking-tight',
+                                        productLabel.tone === 'debt' ? 'text-destructive' : productLabel.tone === 'credit' ? 'text-success' : 'text-foreground'
+                                    )}>
+                                        {productLabel.text}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">
+                                        {productLabel.tone === 'debt' ? 'Le client vous doit ce montant' : productLabel.tone === 'credit' ? 'Avance du client' : 'Aucune dette'}
+                                    </p>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <div className="flex items-baseline justify-between text-xs">
+                                        <span className="text-muted-foreground">
+                                            Plafond <span className="tabular text-foreground">{formatCurrency(Number(client.credit_limit))}</span>
+                                        </span>
+                                        <span className={cn('tabular font-medium', creditPct >= 90 ? 'text-destructive' : 'text-foreground')}>
+                                            {creditPct.toFixed(0)} % utilisé
+                                        </span>
+                                    </div>
+                                    <UsageBar pct={creditPct} alertClass="bg-destructive" />
+                                </div>
+                            </Panel>
+
+                            {/* Compte emballages */}
+                            <Panel
+                                title="Compte emballages"
+                                action={packagingPct >= 90 ? <StatusBadge label="Plafond presque atteint" tone="warning" /> : undefined}
+                                bodyClassName="space-y-4 p-5"
+                            >
+                                <div>
+                                    <p className={cn(
+                                        'tabular text-2xl font-semibold tracking-tight',
+                                        packagingLabel.tone === 'debt' ? 'text-warning-foreground' : packagingLabel.tone === 'credit' ? 'text-success' : 'text-foreground'
+                                    )}>
+                                        {packagingLabel.text}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">
+                                        {packagingLabel.tone === 'debt' ? 'Consignes dues' : packagingLabel.tone === 'credit' ? 'Avance du client' : 'Aucune consigne due'}
+                                    </p>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <div className="flex items-baseline justify-between text-xs">
+                                        <span className="text-muted-foreground">
+                                            Plafond <span className="tabular text-foreground">{formatCurrency(Number(client.packaging_credit_limit))}</span>
+                                        </span>
+                                        <span className={cn('tabular font-medium', packagingPct >= 90 ? 'text-warning-foreground' : 'text-foreground')}>
+                                            {packagingPct.toFixed(0)} % utilisé
+                                        </span>
+                                    </div>
+                                    <UsageBar pct={packagingPct} alertClass="bg-warning" />
+                                </div>
+                            </Panel>
                         </div>
-                    </CardHeader>
-                    <CardContent>
-                        {orders.length === 0 ? (
-                            <div className="text-center py-8">
-                                <ShoppingCart className="h-10 w-10 mx-auto text-muted-foreground/40" />
-                                <p className="text-sm text-muted-foreground mt-3">Aucune commande pour ce client</p>
-                                <Button size="sm" className="mt-3" asChild>
-                                    <Link href={`/dashboard/sales/new?client=${id}`}>
-                                        <Plus className="h-4 w-4 mr-2" />
-                                        Créer une vente
-                                    </Link>
-                                </Button>
-                            </div>
-                        ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Commande</TableHead>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Paiement</TableHead>
-                                        <TableHead className="text-right">Montant</TableHead>
-                                        <TableHead className="text-right">Reste</TableHead>
-                                        <TableHead>Statut</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {orders.map((order: any) => {
-                                        const remaining = Number(order.total_amount) - Number(order.paid_amount)
-                                        const status = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const }
-                                        return (
-                                            <TableRow key={order.id}>
-                                                <TableCell>
-                                                    <Link href={`/dashboard/sales/${order.id}`} className="font-mono text-sm font-medium hover:text-accent transition-colors">
-                                                        {order.order_number}
+
+                        {/* Historique des commandes */}
+                        <Panel
+                            title="Dernières commandes"
+                            description="Les 10 plus récentes"
+                            action={orders.length > 0 ? { label: 'Voir tout', href: `/dashboard/sales?client=${id}` } : undefined}
+                        >
+                            {orders.length === 0 ? (
+                                <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+                                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                        <ShoppingCart className="h-5 w-5" aria-hidden="true" />
+                                    </div>
+                                    <p className="text-sm text-muted-foreground">Aucune commande pour ce client.</p>
+                                    <Button size="sm" variant="outline" asChild>
+                                        <Link href={`/dashboard/sales/new?client=${id}`}>
+                                            <Plus className="h-4 w-4" aria-hidden="true" />
+                                            Créer une vente
+                                        </Link>
+                                    </Button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="hidden overflow-x-auto md:block">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead className="pl-5">Commande</TableHead>
+                                                    <TableHead>Date</TableHead>
+                                                    <TableHead>Paiement</TableHead>
+                                                    <TableHead className="text-right">Montant</TableHead>
+                                                    <TableHead className="text-right">Reste</TableHead>
+                                                    <TableHead className="pr-5">Statut</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {orders.map((order: any) => {
+                                                    const remaining = Number(order.total_amount) - Number(order.paid_amount)
+                                                    return (
+                                                        <TableRow key={order.id}>
+                                                            <TableCell className="pl-5">
+                                                                <Link
+                                                                    href={`/dashboard/sales/${order.id}`}
+                                                                    className="rounded-sm font-mono text-sm font-medium text-foreground transition-colors hover:text-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                                >
+                                                                    {order.order_number}
+                                                                </Link>
+                                                            </TableCell>
+                                                            <TableCell className="tabular text-sm text-muted-foreground">
+                                                                {formatDate(order.created_at)}
+                                                            </TableCell>
+                                                            <TableCell className="text-sm text-foreground">
+                                                                {paymentLabels[order.payment_method] || order.payment_method || '—'}
+                                                            </TableCell>
+                                                            <TableCell className="tabular text-right text-sm font-medium">
+                                                                {formatCurrency(Number(order.total_amount))}
+                                                            </TableCell>
+                                                            <TableCell className="tabular text-right text-sm">
+                                                                {order.status === 'cancelled' ? (
+                                                                    <span className="text-muted-foreground">—</span>
+                                                                ) : remaining > 0 ? (
+                                                                    <span className="font-medium text-destructive">{formatCurrency(remaining)}</span>
+                                                                ) : (
+                                                                    <span className="text-success">Soldé</span>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell className="pr-5">
+                                                                <StatusBadge status={order.status} />
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    )
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+
+                                    <ul className="divide-y divide-border md:hidden">
+                                        {orders.map((order: any) => {
+                                            const remaining = Number(order.total_amount) - Number(order.paid_amount)
+                                            return (
+                                                <li key={order.id}>
+                                                    <Link
+                                                        href={`/dashboard/sales/${order.id}`}
+                                                        className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                                                    >
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="truncate font-mono text-sm font-medium text-foreground">{order.order_number}</p>
+                                                                <StatusBadge status={order.status} />
+                                                            </div>
+                                                            <p className="mt-0.5 text-xs text-muted-foreground">
+                                                                {formatDate(order.created_at)} · {paymentLabels[order.payment_method] || order.payment_method || '—'}
+                                                            </p>
+                                                        </div>
+                                                        <div className="shrink-0 text-right">
+                                                            <p className="tabular text-sm font-medium text-foreground">{formatCurrency(Number(order.total_amount))}</p>
+                                                            {order.status !== 'cancelled' && (
+                                                                <p className={cn('tabular text-xs', remaining > 0 ? 'text-destructive' : 'text-success')}>
+                                                                    {remaining > 0 ? `Reste ${formatCurrency(remaining)}` : 'Soldé'}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                                                     </Link>
-                                                </TableCell>
-                                                <TableCell className="text-sm text-muted-foreground">
-                                                    {new Date(order.created_at).toLocaleDateString('fr-FR')}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge variant="outline" className="text-xs">
-                                                        {order.payment_method === 'cash' ? 'Espèces' :
-                                                            order.payment_method === 'mobile_money' ? 'Mobile Money' :
-                                                                order.payment_method === 'credit' ? 'Crédit' : order.payment_method || '-'}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="text-right font-medium">
-                                                    {formatCurrency(Number(order.total_amount))}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <span className={remaining > 0 ? 'text-destructive font-medium' : 'text-success'}>
-                                                        {remaining > 0 ? formatCurrency(remaining) : '✓'}
-                                                    </span>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge variant={status.variant}>{status.label}</Badge>
-                                                </TableCell>
-                                            </TableRow>
-                                        )
-                                    })}
-                                </TableBody>
-                            </Table>
+                                                </li>
+                                            )
+                                        })}
+                                    </ul>
+                                </>
+                            )}
+                        </Panel>
+                    </div>
+
+                    {/* Résumé (1/3) */}
+                    <div className="space-y-4">
+                        {hasDebt && (
+                            <Panel
+                                title="Dette totale"
+                                action={<AlertTriangle className="h-4 w-4 text-destructive" aria-hidden="true" />}
+                                bodyClassName="space-y-3 p-5"
+                            >
+                                <p className="tabular text-2xl font-semibold tracking-tight text-foreground">
+                                    {formatCurrency(creditUsed + packagingDebt)}
+                                </p>
+                                <dl className="space-y-2 text-sm">
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Produits</dt>
+                                        <dd className="tabular font-medium text-destructive">{formatCurrency(creditUsed)}</dd>
+                                    </div>
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Emballages</dt>
+                                        <dd className="tabular font-medium text-warning-foreground">{formatCurrency(packagingDebt)}</dd>
+                                    </div>
+                                </dl>
+                            </Panel>
                         )}
-                    </CardContent>
-                </Card>
-            </main>
+
+                        <Panel title="Informations" bodyClassName="divide-y divide-border">
+                            <dl className="space-y-3 p-5 text-sm">
+                                <div className="flex justify-between gap-3">
+                                    <dt className="text-muted-foreground">Type</dt>
+                                    <dd className="text-right font-medium text-foreground">{typeLabel}</dd>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                    <dt className="text-muted-foreground">Zone</dt>
+                                    <dd className="text-right font-medium text-foreground">{client.zone || '—'}</dd>
+                                </div>
+                                {client.contact_name && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Contact</dt>
+                                        <dd className="text-right font-medium text-foreground">{client.contact_name}</dd>
+                                    </div>
+                                )}
+                                {client.phone && (
+                                    <div className="flex items-center justify-between gap-3">
+                                        <dt className="flex items-center gap-1.5 text-muted-foreground">
+                                            <Phone className="h-3.5 w-3.5" aria-hidden="true" />
+                                            Téléphone
+                                        </dt>
+                                        <dd>
+                                            <a
+                                                href={`tel:${client.phone}`}
+                                                className="tabular rounded-sm font-medium text-foreground transition-colors hover:text-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            >
+                                                {client.phone}
+                                            </a>
+                                        </dd>
+                                    </div>
+                                )}
+                                {client.address && (
+                                    <div className="space-y-1">
+                                        <dt className="flex items-center gap-1.5 text-muted-foreground">
+                                            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                                            Adresse
+                                        </dt>
+                                        <dd className="text-foreground">{client.address}</dd>
+                                    </div>
+                                )}
+                            </dl>
+                            {client.notes && (
+                                <div className="space-y-1 p-5">
+                                    <p className="text-xs font-medium text-muted-foreground">Notes</p>
+                                    <p className="whitespace-pre-line text-sm text-foreground">{client.notes}</p>
+                                </div>
+                            )}
+                            <p className="px-5 py-3 text-xs text-muted-foreground">
+                                Client depuis le {formatDate(client.created_at)}
+                            </p>
+                        </Panel>
+                    </div>
+                </div>
+            </PageShell>
         </div>
     )
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 
 const priceSchema = z.object({
@@ -22,6 +22,7 @@ const patchSchema = z.object({
   features: z.record(z.unknown()).optional().nullable(),
   is_active: z.boolean().optional(),
   is_public: z.boolean().optional(),
+  pricing_type: z.enum(['paid', 'free', 'on_quote']).optional(),
   is_popular: z.boolean().optional(),
   sort_order: z.coerce.number().int().optional(),
   checkout_prices: z.array(priceSchema).optional().nullable(),
@@ -33,7 +34,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.write')
   if (!authz.ok) return authz.response
 
   try {
@@ -58,6 +59,7 @@ export async function PATCH(
         features = COALESCE(${d.features ? JSON.stringify(d.features) : null}, features),
         is_active = COALESCE(${d.is_active ?? null}, is_active),
         is_public = COALESCE(${d.is_public ?? null}, is_public),
+        pricing_type = COALESCE(${d.pricing_type ?? null}, pricing_type),
         is_popular = COALESCE(${d.is_popular ?? null}, is_popular),
         sort_order = COALESCE(${d.sort_order ?? null}, sort_order),
         checkout_prices = COALESCE(${d.checkout_prices ? JSON.stringify(d.checkout_prices) : null}::jsonb, checkout_prices),
@@ -81,7 +83,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.write')
   if (!authz.ok) return authz.response
 
   try {

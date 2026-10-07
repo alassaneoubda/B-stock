@@ -1,9 +1,10 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, StatCard, StatusBadge } from '@/components/app/blocks'
+import { EmptyState } from '@/components/states'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import {
     Table,
     TableBody,
@@ -27,9 +28,17 @@ import {
     TrendingUp,
     Banknote,
     CreditCard,
-    Clock,
+    Search,
+    ChevronLeft,
+    ChevronRight,
+    X,
+    BarChart3,
 } from 'lucide-react'
 import Link from 'next/link'
+import { formatDateShort, formatDateTime, formatMoney } from '@/lib/format'
+import { isUuid } from '@/lib/tenant'
+
+const PAGE_SIZE = 50
 
 interface SaleOrder {
     id: string
@@ -44,10 +53,12 @@ interface SaleOrder {
     created_at: string
 }
 
+// Pas de try/catch : une panne de base doit afficher l'écran d'erreur
+// (dashboard/error.tsx) et non des KPI à zéro trompeurs.
 async function getSalesStats(companyId: string) {
-    try {
-        const todayStats = await sql`
-      SELECT 
+    const [todayStats, monthStats, pendingCredit] = await Promise.all([
+        sql`
+      SELECT
         COALESCE(SUM(total_amount), 0) as total,
         COALESCE(SUM(paid_amount), 0) as paid,
         COUNT(*) as count
@@ -55,44 +66,45 @@ async function getSalesStats(companyId: string) {
       WHERE company_id = ${companyId}
         AND DATE(created_at) = CURRENT_DATE
         AND status != 'cancelled'
-    `
-
-        const monthStats = await sql`
-      SELECT 
+    `,
+        sql`
+      SELECT
         COALESCE(SUM(total_amount), 0) as total,
         COUNT(*) as count
       FROM sales_orders
       WHERE company_id = ${companyId}
         AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
         AND status != 'cancelled'
-    `
-
-        const pendingCredit = await sql`
-      SELECT COALESCE(SUM(total_amount - paid_amount), 0) as amount
-      FROM sales_orders
+    `,
+        // Encours = reste dû des créances ouvertes (inclut les ventes « mixte »)
+        sql`
+      SELECT COALESCE(SUM(total_amount - COALESCE(paid_amount, 0)), 0) as amount
+      FROM credit_notes
       WHERE company_id = ${companyId}
-        AND payment_method = 'credit'
-        AND status != 'cancelled'
-        AND total_amount > paid_amount
-    `
+        AND status IN ('pending', 'partial', 'overdue')
+    `,
+    ])
 
-        return {
-            todayTotal: Number(todayStats[0]?.total || 0),
-            todayPaid: Number(todayStats[0]?.paid || 0),
-            todayCount: Number(todayStats[0]?.count || 0),
-            monthTotal: Number(monthStats[0]?.total || 0),
-            monthCount: Number(monthStats[0]?.count || 0),
-            pendingCredit: Number(pendingCredit[0]?.amount || 0),
-        }
-    } catch {
-        return { todayTotal: 0, todayPaid: 0, todayCount: 0, monthTotal: 0, monthCount: 0, pendingCredit: 0 }
+    return {
+        todayTotal: Number(todayStats[0]?.total || 0),
+        todayPaid: Number(todayStats[0]?.paid || 0),
+        todayCount: Number(todayStats[0]?.count || 0),
+        monthTotal: Number(monthStats[0]?.total || 0),
+        monthCount: Number(monthStats[0]?.count || 0),
+        pendingCredit: Number(pendingCredit[0]?.amount || 0),
     }
 }
 
-async function getSalesOrders(companyId: string): Promise<SaleOrder[]> {
-    try {
-        const orders = await sql`
-      SELECT 
+async function getSalesOrders(
+    companyId: string,
+    q: string | null,
+    page: number,
+    clientId: string | null
+): Promise<{ orders: SaleOrder[]; hasMore: boolean }> {
+    const search = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null
+    const offset = (page - 1) * PAGE_SIZE
+    const rows = await sql`
+      SELECT
         so.id,
         so.order_number,
         so.total_amount,
@@ -106,31 +118,17 @@ async function getSalesOrders(companyId: string): Promise<SaleOrder[]> {
       FROM sales_orders so
       LEFT JOIN clients c ON so.client_id = c.id
       WHERE so.company_id = ${companyId}
+        AND (${search}::text IS NULL OR so.order_number ILIKE ${search}::text OR c.name ILIKE ${search}::text)
+        AND (${clientId}::uuid IS NULL OR so.client_id = ${clientId}::uuid)
       ORDER BY so.created_at DESC
-      LIMIT 100
+      LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}
     `
-        return orders as SaleOrder[]
-    } catch {
-        return []
+    return {
+        orders: rows.slice(0, PAGE_SIZE) as SaleOrder[],
+        hasMore: rows.length > PAGE_SIZE,
     }
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
-}
-
-const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-    pending: { label: 'En attente', variant: 'secondary' },
-    confirmed: { label: 'Confirmée', variant: 'default' },
-    preparing: { label: 'En préparation', variant: 'outline' },
-    ready: { label: 'Prête', variant: 'default' },
-    delivered: { label: 'Livrée', variant: 'default' },
-    cancelled: { label: 'Annulée', variant: 'destructive' },
-}
 
 const paymentConfig: Record<string, { label: string }> = {
     cash: { label: 'Espèces' },
@@ -139,254 +137,295 @@ const paymentConfig: Record<string, { label: string }> = {
     mixed: { label: 'Mixte' },
 }
 
-export default async function SalesPage() {
-    const session = await auth()
+function pageHref(q: string | null, page: number, clientId: string | null) {
+    const params = new URLSearchParams()
+    if (q) params.set('q', q)
+    if (clientId) params.set('client', clientId)
+    if (page > 1) params.set('page', String(page))
+    const qs = params.toString()
+    return qs ? `/dashboard/sales?${qs}` : '/dashboard/sales'
+}
+
+export default async function SalesPage({
+    searchParams,
+}: {
+    searchParams: Promise<{ q?: string | string[]; page?: string | string[]; client?: string | string[] }>
+}) {
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
-    const [stats, orders] = await Promise.all([
+    const sp = await searchParams
+    const rawQ = Array.isArray(sp.q) ? sp.q[0] : sp.q
+    const q = rawQ?.trim().slice(0, 100) || null
+    const rawPage = Number(Array.isArray(sp.page) ? sp.page[0] : sp.page)
+    const page = Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1
+    const rawClient = Array.isArray(sp.client) ? sp.client[0] : sp.client
+    const clientId = isUuid(rawClient) ? rawClient : null
+    const [stats, { orders, hasMore }] = await Promise.all([
         getSalesStats(companyId),
-        getSalesOrders(companyId),
+        getSalesOrders(companyId, q, page, clientId),
     ])
 
-    const statCards = [
-        {
-            title: "Ventes aujourd'hui",
-            value: formatCurrency(stats.todayTotal),
-            description: `${stats.todayCount} commande${stats.todayCount > 1 ? 's' : ''}`,
-            icon: ShoppingCart,
-            color: 'bg-blue-500/10 text-blue-600',
-            trend: '+12.5%'
-        },
-        {
-            title: 'Encaissé aujourd\'hui',
-            value: formatCurrency(stats.todayPaid),
-            description: 'Flux de trésorerie',
-            icon: Banknote,
-            color: 'bg-emerald-500/10 text-emerald-600',
-            trend: '+8.2%'
-        },
-        {
-            title: 'Performance mensuelle',
-            value: formatCurrency(stats.monthTotal),
-            description: `${stats.monthCount} commandes`,
-            icon: TrendingUp,
-            color: 'bg-indigo-500/10 text-indigo-600',
-            trend: '+24%'
-        },
-        {
-            title: 'Encours clients',
-            value: formatCurrency(stats.pendingCredit),
-            description: 'Ventes à crédit',
-            icon: CreditCard,
-            color: 'bg-rose-500/10 text-rose-600',
-            trend: '-5.1%'
-        },
-    ]
+    const filtered = Boolean(q || clientId)
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Ventes"
+                description="Historique des ventes et encaissements"
                 actions={
-                    <Button size="sm" asChild className="h-8 px-3 text-xs font-medium">
-                        <Link href="/dashboard/sales/new" className="flex items-center gap-1.5">
-                            <Plus className="h-3.5 w-3.5" />
-                            Nouvelle vente
+                    <Button variant="brand" size="sm" asChild className="h-9 rounded-lg px-3">
+                        <Link href="/dashboard/sales/new" aria-label="Nouvelle vente">
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                            <span className="hidden sm:inline">Nouvelle vente</span>
                         </Link>
                     </Button>
                 }
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6">
-                {/* Stats */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    {statCards.map((stat) => (
-                        <div key={stat.title} className="bg-white rounded-lg border border-zinc-200/80 p-4">
-                            <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-medium text-zinc-500">{stat.title}</span>
-                                <stat.icon className="h-3.5 w-3.5 text-zinc-400" />
-                            </div>
-                            <p className="text-xl font-bold text-zinc-950 tracking-tight">{stat.value}</p>
-                            <p className="text-xs text-zinc-500 mt-1">{stat.description}</p>
-                        </div>
-                    ))}
+            <PageShell>
+                {/* Indicateurs */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <StatCard
+                        emphasis
+                        label="Ventes du jour"
+                        value={formatMoney(stats.todayTotal)}
+                        hint={`${stats.todayCount} vente${stats.todayCount > 1 ? 's' : ''}`}
+                        icon={ShoppingCart}
+                    />
+                    <StatCard
+                        label="Encaissé aujourd’hui"
+                        value={formatMoney(stats.todayPaid)}
+                        hint="Paiements reçus sur les ventes du jour"
+                        icon={Banknote}
+                        tone="success"
+                    />
+                    <StatCard
+                        label="Ce mois-ci"
+                        value={formatMoney(stats.monthTotal)}
+                        hint={`${stats.monthCount} vente${stats.monthCount > 1 ? 's' : ''}`}
+                        icon={TrendingUp}
+                        tone="info"
+                    />
+                    <StatCard
+                        label="Encours clients"
+                        value={formatMoney(stats.pendingCredit)}
+                        hint="Créances restant dues"
+                        icon={CreditCard}
+                        tone={stats.pendingCredit > 0 ? 'warning' : 'default'}
+                        href="/dashboard/credits"
+                    />
                 </div>
 
-                {/* Orders Table */}
-                <div className="bg-white rounded-lg border border-zinc-200/80 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-zinc-100 flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-zinc-950">Historique des ventes</h3>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500" asChild>
-                            <Link href="/dashboard/reports">Voir les rapports</Link>
-                        </Button>
-                    </div>
-
-                    {orders.length === 0 ? (
-                        <div className="text-center py-16 flex flex-col items-center px-4">
-                            <div className="h-12 w-12 rounded-lg bg-zinc-100 flex items-center justify-center mb-4">
-                                <ShoppingCart className="h-6 w-6 text-zinc-400" />
-                            </div>
-                            <h3 className="text-sm font-semibold text-zinc-950">Aucune commande</h3>
-                            <p className="mt-1 text-sm text-zinc-500 max-w-xs">
-                                Enregistrez des ventes pour voir votre historique ici.
-                            </p>
-                            <Button size="sm" className="mt-4 h-11 px-6" asChild>
-                                <Link href="/dashboard/sales/new">
-                                    <Plus className="h-3.5 w-3.5 mr-1.5" />
-                                    Créer une vente
+                {/* Barre d'outils */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-1 flex-wrap items-center gap-2">
+                        <form action="/dashboard/sales" method="get" role="search" className="relative w-full sm:max-w-sm">
+                            {clientId && <input type="hidden" name="client" value={clientId} />}
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                            <Input
+                                type="search"
+                                name="q"
+                                defaultValue={q ?? ''}
+                                placeholder="N° de vente ou client…"
+                                aria-label="Rechercher une vente par numéro ou client"
+                                className="h-10 rounded-lg bg-card pl-9"
+                            />
+                        </form>
+                        {clientId && (
+                            <Button variant="outline" size="sm" className="h-10 rounded-lg" asChild>
+                                <Link href={pageHref(q, 1, null)}>
+                                    <X className="h-4 w-4" aria-hidden="true" />
+                                    Retirer le filtre client
                                 </Link>
                             </Button>
-                        </div>
-                    ) : (
-                        <>
-                            {/* Desktop table */}
-                            <div className="hidden md:block overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow className="hover:bg-transparent">
-                                            <TableHead className="text-xs font-medium text-zinc-500 pl-4">Référence</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Client</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Paiement</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Montant</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500 text-right">Reste</TableHead>
-                                            <TableHead className="text-xs font-medium text-zinc-500">Statut</TableHead>
-                                            <TableHead className="pr-4"></TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {orders.map((order) => {
-                                            const remaining = Number(order.total_amount) - Number(order.paid_amount)
-                                            const status = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const }
-                                            const payment = paymentConfig[order.payment_method ?? ''] || { label: order.payment_method || '-' }
+                        )}
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-10 rounded-lg text-muted-foreground" asChild>
+                        <Link href="/dashboard/reports">
+                            <BarChart3 className="h-4 w-4" aria-hidden="true" />
+                            Rapports
+                        </Link>
+                    </Button>
+                </div>
 
-                                            return (
-                                                <TableRow key={order.id} className="group">
-                                                    <TableCell className="pl-4">
-                                                        <div>
-                                                            <span className="text-sm font-medium text-zinc-950 font-mono">{order.order_number}</span>
-                                                            <p className="text-xs text-zinc-400">
-                                                                {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                                                            </p>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell>
+                {orders.length === 0 && (filtered || page > 1) ? (
+                    <EmptyState
+                        icon={Search}
+                        title="Aucune vente trouvée"
+                        description={q ? `Aucun résultat pour « ${q} ».` : clientId ? 'Aucune vente pour ce client.' : 'Cette page est vide.'}
+                        action={{ label: 'Voir toutes les ventes', href: '/dashboard/sales' }}
+                        className="bg-card"
+                    />
+                ) : orders.length === 0 ? (
+                    <EmptyState
+                        icon={ShoppingCart}
+                        title="Aucune vente pour le moment"
+                        description="Enregistrez une première vente pour voir votre historique ici."
+                        action={{ label: 'Nouvelle vente', href: '/dashboard/sales/new' }}
+                        className="bg-card"
+                    />
+                ) : (
+                    <section className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+                        <div className="border-b border-border px-5 py-3.5">
+                            <h2 className="text-[15px] font-semibold tracking-tight text-foreground">Historique des ventes</h2>
+                            <p className="text-xs text-muted-foreground">
+                                {filtered ? 'Résultats filtrés' : 'Les plus récentes en premier'}
+                            </p>
+                        </div>
+
+                        {/* Tableau (écran large) */}
+                        <div className="hidden md:block">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="pl-5">Référence</TableHead>
+                                        <TableHead>Client</TableHead>
+                                        <TableHead>Paiement</TableHead>
+                                        <TableHead className="text-right">Montant</TableHead>
+                                        <TableHead className="text-right">Reste dû</TableHead>
+                                        <TableHead>Statut</TableHead>
+                                        <TableHead className="w-12 pr-5"><span className="sr-only">Actions</span></TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {orders.map((order) => {
+                                        const remaining = Number(order.total_amount) - Number(order.paid_amount)
+                                        const payment = paymentConfig[order.payment_method ?? ''] || { label: order.payment_method || '—' }
+
+                                        return (
+                                            <TableRow key={order.id} className="relative cursor-pointer">
+                                                <TableCell className="pl-5">
+                                                    {/* Lien étendu : toute la ligne mène au détail */}
+                                                    <Link
+                                                        href={`/dashboard/sales/${order.id}`}
+                                                        className="font-mono text-sm font-medium text-foreground outline-none after:absolute after:inset-0 focus-visible:underline"
+                                                    >
+                                                        {order.order_number}
+                                                    </Link>
+                                                    <p className="tabular text-xs text-muted-foreground">{formatDateShort(order.created_at)}</p>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {order.client_id ? (
                                                         <Link
                                                             href={`/dashboard/clients/${order.client_id}`}
-                                                            className="text-sm font-medium text-zinc-700 hover:text-zinc-950 transition-colors"
+                                                            className="relative z-10 text-sm text-foreground transition-colors hover:text-brand-strong hover:underline"
                                                         >
                                                             {order.client_name || 'Client passager'}
                                                         </Link>
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
-                                                            {payment.label}
-                                                        </span>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        <span className="text-sm font-semibold text-zinc-950">
-                                                            {formatCurrency(Number(order.total_amount))}
-                                                        </span>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        {remaining > 0 ? (
-                                                            <span className="text-sm font-medium text-red-600">{formatCurrency(remaining)}</span>
-                                                        ) : (
-                                                            <span className="text-xs font-medium text-emerald-600">Soldé</span>
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge
-                                                            variant={status.variant}
-                                                            className={`text-[10px] font-medium ${status.variant === 'secondary' ? 'bg-zinc-100 text-zinc-600' :
-                                                                status.variant === 'destructive' ? 'bg-red-50 text-red-600' :
-                                                                    'bg-blue-50 text-blue-600'
-                                                                } border-none`}
-                                                        >
-                                                            {status.label}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="pr-4 text-right">
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-md">
-                                                                    <MoreHorizontal className="h-4 w-4 text-zinc-400" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-48">
-                                                                <DropdownMenuItem asChild className="cursor-pointer">
-                                                                    <Link href={`/dashboard/sales/${order.id}`} className="flex items-center gap-2">
-                                                                        <Eye className="h-4 w-4 text-zinc-500" />
-                                                                        <span className="text-sm">Voir le détail</span>
-                                                                    </Link>
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem asChild className="cursor-pointer">
-                                                                    <Link href={`/dashboard/invoices/${order.id}`} className="flex items-center gap-2">
-                                                                        <FileText className="h-4 w-4 text-zinc-500" />
-                                                                        <span className="text-sm">Facture</span>
-                                                                    </Link>
-                                                                </DropdownMenuItem>
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
-                                                    </TableCell>
-                                                </TableRow>
-                                            )
-                                        })}
-                                    </TableBody>
-                                </Table>
-                            </div>
-
-                            {/* Mobile cards */}
-                            <div className="md:hidden divide-y divide-zinc-100">
-                                {orders.map((order) => {
-                                    const remaining = Number(order.total_amount) - Number(order.paid_amount)
-                                    const status = statusConfig[order.status] || { label: order.status, variant: 'secondary' as const }
-                                    const payment = paymentConfig[order.payment_method ?? ''] || { label: order.payment_method || '-' }
-
-                                    return (
-                                        <Link
-                                            key={order.id}
-                                            href={`/dashboard/sales/${order.id}`}
-                                            className="block p-4 active:bg-zinc-50 transition-colors"
-                                        >
-                                            <div className="flex items-start justify-between mb-2">
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-semibold text-zinc-950 truncate">
-                                                        {order.client_name || 'Client passager'}
-                                                    </p>
-                                                    <p className="text-xs text-zinc-400 font-mono">
-                                                        {order.order_number} · {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                                    </p>
-                                                </div>
-                                                <Badge
-                                                    variant={status.variant}
-                                                    className={`text-[10px] font-medium ml-2 shrink-0 ${status.variant === 'secondary' ? 'bg-zinc-100 text-zinc-600' :
-                                                        status.variant === 'destructive' ? 'bg-red-50 text-red-600' :
-                                                            'bg-blue-50 text-blue-600'
-                                                        } border-none`}
-                                                >
-                                                    {status.label}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">
-                                                        {payment.label}
-                                                    </span>
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className="text-sm font-bold text-zinc-950">{formatCurrency(Number(order.total_amount))}</p>
-                                                    {remaining > 0 && (
-                                                        <p className="text-xs font-medium text-red-500">Reste: {formatCurrency(remaining)}</p>
+                                                    ) : (
+                                                        <span className="text-sm text-muted-foreground">Client passager</span>
                                                     )}
-                                                </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <span className="text-sm text-muted-foreground">{payment.label}</span>
+                                                </TableCell>
+                                                <TableCell className="tabular text-right font-semibold text-foreground">
+                                                    {formatMoney(Number(order.total_amount))}
+                                                </TableCell>
+                                                <TableCell className="tabular text-right">
+                                                    {remaining > 0 ? (
+                                                        <span className="font-medium text-destructive">{formatMoney(remaining)}</span>
+                                                    ) : (
+                                                        <span className="text-xs text-muted-foreground">Soldé</span>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <StatusBadge status={order.status} />
+                                                </TableCell>
+                                                <TableCell className="pr-5 text-right">
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon-sm"
+                                                                className="relative z-10 rounded-lg text-muted-foreground hover:text-foreground"
+                                                                aria-label={`Actions pour la vente ${order.order_number}`}
+                                                            >
+                                                                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end" className="w-48">
+                                                            <DropdownMenuItem asChild>
+                                                                <Link href={`/dashboard/sales/${order.id}`}>
+                                                                    <Eye aria-hidden="true" />
+                                                                    Voir le détail
+                                                                </Link>
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem asChild>
+                                                                <Link href={`/dashboard/invoices/${order.id}`}>
+                                                                    <FileText aria-hidden="true" />
+                                                                    Facture
+                                                                </Link>
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </TableCell>
+                                            </TableRow>
+                                        )
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </div>
+
+                        {/* Liste (mobile) */}
+                        <ul className="divide-y divide-border md:hidden">
+                            {orders.map((order) => {
+                                const remaining = Number(order.total_amount) - Number(order.paid_amount)
+                                const payment = paymentConfig[order.payment_method ?? ''] || { label: order.payment_method || '—' }
+
+                                return (
+                                    <li key={order.id}>
+                                        <Link
+                                            href={`/dashboard/sales/${order.id}`}
+                                            className="flex items-start justify-between gap-3 px-4 py-3.5 transition-colors active:bg-muted/60"
+                                        >
+                                            <div className="min-w-0 flex-1 space-y-1">
+                                                <p className="truncate text-sm font-medium text-foreground">
+                                                    {order.client_name || 'Client passager'}
+                                                </p>
+                                                <p className="truncate text-xs text-muted-foreground">
+                                                    <span className="font-mono">{order.order_number}</span> · {formatDateTime(order.created_at)} · {payment.label}
+                                                </p>
+                                                <StatusBadge status={order.status} />
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <p className="tabular text-sm font-semibold text-foreground">{formatMoney(Number(order.total_amount))}</p>
+                                                {remaining > 0 && (
+                                                    <p className="tabular text-xs font-medium text-destructive">Reste {formatMoney(remaining)}</p>
+                                                )}
                                             </div>
                                         </Link>
-                                    )
-                                })}
-                            </div>
-                        </>
-                    )}
-                </div>
-            </main>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+
+                        {(page > 1 || hasMore) && (
+                            <nav className="flex items-center justify-between gap-2 border-t border-border px-5 py-3" aria-label="Pagination des ventes">
+                                <span className="tabular text-xs text-muted-foreground">Page {page}</span>
+                                <div className="flex items-center gap-2">
+                                    {page > 1 ? (
+                                        <Button variant="outline" size="sm" className="h-9 rounded-lg" asChild>
+                                            <Link href={pageHref(q, page - 1, clientId)}>
+                                                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                                                Précédent
+                                            </Link>
+                                        </Button>
+                                    ) : null}
+                                    {hasMore ? (
+                                        <Button variant="outline" size="sm" className="h-9 rounded-lg" asChild>
+                                            <Link href={pageHref(q, page + 1, clientId)}>
+                                                Suivant
+                                                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                                            </Link>
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            </nav>
+                        )}
+                    </section>
+                )}
+            </PageShell>
         </div>
     )
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 
 const priceSchema = z.object({
@@ -23,6 +23,7 @@ const planSchema = z.object({
   features: z.record(z.unknown()).optional().nullable(),
   is_active: z.boolean().optional().default(true),
   is_public: z.boolean().optional().default(true),
+  pricing_type: z.enum(['paid', 'free', 'on_quote']).optional().default('paid'),
   is_popular: z.boolean().optional().default(false),
   sort_order: z.coerce.number().int().optional().default(0),
   checkout_prices: z.array(priceSchema).optional().nullable(),
@@ -31,7 +32,7 @@ const planSchema = z.object({
 
 // GET /api/admin/plans — all plans (incl. inactive) with subscriber counts
 export async function GET() {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.read')
   if (!authz.ok) return authz.response
 
   try {
@@ -50,7 +51,7 @@ export async function GET() {
 
 // POST /api/admin/plans — create a plan
 export async function POST(request: NextRequest) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('plans.write')
   if (!authz.ok) return authz.response
 
   try {
@@ -66,14 +67,15 @@ export async function POST(request: NextRequest) {
       INSERT INTO subscription_plans
         (name, display_name, description, price_monthly, price_yearly,
          max_users, max_depots, max_products, max_clients, features, is_active,
-         is_public, is_popular, sort_order, checkout_prices, marketing_features)
+         is_public, is_popular, sort_order, checkout_prices, marketing_features, pricing_type)
       VALUES (
         ${d.name}, ${d.display_name ?? d.name}, ${d.description ?? null}, ${d.price_monthly}, ${d.price_yearly},
         ${d.max_users}, ${d.max_depots}, ${d.max_products}, ${d.max_clients},
         ${d.features ? JSON.stringify(d.features) : null}, ${d.is_active},
         ${d.is_public}, ${d.is_popular}, ${d.sort_order},
         ${d.checkout_prices ? JSON.stringify(d.checkout_prices) : null},
-        ${d.marketing_features ? JSON.stringify(d.marketing_features) : null}
+        ${d.marketing_features ? JSON.stringify(d.marketing_features) : null},
+        ${d.pricing_type}
       )
       RETURNING *
     `

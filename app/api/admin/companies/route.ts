@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin } from '@/lib/admin-auth'
+import { requireAdmin } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
+import { handleRouteError } from '@/lib/errors'
+import { getCompanyHealth } from '@/lib/admin/company-health'
 
 // GET /api/admin/companies — Paginated tenant list with search/filter
 export async function GET(request: NextRequest) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('companies.read')
   if (!authz.ok) return authz.response
 
   try {
@@ -20,7 +22,7 @@ export async function GET(request: NextRequest) {
     const rows = await sql`
       SELECT
         c.id, c.name, c.slug, c.email, c.subscription_status,
-        c.subscription_plan_name, c.trial_ends_at, c.is_suspended,
+        c.subscription_plan_name, c.trial_ends_at, c.is_suspended, c.deletion_scheduled_at,
         c.created_at,
         (SELECT COUNT(*)::int FROM users u WHERE u.company_id = c.id) AS user_count
       FROM companies c
@@ -43,13 +45,19 @@ export async function GET(request: NextRequest) {
              (${status} <> 'suspended' AND c.subscription_status = ${status}))
     `
 
+    // Santé du compte (dernière activité, ventes, démarrage) pour la page affichée
+    const health = await getCompanyHealth(rows.map((r) => r.id as string))
+    const data = rows.map((r) => {
+      const h = health.get(r.id)
+      return { ...r, health: h ? { level: h.level, lastActivityAt: h.lastActivityAt, reasons: h.reasons } : null }
+    })
+
     return NextResponse.json({
       success: true,
-      data: rows,
+      data,
       pagination: { page, limit, total: count, pages: Math.ceil(count / limit) },
     })
-  } catch (e) {
-    console.error('admin companies list error:', e)
-    return NextResponse.json({ error: 'Erreur' }, { status: 500 })
+  } catch (error) {
+    return handleRouteError(error, 'admin.companies.list')
   }
 }

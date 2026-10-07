@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
-import { activateSubscription, isReferenceApplied, recordSubscriptionPayment } from '@/lib/subscription'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
-
-const intervalLabels: Record<string, string> = {
-  monthly: 'Mensuel',
-  quarterly: 'Trimestriel',
-  semiannual: 'Semestriel',
-  yearly: 'Annuel',
-}
+import { handleEvent } from '@/lib/subscription-webhook'
 
 // POST /api/admin/webhooks/:id/replay — re-process a stored webhook event
+// Même traitement que le webhook (idempotent : un paiement déjà appliqué n'est
+// jamais appliqué deux fois).
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('webhooks.manage')
   if (!authz.ok) return authz.response
 
   try {
@@ -23,6 +18,12 @@ export async function POST(
     const [event] = await sql`SELECT * FROM webhook_events WHERE id = ${id}`
     if (!event) {
       return NextResponse.json({ error: 'Événement introuvable' }, { status: 404 })
+    }
+    if (event.signature_valid !== true) {
+      return NextResponse.json(
+        { error: 'Un événement à signature invalide ne peut pas être rejoué' },
+        { status: 400 }
+      )
     }
     if (event.event_type !== 'payment.success') {
       return NextResponse.json(
@@ -32,43 +33,17 @@ export async function POST(
     }
 
     const payload = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload
-    const data = payload?.data
-    const metadata = data?.metadata
-
-    if (!metadata?.companyId || !metadata?.planName || !metadata?.months) {
-      return NextResponse.json({ error: 'Métadonnées insuffisantes pour rejouer' }, { status: 400 })
-    }
-
-    const months = parseInt(metadata.months, 10)
-    const reference = data?.reference || null
-
-    if (reference && (await isReferenceApplied(reference))) {
-      await sql`UPDATE webhook_events SET status = 'replayed', processed_at = NOW() WHERE id = ${id}`
-      return NextResponse.json({ success: true, alreadyApplied: true })
-    }
-
-    const fullPlanName = metadata.interval
-      ? `${metadata.planName} — ${intervalLabels[metadata.interval] || metadata.interval}`
-      : metadata.planName
-
-    await activateSubscription(metadata.companyId, fullPlanName, months, reference || undefined)
-    await recordSubscriptionPayment({
-      companyId: metadata.companyId,
-      reference,
-      planName: fullPlanName,
-      amount: Number(data?.amount) || 0,
-      currency: data?.currency || 'XOF',
-      months,
-      status: 'completed',
-      provider: 'geniuspay',
-    })
+    const outcome = await handleEvent(event.event_type, payload?.data)
 
     await sql`UPDATE webhook_events SET status = 'replayed', processed_at = NOW() WHERE id = ${id}`
-    await logAdminAction(authz.adminId, authz.adminEmail, 'webhook.replay', 'webhook', id, { reference })
+    await logAdminAction(authz.adminId, authz.adminEmail, 'webhook.replay', 'webhook', id, {
+      reference: payload?.data?.reference ?? null,
+      outcome,
+    })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, alreadyApplied: outcome === 'ignored' })
   } catch (e) {
     console.error('admin webhook replay error:', e)
-    return NextResponse.json({ error: 'Erreur' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur lors du rejeu' }, { status: 500 })
   }
 }

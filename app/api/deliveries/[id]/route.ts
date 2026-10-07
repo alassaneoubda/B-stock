@@ -1,136 +1,151 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { conflict, handleRouteError, notFound } from '@/lib/errors'
+import { assertOwned, isUuid } from '@/lib/tenant'
+
+type Params = { params: Promise<{ id: string }> }
+
+type TourStatus = 'planned' | 'loading' | 'in_progress' | 'completed' | 'cancelled'
+
+/** Transitions autorisées ; completed et cancelled sont des états finaux. */
+const TRANSITIONS: Record<TourStatus, TourStatus[]> = {
+    planned: ['loading', 'in_progress', 'cancelled'],
+    loading: ['in_progress', 'planned', 'cancelled'],
+    in_progress: ['completed', 'cancelled'],
+    completed: [],
+    cancelled: [],
+}
+
+const STATUS_LABELS: Record<TourStatus, string> = {
+    planned: 'planifiée',
+    loading: 'en chargement',
+    in_progress: 'en cours',
+    completed: 'terminée',
+    cancelled: 'annulée',
+}
 
 // GET /api/deliveries/[id] — Get tour detail with stops and inventory
-export async function GET(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(_request: NextRequest, { params }: Params) {
     try {
         const authz = await requirePermission('deliveries.read')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
 
         const { id } = await params
+        if (!isUuid(id)) throw notFound('Tournée')
 
-        const tours = await sql`
+        // Toutes les jointures sont restreintes à l'entreprise : des références
+        // étrangères (injectées avant ce correctif) ne doivent plus rien exposer.
+        const [tour] = await sql`
             SELECT dt.*,
-                   v.name as vehicle_name, v.plate_number as vehicle_plate,
-                   d.name as depot_name,
-                   u.full_name as created_by_name
+                   v.name AS vehicle_name, v.plate_number AS vehicle_plate,
+                   d.name AS depot_name,
+                   u.full_name AS created_by_name
             FROM delivery_tours dt
-            LEFT JOIN vehicles v ON dt.vehicle_id = v.id
-            LEFT JOIN depots d ON dt.depot_id = d.id
-            LEFT JOIN users u ON dt.created_by = u.id
-            WHERE dt.id = ${id} AND dt.company_id = ${session.user.companyId}
+            LEFT JOIN vehicles v ON dt.vehicle_id = v.id AND v.company_id = dt.company_id
+            LEFT JOIN depots d ON dt.depot_id = d.id AND d.company_id = dt.company_id
+            LEFT JOIN users u ON dt.created_by = u.id AND u.company_id = dt.company_id
+            WHERE dt.id = ${id} AND dt.company_id = ${companyId}
         `
-
-        if (tours.length === 0) {
-            return NextResponse.json({ error: 'Tournée introuvable' }, { status: 404 })
-        }
+        if (!tour) throw notFound('Tournée')
 
         const stops = await sql`
             SELECT ts.*,
-                   c.name as client_name, c.address as client_address,
-                   c.phone as client_phone, c.zone as client_zone,
+                   c.name AS client_name, c.address AS client_address,
+                   c.phone AS client_phone, c.zone AS client_zone,
                    so.order_number, so.total_amount, so.paid_amount
             FROM tour_stops ts
-            LEFT JOIN clients c ON ts.client_id = c.id
-            LEFT JOIN sales_orders so ON ts.sales_order_id = so.id
+            LEFT JOIN clients c ON ts.client_id = c.id AND c.company_id = ${companyId}
+            LEFT JOIN sales_orders so ON ts.sales_order_id = so.id AND so.company_id = ${companyId}
             WHERE ts.delivery_tour_id = ${id}
             ORDER BY ts.stop_order ASC
         `
 
         const inventory = await sql`
             SELECT vi.*,
-                   p.name as product_name,
-                   pt.name as packaging_name,
-                   pv.price as variant_price
+                   p.name AS product_name,
+                   pt.name AS packaging_name,
+                   pv.price AS variant_price
             FROM vehicle_inventory vi
-            LEFT JOIN product_variants pv ON vi.product_variant_id = pv.id
-            LEFT JOIN products p ON pv.product_id = p.id
-            LEFT JOIN packaging_types pt ON COALESCE(vi.packaging_type_id, pv.packaging_type_id) = pt.id
+            LEFT JOIN (
+                product_variants pv
+                JOIN products p ON pv.product_id = p.id AND p.company_id = ${companyId}
+            ) ON vi.product_variant_id = pv.id
+            LEFT JOIN packaging_types pt
+                ON COALESCE(vi.packaging_type_id, pv.packaging_type_id) = pt.id
+               AND pt.company_id = ${companyId}
             WHERE vi.delivery_tour_id = ${id}
             ORDER BY vi.inventory_type, p.name
         `
 
-        return NextResponse.json({
-            success: true,
-            data: {
-                ...tours[0],
-                stops,
-                inventory,
-            },
-        })
+        return NextResponse.json({ success: true, data: { ...tour, stops, inventory } })
     } catch (error) {
-        console.error('Error fetching tour detail:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+        return handleRouteError(error, 'deliveries.get')
     }
 }
 
 const tourUpdateSchema = z.object({
     status: z.enum(['planned', 'loading', 'in_progress', 'completed', 'cancelled']).optional(),
-    driverName: z.string().optional(),
+    driverName: z.string().trim().min(1).max(255).optional(),
     vehicleId: z.string().uuid().optional().nullable(),
-    notes: z.string().optional(),
+    notes: z.string().max(5000).optional(),
 })
 
 // PATCH /api/deliveries/[id] — Update tour status/details
-export async function PATCH(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: NextRequest, { params }: Params) {
     try {
         const authz = await requirePermission('deliveries.write')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
 
         const { id } = await params
-        const body = await request.json()
-        const data = tourUpdateSchema.parse(body)
+        if (!isUuid(id)) throw notFound('Tournée')
+        const data = tourUpdateSchema.parse(await request.json())
 
-        const existing = await sql`
-            SELECT id, status FROM delivery_tours
-            WHERE id = ${id} AND company_id = ${session.user.companyId}
-        `
-        if (existing.length === 0) {
-            return NextResponse.json({ error: 'Tournée introuvable' }, { status: 404 })
-        }
+        // NB : le chargement / déchargement du véhicule n'a volontairement AUCUN
+        // effet sur le stock des dépôts à ce stade (décision produit à venir).
+        const tour = await withTransaction(async (tx) => {
+            const [current] = await tx.sql`
+                SELECT id, status FROM delivery_tours
+                WHERE id = ${id} AND company_id = ${companyId}
+                FOR UPDATE
+            `
+            if (!current) throw notFound('Tournée')
 
-        // Handle status transitions with timestamps
-        let startedAt = null
-        let completedAt = null
-        if (data.status === 'in_progress' && existing[0].status !== 'in_progress') {
-            startedAt = new Date().toISOString()
-        }
-        if (data.status === 'completed') {
-            completedAt = new Date().toISOString()
-        }
+            await assertOwned(tx.sql, companyId, { vehicles: [data.vehicleId] })
 
-        const result = await sql`
-            UPDATE delivery_tours SET
-                status = COALESCE(${data.status ?? null}, status),
-                driver_name = COALESCE(${data.driverName ?? null}, driver_name),
-                vehicle_id = COALESCE(${data.vehicleId ?? null}, vehicle_id),
-                notes = COALESCE(${data.notes ?? null}, notes),
-                started_at = COALESCE(${startedAt}, started_at),
-                completed_at = COALESCE(${completedAt}, completed_at)
-            WHERE id = ${id}
-            RETURNING *
-        `
+            const from = current.status as TourStatus
+            const to = data.status
+            if (to && to !== from && !(TRANSITIONS[from] ?? []).includes(to)) {
+                throw conflict(
+                    `Transition impossible : une tournée ${STATUS_LABELS[from] ?? from} ne peut pas passer à « ${STATUS_LABELS[to]} »`,
+                    'INVALID_TRANSITION'
+                )
+            }
+            const newStatus = to ?? null
 
-        return NextResponse.json({
-            success: true,
-            data: result[0],
-            message: 'Tournée mise à jour',
+            // Garde atomique : le statut ne doit pas avoir changé depuis la lecture
+            const { rows, rowCount } = await tx.exec`
+                UPDATE delivery_tours SET
+                    status = COALESCE(${newStatus}::text, status),
+                    driver_name = COALESCE(${data.driverName ?? null}, driver_name),
+                    vehicle_id = COALESCE(${data.vehicleId ?? null}::uuid, vehicle_id),
+                    notes = COALESCE(${data.notes ?? null}, notes),
+                    started_at = CASE WHEN ${newStatus}::text = 'in_progress'
+                                      THEN COALESCE(started_at, NOW()) ELSE started_at END,
+                    completed_at = CASE WHEN ${newStatus}::text = 'completed'
+                                        THEN COALESCE(completed_at, NOW()) ELSE completed_at END
+                WHERE id = ${id} AND company_id = ${companyId} AND status = ${from}
+                RETURNING *
+            `
+            if (rowCount !== 1) throw conflict('La tournée a été modifiée entre-temps, veuillez réessayer')
+            return rows[0]
         })
+
+        return NextResponse.json({ success: true, data: tour, message: 'Tournée mise à jour' })
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: 'Données invalides', details: error.errors }, { status: 400 })
-        }
-        console.error('Error updating tour:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+        return handleRouteError(error, 'deliveries.update')
     }
 }

@@ -17,7 +17,8 @@
  * Pour bumper le cache lors d'un déploiement, incrémenter VERSION.
  */
 
-const VERSION = 'v3'
+// v4 : purge des pages publiques mises en cache avec une session sérialisée
+const VERSION = 'v4'
 const STATIC_CACHE = `bstock-static-${VERSION}`
 const PAGE_CACHE = `bstock-pages-${VERSION}`
 const OFFLINE_URL = '/offline'

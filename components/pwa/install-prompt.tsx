@@ -82,30 +82,30 @@ export function InstallPrompt() {
   if (!mode) return null
 
   return (
-    <div className="fixed inset-x-3 bottom-3 z-[60] mx-auto max-w-md rounded-2xl border border-zinc-200 bg-white p-4 shadow-xl shadow-zinc-300/40 animate-in slide-in-from-bottom-4 duration-300 sm:inset-x-auto sm:right-4">
+    <div className="fixed inset-x-3 bottom-3 z-[60] mx-auto max-w-md rounded-xl border border-border bg-card p-4 shadow-xl shadow-zinc-300/40 animate-in slide-in-from-bottom-4 duration-300 sm:inset-x-auto sm:right-4">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-950">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary">
           <Download className="h-5 w-5 text-white" />
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-zinc-950">Installer B-Stock</p>
+          <p className="text-sm font-semibold text-foreground">Installer B-Stock</p>
 
           {mode === 'android' ? (
             <>
-              <p className="mt-0.5 text-xs text-zinc-500">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Ajoutez l&apos;application à votre écran d&apos;accueil pour un accès rapide, plein écran.
               </p>
               <div className="mt-3 flex items-center gap-2">
                 <button
                   onClick={handleInstall}
-                  className="inline-flex h-9 items-center rounded-lg bg-zinc-950 px-4 text-xs font-semibold text-white transition-colors hover:bg-zinc-800"
+                  className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-xs font-semibold text-white transition-colors hover:bg-primary"
                 >
                   Installer
                 </button>
                 <button
                   onClick={handleDismiss}
-                  className="inline-flex h-9 items-center rounded-lg px-3 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100"
+                  className="inline-flex h-9 items-center rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
                 >
                   Plus tard
                 </button>
@@ -113,24 +113,24 @@ export function InstallPrompt() {
             </>
           ) : (
             <>
-              <p className="mt-0.5 text-xs text-zinc-500">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Pour installer sur iPhone/iPad depuis Safari :
               </p>
-              <ol className="mt-2 space-y-1.5 text-xs text-zinc-600">
+              <ol className="mt-2 space-y-1.5 text-xs text-muted-foreground">
                 <li className="flex items-center gap-1.5">
-                  <span className="font-semibold text-zinc-900">1.</span>
+                  <span className="font-semibold text-foreground">1.</span>
                   Appuyez sur
-                  <Share className="h-3.5 w-3.5 text-blue-600" />
+                  <Share className="h-3.5 w-3.5 text-brand-strong" />
                   <span className="font-medium">Partager</span>
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <span className="font-semibold text-zinc-900">2.</span>
+                  <span className="font-semibold text-foreground">2.</span>
                   Choisissez
-                  <SquarePlus className="h-3.5 w-3.5 text-zinc-700" />
+                  <SquarePlus className="h-3.5 w-3.5 text-foreground/80" />
                   <span className="font-medium">Sur l&apos;écran d&apos;accueil</span>
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <span className="font-semibold text-zinc-900">3.</span>
+                  <span className="font-semibold text-foreground">3.</span>
                   Appuyez sur <span className="font-medium">Ajouter</span>
                 </li>
               </ol>
@@ -141,7 +141,7 @@ export function InstallPrompt() {
         <button
           onClick={handleDismiss}
           aria-label="Fermer"
-          className="shrink-0 rounded-lg p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600"
+          className="shrink-0 rounded-lg p-1 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
         >
           <X className="h-4 w-4" />
         </button>

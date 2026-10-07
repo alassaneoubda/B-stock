@@ -15,6 +15,10 @@ import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, ApiError, errorMessage } from '@/lib/api-client'
+import { ErrorState, PageSkeleton } from '@/components/states'
+import { PageShell } from '@/components/app/blocks'
 
 const clientSchema = z.object({
     name: z.string().min(2, 'Le nom doit contenir au moins 2 caractères'),
@@ -57,6 +61,10 @@ export default function EditClientPage() {
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    // Erreur de chargement : on n'affiche PAS le formulaire (sinon un enregistrement
+    // écraserait la fiche avec les valeurs par défaut).
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [reloadKey, setReloadKey] = useState(0)
 
     const {
         register,
@@ -81,11 +89,12 @@ export default function EditClientPage() {
 
     useEffect(() => {
         async function fetchClient() {
+            setIsFetching(true)
+            setLoadError(null)
             try {
-                const res = await fetch(`/api/clients/${clientId}`)
-                const result = await res.json()
-                if (!res.ok || !result.data) {
-                    setError('Client introuvable')
+                const result = await apiFetch(`/api/clients/${clientId}`)
+                if (!result?.data) {
+                    setLoadError('Client introuvable')
                     return
                 }
                 const c = result.data
@@ -103,94 +112,98 @@ export default function EditClientPage() {
                     notes: c.notes || '',
                     isActive: c.is_active !== false,
                 })
-            } catch {
-                setError('Erreur lors du chargement du client')
+            } catch (e) {
+                setLoadError(e instanceof ApiError && e.status === 404 ? 'Client introuvable' : errorMessage(e))
             } finally {
                 setIsFetching(false)
             }
         }
         fetchClient()
-    }, [clientId, reset])
+    }, [clientId, reset, reloadKey])
 
     async function onSubmit(data: ClientForm) {
+        if (isLoading) return
         setIsLoading(true)
         setError(null)
 
         try {
-            const response = await fetch(`/api/clients/${clientId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            await apiFetch(`/api/clients/${clientId}`, { method: 'PATCH', body: data })
+            toast.success('Client mis à jour')
             router.push(`/dashboard/clients/${clientId}`)
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
     }
 
     if (isFetching) {
+        return <PageSkeleton />
+    }
+
+    if (loadError) {
         return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Modifier le client" description="Chargement..." />
-                <main className="flex-1 p-4 lg:p-6 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </main>
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Modifier le client" />
+                <PageShell>
+                    <div className="mx-auto w-full max-w-3xl space-y-4">
+                        <Button variant="ghost" size="sm" asChild className="-ml-2">
+                            <Link href="/dashboard/clients">
+                                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                                Clients
+                            </Link>
+                        </Button>
+                        <ErrorState
+                            title="Impossible de charger le client"
+                            description={loadError}
+                            onRetry={loadError === 'Client introuvable' ? undefined : () => setReloadKey((k) => k + 1)}
+                        />
+                    </div>
+                </PageShell>
             </div>
         )
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Modifier le client"
                 description="Mettez à jour les informations du client"
             />
 
-            <main className="flex-1 p-4 lg:p-6">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
+            <PageShell>
+                <div className="mx-auto w-full max-w-3xl space-y-6">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
                         <Link href={`/dashboard/clients/${clientId}`}>
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Retour à la fiche client
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Fiche client
                         </Link>
                     </Button>
-                </div>
 
-                <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
-                    {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                            {error}
-                        </div>
-                    )}
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                        {error && (
+                            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+                                {error}
+                            </div>
+                        )}
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Informations générales</CardTitle>
-                            <CardDescription>Les informations de base du client</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid gap-4 sm:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Informations générales</CardTitle>
+                                <CardDescription>Identité et coordonnées du client.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="name">Nom du client / Entreprise *</Label>
+                                    <Label htmlFor="name">Nom du client ou de l’entreprise *</Label>
                                     <Input
                                         id="name"
-                                        placeholder="Ex: Boutique Koffi"
+                                        placeholder="Ex. : Boutique Koffi"
                                         {...register('name')}
                                         disabled={isLoading}
                                     />
                                     {errors.name && (
-                                        <p className="text-sm text-destructive">{errors.name.message}</p>
+                                        <p className="text-xs text-destructive">{errors.name.message}</p>
                                     )}
                                 </div>
 
@@ -201,7 +214,7 @@ export default function EditClientPage() {
                                         onValueChange={(value) => setValue('clientType', value)}
                                         disabled={isLoading}
                                     >
-                                        <SelectTrigger>
+                                        <SelectTrigger id="clientType" className="w-full">
                                             <SelectValue placeholder="Sélectionner un type" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -213,17 +226,15 @@ export default function EditClientPage() {
                                         </SelectContent>
                                     </Select>
                                     {errors.clientType && (
-                                        <p className="text-sm text-destructive">{errors.clientType.message}</p>
+                                        <p className="text-xs text-destructive">{errors.clientType.message}</p>
                                     )}
                                 </div>
-                            </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="contactName">Nom du contact</Label>
                                     <Input
                                         id="contactName"
-                                        placeholder="Ex: Jean Koffi"
+                                        placeholder="Ex. : Jean Koffi"
                                         {...register('contactName')}
                                         disabled={isLoading}
                                     />
@@ -239,73 +250,70 @@ export default function EditClientPage() {
                                         disabled={isLoading}
                                     />
                                 </div>
-                            </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="email">Email</Label>
-                                <Input
-                                    id="email"
-                                    type="email"
-                                    placeholder="client@exemple.com"
-                                    {...register('email')}
-                                    disabled={isLoading}
-                                />
-                                {errors.email && (
-                                    <p className="text-sm text-destructive">{errors.email.message}</p>
-                                )}
-                            </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="email">E-mail</Label>
+                                    <Input
+                                        id="email"
+                                        type="email"
+                                        placeholder="client@exemple.com"
+                                        {...register('email')}
+                                        disabled={isLoading}
+                                    />
+                                    {errors.email && (
+                                        <p className="text-xs text-destructive">{errors.email.message}</p>
+                                    )}
+                                </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="address">Adresse</Label>
-                                <Textarea
-                                    id="address"
-                                    placeholder="Adresse complète du client"
-                                    {...register('address')}
-                                    disabled={isLoading}
-                                />
-                            </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="zone">Zone de livraison</Label>
+                                    <Select
+                                        value={currentZone}
+                                        onValueChange={(value) => setValue('zone', value)}
+                                        disabled={isLoading}
+                                    >
+                                        <SelectTrigger id="zone" className="w-full">
+                                            <SelectValue placeholder="Sélectionner une zone" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {zones.map((zone) => (
+                                                <SelectItem key={zone} value={zone}>
+                                                    {zone}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="zone">Zone de livraison</Label>
-                                <Select
-                                    value={currentZone}
-                                    onValueChange={(value) => setValue('zone', value)}
-                                    disabled={isLoading}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Sélectionner une zone" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {zones.map((zone) => (
-                                            <SelectItem key={zone} value={zone}>
-                                                {zone}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label htmlFor="address">Adresse</Label>
+                                    <Textarea
+                                        id="address"
+                                        placeholder="Quartier, rue, point de repère…"
+                                        {...register('address')}
+                                        disabled={isLoading}
+                                    />
+                                </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="notes">Notes</Label>
-                                <Textarea
-                                    id="notes"
-                                    placeholder="Notes internes sur ce client"
-                                    {...register('notes')}
-                                    disabled={isLoading}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label htmlFor="notes">Notes</Label>
+                                    <Textarea
+                                        id="notes"
+                                        placeholder="Notes internes sur ce client"
+                                        {...register('notes')}
+                                        disabled={isLoading}
+                                    />
+                                    <p className="text-xs text-muted-foreground">Visibles uniquement par votre équipe.</p>
+                                </div>
+                            </CardContent>
+                        </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Conditions commerciales</CardTitle>
-                            <CardDescription>
-                                Définissez les conditions de crédit et de paiement
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid gap-4 sm:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Conditions commerciales</CardTitle>
+                                <CardDescription>Plafonds de crédit et délai de paiement accordés.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="creditLimit">Limite de crédit produits (FCFA)</Label>
                                     <Input
@@ -313,12 +321,11 @@ export default function EditClientPage() {
                                         type="number"
                                         min="0"
                                         placeholder="0"
+                                        className="tabular"
                                         {...register('creditLimit', { valueAsNumber: true })}
                                         disabled={isLoading}
                                     />
-                                    <p className="text-xs text-muted-foreground">
-                                        0 = pas de crédit produit autorisé
-                                    </p>
+                                    <p className="text-xs text-muted-foreground">0 = aucun crédit produit autorisé</p>
                                 </div>
 
                                 <div className="space-y-2">
@@ -328,16 +335,13 @@ export default function EditClientPage() {
                                         type="number"
                                         min="0"
                                         placeholder="0"
+                                        className="tabular"
                                         {...register('packagingCreditLimit', { valueAsNumber: true })}
                                         disabled={isLoading}
                                     />
-                                    <p className="text-xs text-muted-foreground">
-                                        0 = pas de crédit emballage autorisé
-                                    </p>
+                                    <p className="text-xs text-muted-foreground">0 = aucun crédit emballage autorisé</p>
                                 </div>
-                            </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="paymentTermsDays">Délai de paiement (jours)</Label>
                                     <Input
@@ -346,56 +350,56 @@ export default function EditClientPage() {
                                         min="0"
                                         max="90"
                                         placeholder="0"
+                                        className="tabular"
                                         {...register('paymentTermsDays', { valueAsNumber: true })}
                                         disabled={isLoading}
                                     />
-                                    <p className="text-xs text-muted-foreground">
-                                        0 = paiement immédiat
-                                    </p>
+                                    <p className="text-xs text-muted-foreground">0 = paiement immédiat (90 jours maximum)</p>
                                 </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Statut</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <Label htmlFor="isActive">Client actif</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Les clients inactifs ne peuvent pas passer de commandes
-                                    </p>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Statut</CardTitle>
+                                <CardDescription>Autorisez ou bloquez les commandes de ce client.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+                                    <div className="space-y-0.5">
+                                        <Label htmlFor="isActive">Client actif</Label>
+                                        <p className="text-xs text-muted-foreground">
+                                            Un client inactif ne peut pas passer de commande.
+                                        </p>
+                                    </div>
+                                    <Switch
+                                        id="isActive"
+                                        checked={isActive}
+                                        onCheckedChange={(checked) => setValue('isActive', checked)}
+                                        disabled={isLoading}
+                                    />
                                 </div>
-                                <Switch
-                                    id="isActive"
-                                    checked={isActive}
-                                    onCheckedChange={(checked) => setValue('isActive', checked)}
-                                    disabled={isLoading}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <div className="flex justify-end gap-4">
-                        <Button type="button" variant="outline" asChild disabled={isLoading}>
-                            <Link href={`/dashboard/clients/${clientId}`}>Annuler</Link>
-                        </Button>
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Enregistrement...
-                                </>
-                            ) : (
-                                'Enregistrer les modifications'
-                            )}
-                        </Button>
-                    </div>
-                </form>
-            </main>
+                        <div className="flex justify-end gap-3">
+                            <Button type="button" variant="outline" asChild disabled={isLoading}>
+                                <Link href={`/dashboard/clients/${clientId}`}>Annuler</Link>
+                            </Button>
+                            <Button type="submit" disabled={isLoading}>
+                                {isLoading ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                        Enregistrement…
+                                    </>
+                                ) : (
+                                    'Enregistrer les modifications'
+                                )}
+                            </Button>
+                        </div>
+                    </form>
+                </div>
+            </PageShell>
         </div>
     )
 }

@@ -1,18 +1,27 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Loader2,
   Printer,
-  Download,
   ArrowLeft,
   FileText,
+  Trash2,
+  Ban,
 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, ApiError, toastError } from '@/lib/api-client'
+import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 type InvoiceItem = {
   id: string
@@ -49,36 +58,36 @@ type InvoiceDetail = {
   items: InvoiceItem[]
 }
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  paid: { label: 'Payée', color: 'bg-emerald-50 text-emerald-700' },
-  partial: { label: 'Partielle', color: 'bg-amber-50 text-amber-700' },
-  draft: { label: 'Brouillon', color: 'bg-zinc-100 text-zinc-600' },
-  sent: { label: 'Envoyée', color: 'bg-blue-50 text-blue-700' },
-  cancelled: { label: 'Annulée', color: 'bg-red-50 text-red-600' },
+type Tone = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
+
+const statusConfig: Record<string, { label: string; tone: Tone }> = {
+  paid: { label: 'Payée', tone: 'success' },
+  partial: { label: 'Partielle', tone: 'warning' },
+  draft: { label: 'Brouillon', tone: 'default' },
+  sent: { label: 'Envoyée', tone: 'info' },
+  cancelled: { label: 'Annulée', tone: 'danger' },
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-  }).format(amount)
+function getStatus(status: string): { label: string; tone: Tone } {
+  return statusConfig[status] || { label: status, tone: 'default' }
 }
+
+const formatCurrency = formatMoney
 
 export default function InvoiceDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const printRef = useRef<HTMLDivElement>(null)
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [confirmAction, setConfirmAction] = useState<'delete' | 'cancel' | null>(null)
+  const [acting, setActing] = useState(false)
 
   const invoiceId = params.id as string
   const shouldPrint = searchParams.get('print') === '1'
-
-  useEffect(() => {
-    fetchInvoice()
-  }, [invoiceId])
 
   useEffect(() => {
     if (shouldPrint && invoice && !isLoading) {
@@ -86,49 +95,86 @@ export default function InvoiceDetailPage() {
     }
   }, [shouldPrint, invoice, isLoading])
 
-  async function fetchInvoice() {
+  // L'id peut être celui d'une VENTE (lien « Facture » de la liste des ventes) :
+  // si aucune facture n'a cet id, on génère / retrouve celle de la vente.
+  const tryGenerateFromSale = useCallback(async () => {
+    setIsGenerating(true)
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}`)
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          setInvoice(data.data)
-        } else {
-          await tryGenerateFromSale()
-        }
-      } else if (res.status === 404) {
-        await tryGenerateFromSale()
+      const genData = await apiFetch('/api/invoices/generate', {
+        method: 'POST',
+        body: { orderId: invoiceId },
+      })
+      if (genData?.data?.id) {
+        const detail = await apiFetch(`/api/invoices/${genData.data.id}`)
+        setInvoice(detail.data)
       }
+    } catch (e) {
+      // 404 = ni facture ni vente : écran « Facture non trouvée »
+      if (!(e instanceof ApiError && e.status === 404)) {
+        setLoadError(e instanceof Error ? e.message : 'Erreur inattendue')
+      }
+    } finally {
+      setIsGenerating(false)
+    }
+  }, [invoiceId])
+
+  const fetchInvoice = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(null)
+    try {
+      const data = await apiFetch(`/api/invoices/${invoiceId}`)
+      if (data?.data) setInvoice(data.data)
+      else await tryGenerateFromSale()
     } catch (error) {
-      console.error('Error:', error)
-      await tryGenerateFromSale()
+      if (error instanceof ApiError && error.status === 404) {
+        await tryGenerateFromSale()
+      } else {
+        setLoadError(error instanceof Error ? error.message : 'Erreur inattendue')
+      }
     } finally {
       setIsLoading(false)
     }
+  }, [invoiceId, tryGenerateFromSale])
+
+  useEffect(() => {
+    fetchInvoice()
+  }, [fetchInvoice])
+
+  async function handleDelete() {
+    if (!invoice || acting) return
+    setActing(true)
+    try {
+      await apiFetch(`/api/invoices/${invoice.id}`, { method: 'DELETE' })
+      toast.success(`Facture ${invoice.invoice_number} supprimée`)
+      setConfirmAction(null)
+      router.push('/dashboard/invoices')
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // Facture payée / partiellement payée : proposer l'annulation à la place
+        toast.warning('Suppression impossible', { description: e.message })
+        setConfirmAction('cancel')
+      } else {
+        setConfirmAction(null)
+        toastError(e, 'Suppression impossible')
+      }
+    } finally {
+      setActing(false)
+    }
   }
 
-  async function tryGenerateFromSale() {
-    setIsGenerating(true)
+  async function handleCancel() {
+    if (!invoice || acting) return
+    setActing(true)
     try {
-      const genRes = await fetch('/api/invoices/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: invoiceId }),
-      })
-      if (genRes.ok) {
-        const genData = await genRes.json()
-        if (genData.success && genData.data?.id) {
-          const detailRes = await fetch(`/api/invoices/${genData.data.id}`)
-          if (detailRes.ok) {
-            const detail = await detailRes.json()
-            setInvoice(detail.data)
-          }
-        }
-      }
+      await apiFetch(`/api/invoices/${invoice.id}`, { method: 'PATCH', body: { status: 'cancelled' } })
+      toast.success(`Facture ${invoice.invoice_number} annulée`)
+      setInvoice({ ...invoice, status: 'cancelled' })
+      setConfirmAction(null)
     } catch (e) {
-      console.error('Error generating invoice:', e)
+      setConfirmAction(null)
+      toastError(e, 'Annulation impossible')
     } finally {
-      setIsGenerating(false)
+      setActing(false)
     }
   }
 
@@ -136,267 +182,337 @@ export default function InvoiceDetailPage() {
     window.print()
   }
 
-  if (isLoading || isGenerating) {
+  if (isGenerating) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex min-h-screen flex-col">
         <DashboardHeader title="Facture" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-zinc-400 mx-auto mb-3" />
-            <p className="text-sm text-zinc-500">
-              {isGenerating ? 'Génération de la facture...' : 'Chargement...'}
-            </p>
+        <PageShell className="flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-center" role="status">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm text-muted-foreground">Génération de la facture…</p>
           </div>
-        </div>
+        </PageShell>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Facture" />
+        <PageShell>
+          <BackLink />
+          <ErrorState title="Impossible de charger la facture" description={loadError} onRetry={fetchInvoice} />
+        </PageShell>
       </div>
     )
   }
 
   if (!invoice) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
+      <div className="flex min-h-screen flex-col">
         <DashboardHeader title="Facture" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <FileText className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
-            <h3 className="text-sm font-semibold text-zinc-950 mb-1">Facture non trouvée</h3>
-            <p className="text-sm text-zinc-500 mb-4">La facture demandée n'existe pas.</p>
-            <Button size="sm" asChild>
-              <Link href="/dashboard/invoices">Retour aux factures</Link>
-            </Button>
-          </div>
-        </div>
+        <PageShell>
+          <BackLink />
+          <EmptyState
+            icon={FileText}
+            title="Facture non trouvée"
+            description="La facture demandée n'existe pas ou a été supprimée."
+            action={{ label: 'Retour aux factures', href: '/dashboard/invoices' }}
+          />
+        </PageShell>
       </div>
     )
   }
 
-  const status = statusConfig[invoice.status] || { label: invoice.status, color: 'bg-zinc-100 text-zinc-600' }
+  const status = getStatus(invoice.status)
   const partyName = invoice.type === 'client' ? invoice.client_name : invoice.supplier_name
   const partyPhone = invoice.type === 'client' ? invoice.client_phone : invoice.supplier_phone
   const partyAddress = invoice.type === 'client' ? invoice.client_address : invoice.supplier_address
   const partyEmail = invoice.type === 'client' ? invoice.client_email : invoice.supplier_email
+  const isPaidOrPartial =
+    invoice.status === 'paid' || invoice.status === 'partial' || Number(invoice.amount_paid) > 0
+  const canAct = invoice.status !== 'cancelled'
   const productItems = invoice.items?.filter(i => i.item_type === 'product') || []
   const packagingItems = invoice.items?.filter(i => i.item_type === 'packaging') || []
+  const remaining = Number(invoice.remaining_amount)
+
+  const itemSections = [
+    { key: 'product', title: 'Produits', fallback: 'Produit', items: productItems },
+    { key: 'packaging', title: 'Emballages', fallback: 'Emballage', items: packagingItems },
+  ].filter((s) => s.items.length > 0)
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
-      {/* Header - hidden on print */}
+    <div className="flex min-h-screen flex-col">
+      {/* En-tête — masqué à l'impression */}
       <div className="no-print">
         <DashboardHeader
           title={`Facture ${invoice.invoice_number}`}
-          actions={
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                <Link href="/dashboard/invoices">
-                  <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-                  Retour
-                </Link>
-              </Button>
-              <Button size="sm" className="h-8 text-xs" onClick={handlePrint}>
-                <Printer className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden sm:inline">Imprimer / PDF</span>
-                <span className="sm:hidden">PDF</span>
-              </Button>
-            </div>
-          }
+          description={invoice.type === 'client' ? 'Facture client' : 'Facture fournisseur'}
         />
       </div>
 
-      <main className="flex-1 p-4 lg:p-6">
-        {/* Invoice Document */}
-        <div
-          ref={printRef}
-          className="bg-white rounded-lg border border-zinc-200/80 max-w-3xl mx-auto print:border-none print:shadow-none print:max-w-none"
-        >
-          {/* Invoice Header */}
-          <div className="p-6 sm:p-8 border-b border-zinc-100 print:p-8">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 rounded-lg bg-zinc-950 flex items-center justify-center">
-                    <span className="text-white text-lg font-bold">B</span>
-                  </div>
-                  <div>
-                    <h1 className="text-lg font-bold text-zinc-950">
-                      {invoice.company_name || 'B-Stock'}
-                    </h1>
-                    {invoice.company_address && (
-                      <p className="text-xs text-zinc-500">{invoice.company_address}</p>
-                    )}
-                  </div>
-                </div>
-                {invoice.company_phone && (
-                  <p className="text-xs text-zinc-500">Tél: {invoice.company_phone}</p>
-                )}
-                {invoice.company_email && (
-                  <p className="text-xs text-zinc-500">Email: {invoice.company_email}</p>
-                )}
-              </div>
-
-              <div className="text-left sm:text-right">
-                <h2 className="text-2xl font-bold text-zinc-950 tracking-tight">FACTURE</h2>
-                <p className="text-sm font-mono font-medium text-blue-600 mt-1">
-                  {invoice.invoice_number}
-                </p>
-                <p className="text-xs text-zinc-500 mt-1">
-                  Date: {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
-                    day: '2-digit', month: 'long', year: 'numeric'
-                  })}
-                </p>
-                <Badge className={`mt-2 text-xs font-medium ${status.color} border-none no-print`}>
-                  {status.label}
-                </Badge>
-              </div>
+      <PageShell>
+        {/* Retour, titre, statut, actions — masqués à l'impression */}
+        <div className="no-print space-y-3">
+          <BackLink />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <h2 className="truncate font-mono text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                {invoice.invoice_number}
+              </h2>
+              <StatusBadge label={status.label} tone={status.tone} />
             </div>
-          </div>
-
-          {/* Client/Supplier Info */}
-          <div className="p-6 sm:p-8 border-b border-zinc-100 print:p-8">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-2">
-                  {invoice.type === 'client' ? 'Facturé à' : 'Fournisseur'}
-                </p>
-                <p className="text-sm font-semibold text-zinc-950">{partyName || '—'}</p>
-                {partyPhone && <p className="text-xs text-zinc-500 mt-0.5">Tél: {partyPhone}</p>}
-                {partyAddress && <p className="text-xs text-zinc-500 mt-0.5">{partyAddress}</p>}
-                {partyEmail && <p className="text-xs text-zinc-500 mt-0.5">{partyEmail}</p>}
-              </div>
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-2">
-                  Détails
-                </p>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-zinc-500">Type</span>
-                    <span className="font-medium text-zinc-700">
-                      {invoice.type === 'client' ? 'Facture client' : 'Facture fournisseur'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-zinc-500">Statut</span>
-                    <span className="font-medium text-zinc-700">{status.label}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Items Table */}
-          <div className="p-6 sm:p-8 print:p-8">
-            {productItems.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-xs font-semibold text-zinc-950 uppercase tracking-wider mb-3">Produits</h3>
-                <div className="border border-zinc-200 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-zinc-50 border-b border-zinc-200">
-                        <th className="text-left text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Description</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Qté</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {productItems.map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-4 py-2.5 text-sm text-zinc-900">
-                            {item.product_name || item.description || 'Produit'}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{Number(item.quantity)}</td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right hidden sm:table-cell">
-                            {formatCurrency(Number(item.unit_price))}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm font-medium text-zinc-900 text-right">
-                            {formatCurrency(Number(item.total_price))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {packagingItems.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-xs font-semibold text-zinc-950 uppercase tracking-wider mb-3">Emballages</h3>
-                <div className="border border-zinc-200 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-zinc-50 border-b border-zinc-200">
-                        <th className="text-left text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Description</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Qté</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2 hidden sm:table-cell">P.U.</th>
-                        <th className="text-right text-[10px] font-medium text-zinc-500 uppercase px-4 py-2">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {packagingItems.map((item) => (
-                        <tr key={item.id}>
-                          <td className="px-4 py-2.5 text-sm text-zinc-900">
-                            {item.product_name || item.description || 'Emballage'}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right">{Number(item.quantity)}</td>
-                          <td className="px-4 py-2.5 text-sm text-zinc-600 text-right hidden sm:table-cell">
-                            {formatCurrency(Number(item.unit_price))}
-                          </td>
-                          <td className="px-4 py-2.5 text-sm font-medium text-zinc-900 text-right">
-                            {formatCurrency(Number(item.total_price))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Totals */}
-            <div className="flex justify-end">
-              <div className="w-full sm:w-72 space-y-2 pt-4 border-t border-zinc-200">
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-500">Total HT</span>
-                  <span className="font-medium text-zinc-900">{formatCurrency(Number(invoice.total_amount))}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-500">Total TTC</span>
-                  <span className="font-semibold text-zinc-950">{formatCurrency(Number(invoice.total_amount))}</span>
-                </div>
-                <div className="flex justify-between text-sm pt-2 border-t border-zinc-100">
-                  <span className="text-zinc-500">Montant payé</span>
-                  <span className="font-medium text-emerald-600">{formatCurrency(Number(invoice.amount_paid))}</span>
-                </div>
-                {Number(invoice.remaining_amount) > 0 && (
-                  <div className="flex justify-between text-sm font-bold pt-2 border-t border-zinc-200">
-                    <span className="text-red-600">Reste à payer</span>
-                    <span className="text-red-600">{formatCurrency(Number(invoice.remaining_amount))}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Notes */}
-            {invoice.notes && (
-              <div className="mt-8 pt-4 border-t border-zinc-100">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1">Notes</p>
-                <p className="text-xs text-zinc-600">{invoice.notes}</p>
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="mt-8 pt-4 border-t border-zinc-100 text-center">
-              <p className="text-[10px] text-zinc-400">
-                Merci pour votre confiance — {invoice.company_name || 'B-Stock'}
-              </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {canAct && (
+                isPaidOrPartial ? (
+                  <Button variant="outline" onClick={() => setConfirmAction('cancel')} className="text-destructive hover:text-destructive">
+                    <Ban className="h-4 w-4" aria-hidden="true" />
+                    <span className="hidden sm:inline">Annuler la facture</span>
+                    <span className="sm:hidden">Annuler</span>
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={() => setConfirmAction('delete')} className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    Supprimer
+                  </Button>
+                )
+              )}
+              <Button variant="brand" onClick={handlePrint}>
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Imprimer / PDF
+              </Button>
             </div>
           </div>
         </div>
-      </main>
+
+        <div className="grid gap-4 lg:grid-cols-3 print:block">
+          {/* Document imprimable */}
+          <div
+            ref={printRef}
+            className="overflow-hidden rounded-xl border border-border bg-card lg:col-span-2 print:rounded-none print:border-none print:bg-white print:text-black print:shadow-none"
+          >
+            {/* Émetteur / numéro */}
+            <div className="border-b border-border p-6 sm:p-8 print:p-8">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <div className="mb-2 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary print:border print:border-black print:bg-white">
+                      <span className="text-lg font-semibold text-primary-foreground print:text-black">B</span>
+                    </div>
+                    <div>
+                      <p className="text-base font-semibold text-foreground print:text-black">
+                        {invoice.company_name || 'B-Stock'}
+                      </p>
+                      {invoice.company_address && (
+                        <p className="text-xs text-muted-foreground">{invoice.company_address}</p>
+                      )}
+                    </div>
+                  </div>
+                  {invoice.company_phone && (
+                    <p className="text-xs text-muted-foreground">Tél. {invoice.company_phone}</p>
+                  )}
+                  {invoice.company_email && (
+                    <p className="text-xs text-muted-foreground">{invoice.company_email}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-left sm:text-right">
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground print:text-black">Facture</h1>
+                  <p className="font-mono text-sm font-medium text-foreground print:text-black">
+                    {invoice.invoice_number}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Émise le {formatDateShort(invoice.created_at)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tiers / détails */}
+            <div className="border-b border-border p-6 sm:p-8 print:p-8">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    {invoice.type === 'client' ? 'Facturé à' : 'Fournisseur'}
+                  </p>
+                  <p className="text-sm font-semibold text-foreground print:text-black">{partyName || '—'}</p>
+                  {partyPhone && <p className="mt-0.5 text-xs text-muted-foreground">Tél. {partyPhone}</p>}
+                  {partyAddress && <p className="mt-0.5 text-xs text-muted-foreground">{partyAddress}</p>}
+                  {partyEmail && <p className="mt-0.5 text-xs text-muted-foreground">{partyEmail}</p>}
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Détails</p>
+                  <dl className="space-y-1 text-xs">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">Type</dt>
+                      <dd className="font-medium text-foreground print:text-black">
+                        {invoice.type === 'client' ? 'Facture client' : 'Facture fournisseur'}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">Statut</dt>
+                      <dd className="font-medium text-foreground print:text-black">{status.label}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            </div>
+
+            {/* Lignes */}
+            <div className="space-y-6 p-6 sm:p-8 print:p-8">
+              {itemSections.map((section) => (
+                <div key={section.key}>
+                  <h3 className="mb-3 text-sm font-semibold text-foreground print:text-black">{section.title}</h3>
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border bg-muted/50 print:bg-white">
+                            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Désignation</th>
+                            <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Qté</th>
+                            <th className="hidden px-4 py-2 text-right text-xs font-medium text-muted-foreground sm:table-cell print:table-cell">Prix unitaire</th>
+                            <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {section.items.map((item) => (
+                            <tr key={item.id}>
+                              <td className="px-4 py-2.5 text-sm text-foreground print:text-black">
+                                {item.product_name || item.description || section.fallback}
+                              </td>
+                              <td className="tabular px-4 py-2.5 text-right text-sm text-muted-foreground">{formatNumber(item.quantity)}</td>
+                              <td className="tabular hidden px-4 py-2.5 text-right text-sm text-muted-foreground sm:table-cell print:table-cell">
+                                {formatCurrency(Number(item.unit_price))}
+                              </td>
+                              <td className="tabular px-4 py-2.5 text-right text-sm font-medium text-foreground print:text-black">
+                                {formatCurrency(Number(item.total_price))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Totaux */}
+              <div className="flex justify-end">
+                <dl className="w-full space-y-2 border-t border-border pt-4 text-sm sm:w-72">
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Total HT</dt>
+                    <dd className="tabular font-medium text-foreground print:text-black">{formatCurrency(Number(invoice.total_amount))}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Total TTC</dt>
+                    <dd className="tabular font-semibold text-foreground print:text-black">{formatCurrency(Number(invoice.total_amount))}</dd>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-2">
+                    <dt className="text-muted-foreground">Montant payé</dt>
+                    <dd className="tabular font-medium text-success print:text-black">{formatCurrency(Number(invoice.amount_paid))}</dd>
+                  </div>
+                  {remaining > 0 && (
+                    <div className="flex justify-between border-t border-border pt-2 font-semibold">
+                      <dt className="text-destructive print:text-black">Reste à payer</dt>
+                      <dd className="tabular text-destructive print:text-black">{formatCurrency(remaining)}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+
+              {/* Notes */}
+              {invoice.notes && (
+                <div className="border-t border-border pt-4">
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Notes</p>
+                  <p className="whitespace-pre-line text-sm text-foreground print:text-black">{invoice.notes}</p>
+                </div>
+              )}
+
+              {/* Pied de page */}
+              <div className="border-t border-border pt-4 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Merci pour votre confiance — {invoice.company_name || 'B-Stock'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Résumé — masqué à l'impression */}
+          <div className="no-print space-y-4">
+            <Panel title="Règlement" description={remaining > 0 ? 'Montant restant à encaisser' : 'Facture entièrement réglée'}>
+              <dl className="space-y-3 px-5 py-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Total</dt>
+                  <dd className="tabular font-medium text-foreground">{formatCurrency(Number(invoice.total_amount))}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Déjà payé</dt>
+                  <dd className="tabular font-medium text-success">{formatCurrency(Number(invoice.amount_paid))}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+                  <dt className="font-medium text-foreground">Reste à payer</dt>
+                  <dd className={`tabular text-lg font-semibold ${remaining > 0 ? 'text-destructive' : 'text-foreground'}`}>
+                    {remaining > 0 ? formatCurrency(remaining) : 'Soldé'}
+                  </dd>
+                </div>
+              </dl>
+            </Panel>
+
+            <Panel title={invoice.type === 'client' ? 'Client' : 'Fournisseur'}>
+              <div className="space-y-1 px-5 py-4 text-sm">
+                <p className="font-medium text-foreground">{partyName || '—'}</p>
+                {partyPhone && <p className="text-xs text-muted-foreground">Tél. {partyPhone}</p>}
+                {partyAddress && <p className="text-xs text-muted-foreground">{partyAddress}</p>}
+                {partyEmail && <p className="text-xs text-muted-foreground">{partyEmail}</p>}
+              </div>
+            </Panel>
+          </div>
+        </div>
+      </PageShell>
+
+      <AlertDialog open={confirmAction !== null} onOpenChange={(o) => { if (!o && !acting) setConfirmAction(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction === 'delete'
+                ? `Supprimer la facture ${invoice.invoice_number} ?`
+                : `Annuler la facture ${invoice.invoice_number} ?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction === 'delete'
+                ? 'La facture sera définitivement supprimée. Cette action est irréversible.'
+                : `La facture passera au statut « Annulée » et restera dans l'historique${Number(invoice.amount_paid) > 0 ? ` (${formatCurrency(Number(invoice.amount_paid))} déjà encaissés : régularisez le client si nécessaire)` : ''}. Cette action est définitive.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={acting}>Revenir</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); if (confirmAction === 'delete') handleDelete(); else handleCancel() }}
+              disabled={acting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {acting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              {confirmAction === 'delete' ? 'Oui, supprimer' : 'Oui, annuler la facture'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  )
+}
+
+function BackLink() {
+  return (
+    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
+      <Link href="/dashboard/invoices">
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Factures
+      </Link>
+    </Button>
   )
 }

@@ -1,21 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
+import { changeSaleStatus, SALE_STATUSES } from '@/lib/domain/sales'
+import { handleRouteError, notFound } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
 
 // GET /api/sales/[id] — Get sale order detail
 export async function GET(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-    try {
-        const authz = await requirePermission('sales.read')
-        if (!authz.ok) return authz.response
-        const { session } = authz
+  try {
+    const authz = await requirePermission('sales.read')
+    if (!authz.ok) return authz.response
 
-        const { id } = await params
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Commande')
 
-        // Get order
-        const orders = await sql`
+    const orders = await sql`
       SELECT so.*, c.name as client_name, c.phone as client_phone,
              c.address as client_address, c.client_type,
              d.name as depot_name, u.full_name as created_by_name
@@ -23,99 +26,74 @@ export async function GET(
       LEFT JOIN clients c ON so.client_id = c.id
       LEFT JOIN depots d ON so.depot_id = d.id
       LEFT JOIN users u ON so.created_by = u.id
-      WHERE so.id = ${id} AND so.company_id = ${session.user.companyId}
+      WHERE so.id = ${id} AND so.company_id = ${authz.companyId}
     `
+    if (orders.length === 0) throw notFound('Commande')
 
-        if (orders.length === 0) {
-            return NextResponse.json({ error: 'Commande introuvable' }, { status: 404 })
-        }
+    const [items, packagingItems, payments] = await Promise.all([
+      sql`
+        SELECT soi.*, p.name as product_name, p.brand,
+               pt.name as packaging_name, pv.barcode
+        FROM sales_order_items soi
+        JOIN product_variants pv ON soi.product_variant_id = pv.id
+        JOIN products p ON pv.product_id = p.id
+        LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
+        WHERE soi.sales_order_id = ${id}
+      `,
+      sql`
+        SELECT sopi.*, pt.name as packaging_name
+        FROM sales_order_packaging_items sopi
+        JOIN packaging_types pt ON sopi.packaging_type_id = pt.id
+        WHERE sopi.sales_order_id = ${id}
+      `,
+      sql`
+        SELECT p.*, u.full_name as received_by_name
+        FROM payments p
+        LEFT JOIN users u ON p.received_by = u.id
+        WHERE p.sales_order_id = ${id} AND p.company_id = ${authz.companyId}
+        ORDER BY p.created_at
+      `,
+    ])
 
-        // Get order items
-        const items = await sql`
-      SELECT soi.*, p.name as product_name, p.brand,
-             pt.name as packaging_name, pv.barcode
-      FROM sales_order_items soi
-      JOIN product_variants pv ON soi.product_variant_id = pv.id
-      JOIN products p ON pv.product_id = p.id
-      LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
-      WHERE soi.sales_order_id = ${id}
-    `
-
-        // Get packaging items
-        const packagingItems = await sql`
-      SELECT sopi.*, pt.name as packaging_name
-      FROM sales_order_packaging_items sopi
-      JOIN packaging_types pt ON sopi.packaging_type_id = pt.id
-      WHERE sopi.sales_order_id = ${id}
-    `
-
-        // Get payments
-        const payments = await sql`
-      SELECT p.*, u.full_name as received_by_name
-      FROM payments p
-      LEFT JOIN users u ON p.received_by = u.id
-      WHERE p.sales_order_id = ${id}
-      ORDER BY p.created_at
-    `
-
-        return NextResponse.json({
-            success: true,
-            data: {
-                ...orders[0],
-                items,
-                packagingItems,
-                payments,
-            },
-        })
-    } catch (error) {
-        console.error('Error fetching sale detail:', error)
-        return NextResponse.json(
-            { error: 'Erreur lors de la récupération de la commande' },
-            { status: 500 }
-        )
-    }
+    return NextResponse.json({
+      success: true,
+      data: { ...orders[0], items, packagingItems, payments },
+    })
+  } catch (error) {
+    return handleRouteError(error, 'sales.get')
+  }
 }
 
-// PATCH /api/sales/[id] — Update sale status
+const statusSchema = z.object({ status: z.enum(SALE_STATUSES) })
+
+// PATCH /api/sales/[id] — Change sale status (l'annulation contre-passe la vente)
 export async function PATCH(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-    try {
-        const authz = await requirePermission('sales.write')
-        if (!authz.ok) return authz.response
-        const { session } = authz
+  try {
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Commande')
+    const { status } = statusSchema.parse(await request.json())
 
-        const { id } = await params
-        const body = await request.json()
-        const { status } = body
+    // Annuler une vente = remettre en stock et effacer la dette : permission dédiée
+    const authz = await requirePermission(status === 'cancelled' ? 'sales.cancel' : 'sales.write')
+    if (!authz.ok) return authz.response
 
-        const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled']
-        if (!validStatuses.includes(status)) {
-            return NextResponse.json({ error: 'Statut invalide' }, { status: 400 })
-        }
+    const { order, warnings } = await changeSaleStatus({
+      companyId: authz.companyId,
+      userId: authz.userId,
+      orderId: id,
+      status,
+    })
 
-        const orders = await sql`
-      UPDATE sales_orders
-      SET status = ${status}, updated_at = NOW()
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-      RETURNING *
-    `
-
-        if (orders.length === 0) {
-            return NextResponse.json({ error: 'Commande introuvable' }, { status: 404 })
-        }
-
-        return NextResponse.json({
-            success: true,
-            data: orders[0],
-            message: 'Statut mis à jour',
-        })
-    } catch (error) {
-        console.error('Error updating sale:', error)
-        return NextResponse.json(
-            { error: 'Erreur lors de la mise à jour' },
-            { status: 500 }
-        )
-    }
+    return NextResponse.json({
+      success: true,
+      data: order,
+      warnings,
+      message: status === 'cancelled' ? 'Vente annulée' : 'Statut mis à jour',
+    })
+  } catch (error) {
+    return handleRouteError(error, 'sales.status')
+  }
 }

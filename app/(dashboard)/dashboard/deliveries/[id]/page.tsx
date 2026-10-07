@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -14,11 +14,17 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-    ArrowLeft, Truck, MapPin, User, Calendar, Clock, CheckCircle2,
-    PlayCircle, Package, Loader2, Navigation, AlertTriangle, PackageOpen,
-    XCircle, RotateCcw,
+    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+    ArrowLeft, Truck, MapPin, CheckCircle2, PlayCircle, Package, Loader2,
+    Navigation, PackageOpen, XCircle, RotateCcw, Lock,
 } from 'lucide-react'
 import Link from 'next/link'
+import { ApiError, apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface Stop {
     id: string
@@ -63,46 +69,72 @@ interface TourDetail {
     inventory: InventoryItem[]
 }
 
-const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    planned: { label: 'Planifiée', color: 'bg-slate-100 text-slate-600', icon: Clock },
-    loading: { label: 'Chargement', color: 'bg-amber-100 text-amber-600', icon: PlayCircle },
-    in_progress: { label: 'En route', color: 'bg-blue-100 text-blue-600', icon: Navigation },
-    completed: { label: 'Terminée', color: 'bg-emerald-100 text-emerald-600', icon: CheckCircle2 },
-    cancelled: { label: 'Annulée', color: 'bg-rose-100 text-rose-600', icon: XCircle },
+type TourStatus = 'planned' | 'loading' | 'in_progress' | 'completed' | 'cancelled'
+
+/** Miroir de la table de transitions de PATCH /api/deliveries/[id]. */
+const TRANSITIONS: Record<TourStatus, TourStatus[]> = {
+    planned: ['loading', 'in_progress', 'cancelled'],
+    loading: ['in_progress', 'planned', 'cancelled'],
+    in_progress: ['completed', 'cancelled'],
+    completed: [],
+    cancelled: [],
 }
 
-const stopStatusConfig: Record<string, { label: string; color: string }> = {
-    pending: { label: 'En attente', color: 'bg-slate-100 text-slate-500' },
-    delivered: { label: 'Livré', color: 'bg-emerald-100 text-emerald-600' },
-    partial: { label: 'Partiel', color: 'bg-amber-100 text-amber-600' },
-    failed: { label: 'Échoué', color: 'bg-rose-100 text-rose-600' },
+type Tone = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
+
+const statusConfig: Record<string, { label: string; tone: Tone }> = {
+    planned: { label: 'Planifiée', tone: 'default' },
+    loading: { label: 'Chargement', tone: 'warning' },
+    in_progress: { label: 'En route', tone: 'brand' },
+    completed: { label: 'Terminée', tone: 'success' },
+    cancelled: { label: 'Annulée', tone: 'danger' },
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 0 }).format(amount)
+const stopStatusConfig: Record<string, { label: string; tone: Tone }> = {
+    pending: { label: 'En attente', tone: 'default' },
+    delivered: { label: 'Livré', tone: 'success' },
+    partial: { label: 'Partiel', tone: 'warning' },
+    failed: { label: 'Échoué', tone: 'danger' },
 }
+
+const STOP_SUCCESS: Record<string, string> = {
+    delivered: 'Arrêt marqué livré',
+    partial: 'Arrêt marqué livré partiellement',
+    failed: 'Arrêt marqué en échec',
+}
+
+/** Transitions finales : confirmation obligatoire. */
+type ConfirmTarget = 'completed' | 'cancelled' | null
 
 export default function DeliveryDetailPage() {
     const params = useParams()
-    const router = useRouter()
     const tourId = params.id as string
 
     const [tour, setTour] = useState<TourDetail | null>(null)
     const [loading, setLoading] = useState(true)
-    const [updating, setUpdating] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [updating, setUpdating] = useState<TourStatus | null>(null)
+    const [updatingStop, setUpdatingStop] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<{ notFound: boolean; message: string } | null>(null)
+    const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget>(null)
 
-    const fetchTour = useCallback(async () => {
+    const fetchTour = useCallback(async (opts: { silent?: boolean } = {}) => {
+        if (!opts.silent) {
+            setLoading(true)
+            setLoadError(null)
+        }
         try {
-            const res = await fetch(`/api/deliveries/${tourId}`)
-            const data = await res.json()
-            if (res.ok && data.data) {
-                setTour(data.data)
+            const data = await apiFetch<{ data: TourDetail }>(`/api/deliveries/${tourId}`)
+            setTour(data.data)
+            setLoadError(null)
+        } catch (e) {
+            if (opts.silent) {
+                toastError(e, 'Actualisation impossible')
             } else {
-                setError(data.error || 'Erreur de chargement')
+                setLoadError({
+                    notFound: e instanceof ApiError && e.status === 404,
+                    message: e instanceof Error ? e.message : 'Erreur de chargement',
+                })
             }
-        } catch {
-            setError('Erreur réseau')
         } finally {
             setLoading(false)
         }
@@ -110,393 +142,444 @@ export default function DeliveryDetailPage() {
 
     useEffect(() => { fetchTour() }, [fetchTour])
 
-    async function updateTourStatus(newStatus: string) {
-        setUpdating(true)
+    async function updateTourStatus(newStatus: TourStatus, successMessage: string) {
+        if (updating) return
+        setUpdating(newStatus)
         try {
-            const res = await fetch(`/api/deliveries/${tourId}`, {
+            const res = await apiFetch(`/api/deliveries/${tourId}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
+                body: { status: newStatus },
             })
-            if (res.ok) fetchTour()
-        } catch { /* ignore */ }
-        finally { setUpdating(false) }
+            toast.success(successMessage)
+            toastWarnings(res?.warnings)
+            setConfirmTarget(null)
+            await fetchTour({ silent: true })
+        } catch (e) {
+            toastError(e, 'Changement de statut impossible')
+            // La tournée a pu changer entre-temps (409) : on resynchronise l'écran
+            if (e instanceof ApiError && e.status === 409) fetchTour({ silent: true })
+        } finally {
+            setUpdating(null)
+        }
     }
 
     async function updateStopStatus(stopId: string, status: string) {
+        if (updatingStop) return
+        setUpdatingStop(stopId)
         try {
-            await fetch(`/api/deliveries/${tourId}/stops`, {
+            const res = await apiFetch(`/api/deliveries/${tourId}/stops`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ stopId, status }),
+                body: { stopId, status },
             })
-            fetchTour()
-        } catch { /* ignore */ }
+            toast.success(STOP_SUCCESS[status] ?? 'Arrêt mis à jour')
+            toastWarnings(res?.warnings)
+            await fetchTour({ silent: true })
+        } catch (e) {
+            toastError(e, "Mise à jour de l'arrêt impossible")
+            if (e instanceof ApiError && e.status === 409) fetchTour({ silent: true })
+        } finally {
+            setUpdatingStop(null)
+        }
     }
 
     if (loading) {
+        return <PageSkeleton />
+    }
+
+    if (loadError || !tour) {
         return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Détail Tournée" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </main>
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title={loadError?.notFound ? 'Tournée introuvable' : 'Détail de la tournée'} />
+                <PageShell>
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 w-fit">
+                        <Link href="/dashboard/deliveries">
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Livraisons
+                        </Link>
+                    </Button>
+                    {loadError?.notFound ? (
+                        <EmptyState
+                            icon={Truck}
+                            title="Tournée introuvable"
+                            description="Cette tournée n'existe pas ou a été supprimée."
+                            action={{ label: 'Retour aux tournées', href: '/dashboard/deliveries' }}
+                        />
+                    ) : (
+                        <ErrorState
+                            title="Impossible de charger la tournée"
+                            description={loadError?.message}
+                            onRetry={() => fetchTour()}
+                        />
+                    )}
+                </PageShell>
             </div>
         )
     }
 
-    if (error || !tour) {
-        return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Tournée introuvable" description="" />
-                <main className="flex-1 p-6">
-                    <div className="text-center py-12">
-                        <p className="text-destructive font-bold">{error || 'Tournée introuvable'}</p>
-                        <Button variant="outline" className="mt-4" asChild>
-                            <Link href="/dashboard/deliveries">Retour</Link>
-                        </Button>
-                    </div>
-                </main>
-            </div>
-        )
-    }
+    const currentStatus = tour.status as TourStatus
+    const allowed = TRANSITIONS[currentStatus] ?? []
+    const isClosed = allowed.length === 0
+    const can = (to: TourStatus) => allowed.includes(to)
 
     const statusInfo = statusConfig[tour.status] || statusConfig.planned
-    const StatusIcon = statusInfo.icon
     const deliveredStops = tour.stops.filter(s => s.status === 'delivered').length
+    const pendingStops = tour.stops.filter(s => s.status === 'pending').length
     const totalStops = tour.stops.length
     const progress = totalStops > 0 ? Math.round((deliveredStops / totalStops) * 100) : 0
 
     const productInventory = tour.inventory.filter(i => i.inventory_type === 'product')
     const packagingInventory = tour.inventory.filter(i => i.inventory_type === 'packaging')
 
+    const busy = updating !== null
+    const spinnerOr = (status: TourStatus, icon: React.ReactNode) =>
+        updating === status ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : icon
+
+    // Une seule action phare : l'étape suivante logique de la tournée
+    const keyAction: TourStatus =
+        currentStatus === 'planned' ? 'loading' : currentStatus === 'loading' ? 'in_progress' : 'completed'
+    const variantFor = (status: TourStatus) => (keyAction === status ? 'brand' : 'default')
+
+    const tourDateLabel = new Date(tour.tour_date).toLocaleDateString('fr-FR', {
+        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+    })
+
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title={`Tournée du ${new Date(tour.tour_date).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}`}
-                description="Gestion complète de la tournée de livraison"
+                title="Détail de la tournée"
+                description={[tour.vehicle_name, tour.driver_name].filter(Boolean).join(' · ') || 'Tournée de livraison'}
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                {/* Actions bar */}
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-slate-200">
+            <PageShell>
+                <div className="space-y-4">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
                         <Link href="/dashboard/deliveries">
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Livraisons
                         </Link>
                     </Button>
-                    <div className="flex gap-3 flex-wrap">
-                        {tour.status === 'planned' && (
-                            <Button
-                                onClick={() => updateTourStatus('loading')}
-                                disabled={updating}
-                                className="rounded-xl bg-amber-600 hover:bg-amber-700 font-bold h-10 px-6"
-                            >
-                                <PlayCircle className="h-4 w-4 mr-2" /> Démarrer chargement
-                            </Button>
-                        )}
-                        {tour.status === 'loading' && (
-                            <Button
-                                onClick={() => updateTourStatus('in_progress')}
-                                disabled={updating}
-                                className="rounded-xl bg-blue-600 hover:bg-blue-700 font-bold h-10 px-6"
-                            >
-                                <Navigation className="h-4 w-4 mr-2" /> Départ livraison
-                            </Button>
-                        )}
-                        {tour.status === 'in_progress' && (
-                            <Button
-                                onClick={() => updateTourStatus('completed')}
-                                disabled={updating}
-                                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 font-bold h-10 px-6"
-                            >
-                                <CheckCircle2 className="h-4 w-4 mr-2" /> Terminer la tournée
-                            </Button>
-                        )}
-                        {tour.status === 'loading' && (
-                            <Button variant="outline" asChild className="rounded-xl font-bold h-10 px-6">
-                                <Link href={`/dashboard/deliveries/${tour.id}/load`}>
-                                    <Package className="h-4 w-4 mr-2" /> Gérer le chargement
-                                </Link>
-                            </Button>
-                        )}
+
+                    {/* Titre + actions : uniquement les transitions acceptées par l'API */}
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+                                    Tournée du {tourDateLabel}
+                                </h2>
+                                <StatusBadge label={statusInfo.label} tone={statusInfo.tone} />
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                {totalStops} arrêt{totalStops > 1 ? 's' : ''} · {progress}% livré
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {can('cancelled') && (
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => setConfirmTarget('cancelled')}
+                                    disabled={busy}
+                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                    {spinnerOr('cancelled', <XCircle className="h-4 w-4" aria-hidden="true" />)} Annuler la tournée
+                                </Button>
+                            )}
+                            {currentStatus === 'loading' && can('planned') && (
+                                <Button
+                                    variant="outline"
+                                    onClick={() => updateTourStatus('planned', 'Tournée remise en planification')}
+                                    disabled={busy}
+                                >
+                                    {spinnerOr('planned', <RotateCcw className="h-4 w-4" aria-hidden="true" />)} Revenir à « Planifiée »
+                                </Button>
+                            )}
+                            {(currentStatus === 'planned' || currentStatus === 'loading') && (
+                                <Button variant="outline" asChild>
+                                    <Link href={`/dashboard/deliveries/${tour.id}/load`}>
+                                        <Package className="h-4 w-4" aria-hidden="true" /> Gérer le chargement
+                                    </Link>
+                                </Button>
+                            )}
+                            {currentStatus === 'planned' && can('loading') && (
+                                <Button
+                                    variant={variantFor('loading')}
+                                    onClick={() => updateTourStatus('loading', 'Chargement démarré')}
+                                    disabled={busy}
+                                >
+                                    {spinnerOr('loading', <PlayCircle className="h-4 w-4" aria-hidden="true" />)} Démarrer le chargement
+                                </Button>
+                            )}
+                            {can('in_progress') && (
+                                <Button
+                                    variant={variantFor('in_progress')}
+                                    onClick={() => updateTourStatus('in_progress', 'Tournée partie en livraison')}
+                                    disabled={busy}
+                                >
+                                    {spinnerOr('in_progress', <Navigation className="h-4 w-4" aria-hidden="true" />)} Départ en livraison
+                                </Button>
+                            )}
+                            {can('completed') && (
+                                <Button
+                                    variant={variantFor('completed')}
+                                    onClick={() => setConfirmTarget('completed')}
+                                    disabled={busy}
+                                >
+                                    {spinnerOr('completed', <CheckCircle2 className="h-4 w-4" aria-hidden="true" />)} Terminer la tournée
+                                </Button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {/* Stats row */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    <Card className="rounded-[2rem] border-slate-200/60">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${statusInfo.color}`}>
-                                <StatusIcon className="h-6 w-6" />
+                {isClosed && (
+                    <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/50 p-4 text-sm text-muted-foreground">
+                        <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        Cette tournée est {currentStatus === 'cancelled' ? 'annulée' : 'terminée'} : les arrêts et l&apos;inventaire ne sont plus modifiables.
+                    </div>
+                )}
+
+                <AlertDialog
+                    open={confirmTarget !== null}
+                    onOpenChange={(open) => { if (!open && !busy) setConfirmTarget(null) }}
+                >
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>
+                                {confirmTarget === 'cancelled' ? 'Annuler cette tournée ?' : 'Terminer cette tournée ?'}
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                                {confirmTarget === 'cancelled'
+                                    ? "La tournée passera au statut « Annulée ». C'est définitif : elle ne pourra plus être relancée, et ses arrêts et son inventaire ne seront plus modifiables."
+                                    : `La tournée passera au statut « Terminée ». C'est définitif : ses arrêts et son inventaire ne seront plus modifiables.${pendingStops > 0 ? ` Attention : ${pendingStops} arrêt${pendingStops > 1 ? 's sont' : ' est'} encore en attente.` : ''}`}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel disabled={busy}>Retour</AlertDialogCancel>
+                            <AlertDialogAction
+                                disabled={busy}
+                                className={confirmTarget === 'cancelled' ? buttonVariants({ variant: 'destructive' }) : undefined}
+                                onClick={(e) => {
+                                    // On garde la boîte ouverte jusqu'à la réponse du serveur
+                                    e.preventDefault()
+                                    if (confirmTarget === 'cancelled') updateTourStatus('cancelled', 'Tournée annulée')
+                                    else if (confirmTarget === 'completed') updateTourStatus('completed', 'Tournée terminée')
+                                }}
+                            >
+                                {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                                {confirmTarget === 'cancelled' ? 'Annuler la tournée' : 'Terminer la tournée'}
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+
+                {/* Indicateurs */}
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <StatCard
+                        label="Arrêts livrés"
+                        value={`${formatNumber(deliveredStops)} / ${formatNumber(totalStops)}`}
+                        hint={`${progress}% de la tournée`}
+                        icon={MapPin}
+                        tone={progress === 100 && totalStops > 0 ? 'success' : 'brand'}
+                    >
+                        {totalStops > 0 && (
+                            <div
+                                className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                                role="progressbar"
+                                aria-valuenow={progress}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label="Progression des livraisons"
+                            >
+                                <div
+                                    className={`h-full rounded-full ${progress === 100 ? 'bg-success' : 'bg-brand'}`}
+                                    style={{ width: `${progress}%` }}
+                                />
                             </div>
-                            <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Statut</p>
-                                <p className="text-lg font-semibold text-slate-950">{statusInfo.label}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[2rem] border-slate-200/60">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-                                <MapPin className="h-6 w-6" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Arrêts</p>
-                                <p className="text-lg font-semibold text-slate-950">{deliveredStops}/{totalStops}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[2rem] border-slate-200/60">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-                                <Package className="h-6 w-6" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Produits chargés</p>
-                                <p className="text-lg font-semibold text-slate-950">
-                                    {productInventory.reduce((s, i) => s + i.loaded_quantity, 0)}
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="rounded-[2rem] border-slate-200/60">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-                                <PackageOpen className="h-6 w-6" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Emb. chargés</p>
-                                <p className="text-lg font-semibold text-slate-950">
-                                    {packagingInventory.reduce((s, i) => s + i.loaded_quantity, 0)}
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
+                        )}
+                    </StatCard>
+                    <StatCard
+                        label="Produits chargés"
+                        value={formatNumber(productInventory.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))}
+                        hint="Unités au départ"
+                        icon={Package}
+                    />
+                    <StatCard
+                        label="Emballages chargés"
+                        value={formatNumber(packagingInventory.reduce((s, i) => s + Number(i.loaded_quantity || 0), 0))}
+                        hint="Unités au départ"
+                        icon={PackageOpen}
+                    />
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Main: Stops */}
-                    <div className="lg:col-span-2 space-y-6">
-                        <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                            <CardHeader className="px-8 py-6 border-b border-slate-100">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <CardTitle className="text-xl font-semibold text-slate-950">Arrêts de livraison</CardTitle>
-                                        <CardDescription>
-                                            {totalStops} arrêt{totalStops > 1 ? 's' : ''} — {progress}% complété
-                                        </CardDescription>
-                                    </div>
-                                    {totalStops > 0 && (
-                                        <div className="flex items-center gap-2 w-32">
-                                            <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-                                                <div
-                                                    className={`h-full rounded-full ${progress === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                                                    style={{ width: `${progress}%` }}
-                                                />
-                                            </div>
-                                            <span className="text-xs font-semibold text-slate-400">{progress}%</span>
-                                        </div>
-                                    )}
+                <div className="grid gap-6 lg:grid-cols-3">
+                    {/* Contenu principal : arrêts + inventaire */}
+                    <div className="space-y-6 lg:col-span-2">
+                        <Panel
+                            title="Arrêts de livraison"
+                            description={`${totalStops} arrêt${totalStops > 1 ? 's' : ''} · ${progress}% complété`}
+                        >
+                            {tour.stops.length === 0 ? (
+                                <div className="p-5">
+                                    <EmptyState
+                                        icon={MapPin}
+                                        title="Aucun arrêt configuré"
+                                        description="Cette tournée ne comporte encore aucun arrêt de livraison."
+                                    />
                                 </div>
-                            </CardHeader>
-                            <CardContent className="p-0">
-                                {tour.stops.length === 0 ? (
-                                    <div className="text-center py-16">
-                                        <MapPin className="h-10 w-10 mx-auto text-slate-300" />
-                                        <p className="text-sm text-muted-foreground mt-3">Aucun arrêt configuré</p>
-                                    </div>
-                                ) : (
-                                    <div className="divide-y divide-slate-50">
-                                        {tour.stops.map((stop, idx) => {
-                                            const sInfo = stopStatusConfig[stop.status] || stopStatusConfig.pending
-                                            return (
-                                                <div key={stop.id} className="flex items-center gap-4 px-8 py-5 hover:bg-slate-50/50 transition-colors">
-                                                    <div className="flex flex-col items-center gap-1 shrink-0 w-8">
-                                                        <span className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-semibold">
-                                                            {idx + 1}
-                                                        </span>
+                            ) : (
+                                <ol className="divide-y divide-border">
+                                    {tour.stops.map((stop, idx) => {
+                                        const sInfo = stopStatusConfig[stop.status] || stopStatusConfig.pending
+                                        return (
+                                            <li
+                                                key={stop.id}
+                                                className="flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-4"
+                                            >
+                                                <div className="flex min-w-0 flex-1 items-start gap-3">
+                                                    <span
+                                                        className="tabular flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
+                                                        aria-label={`Arrêt ${idx + 1}`}
+                                                    >
+                                                        {idx + 1}
+                                                    </span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-medium text-foreground">{stop.client_name}</p>
+                                                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                                                            {stop.client_zone && <span>{stop.client_zone}</span>}
+                                                            {stop.client_phone && <span className="tabular">{stop.client_phone}</span>}
+                                                            {stop.order_number && <span className="font-mono">{stop.order_number}</span>}
+                                                        </p>
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-semibold text-slate-950 truncate">{stop.client_name}</p>
-                                                        <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                                                            {stop.client_zone && <span className="font-bold">{stop.client_zone}</span>}
-                                                            {stop.client_phone && <span>{stop.client_phone}</span>}
-                                                            {stop.order_number && (
-                                                                <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">
-                                                                    {stop.order_number}
-                                                                </span>
+                                                    {stop.total_amount != null && (
+                                                        <div className="shrink-0 text-right">
+                                                            <p className="tabular text-sm font-medium text-foreground">
+                                                                {formatMoney(Number(stop.total_amount))}
+                                                            </p>
+                                                            {Number(stop.paid_amount) < Number(stop.total_amount) && (
+                                                                <p className="tabular text-xs text-destructive">
+                                                                    Reste {formatMoney(Number(stop.total_amount) - Number(stop.paid_amount || 0))}
+                                                                </p>
                                                             )}
                                                         </div>
-                                                        {stop.total_amount != null && (
-                                                            <p className="text-xs font-bold text-slate-500 mt-1">
-                                                                {formatCurrency(Number(stop.total_amount))}
-                                                                {Number(stop.paid_amount) < Number(stop.total_amount) && (
-                                                                    <span className="text-rose-500 ml-2">
-                                                                        (reste {formatCurrency(Number(stop.total_amount) - Number(stop.paid_amount || 0))})
-                                                                    </span>
-                                                                )}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center gap-3 shrink-0">
-                                                        {(tour.status === 'in_progress' || tour.status === 'loading') && stop.status === 'pending' && (
-                                                            <Select onValueChange={(val) => updateStopStatus(stop.id, val)}>
-                                                                <SelectTrigger className="h-8 w-32 rounded-lg text-xs">
-                                                                    <SelectValue placeholder="Action..." />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    <SelectItem value="delivered">Livré</SelectItem>
-                                                                    <SelectItem value="partial">Partiel</SelectItem>
-                                                                    <SelectItem value="failed">Échoué</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
-                                                        )}
-                                                        <Badge className={`rounded-full px-3 py-1 text-[9px] font-semibold uppercase tracking-wider border-none ${sInfo.color}`}>
-                                                            {sInfo.label}
-                                                        </Badge>
-                                                    </div>
+                                                    )}
                                                 </div>
-                                            )
-                                        })}
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                                                <div className="flex shrink-0 items-center justify-end gap-2 pl-10 sm:pl-0">
+                                                    {updatingStop === stop.id && (
+                                                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Mise à jour en cours" />
+                                                    )}
+                                                    {!isClosed && (currentStatus === 'in_progress' || currentStatus === 'loading') && stop.status === 'pending' && (
+                                                        <Select
+                                                            value=""
+                                                            onValueChange={(val) => updateStopStatus(stop.id, val)}
+                                                            disabled={updatingStop !== null || busy}
+                                                        >
+                                                            <SelectTrigger size="sm" className="w-32 text-xs" aria-label={`Statut de l'arrêt ${stop.client_name}`}>
+                                                                <SelectValue placeholder="Marquer…" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="delivered">Livré</SelectItem>
+                                                                <SelectItem value="partial">Partiel</SelectItem>
+                                                                <SelectItem value="failed">Échoué</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    )}
+                                                    <StatusBadge label={sInfo.label} tone={sInfo.tone} />
+                                                </div>
+                                            </li>
+                                        )
+                                    })}
+                                </ol>
+                            )}
+                        </Panel>
 
-                        {/* Vehicle Inventory */}
+                        {/* Inventaire du véhicule */}
                         {tour.inventory.length > 0 && (
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                                <CardHeader className="px-8 py-6 border-b border-slate-100">
-                                    <CardTitle className="text-xl font-semibold text-slate-950">Inventaire Véhicule</CardTitle>
-                                    <CardDescription>Chargé / Déchargé / Retours / Endommagé</CardDescription>
-                                </CardHeader>
-                                <CardContent className="p-0">
+                            <Panel title="Inventaire du véhicule" description="Chargé, déchargé, retours et casse par article">
+                                <div className="overflow-x-auto">
                                     <Table>
-                                        <TableHeader className="bg-slate-50/50">
-                                            <TableRow className="border-none">
-                                                <TableHead className="py-4 pl-8 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Article</TableHead>
-                                                <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Type</TableHead>
-                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-blue-500">Chargé</TableHead>
-                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-emerald-500">Déchargé</TableHead>
-                                                <TableHead className="py-4 text-center font-semibold uppercase text-[10px] tracking-wider text-amber-500">Retours</TableHead>
-                                                <TableHead className="py-4 text-center pr-8 font-semibold uppercase text-[10px] tracking-wider text-rose-500">Endommagé</TableHead>
+                                        <TableHeader>
+                                            <TableRow className="hover:bg-transparent">
+                                                <TableHead className="pl-5">Article</TableHead>
+                                                <TableHead>Type</TableHead>
+                                                <TableHead className="text-right">Chargé</TableHead>
+                                                <TableHead className="text-right">Déchargé</TableHead>
+                                                <TableHead className="text-right">Retours</TableHead>
+                                                <TableHead className="pr-5 text-right">Endommagé</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {tour.inventory.map(item => (
-                                                <TableRow key={item.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                                    <TableCell className="py-4 pl-8 font-semibold text-slate-950">
+                                                <TableRow key={item.id}>
+                                                    <TableCell className="pl-5 font-medium text-foreground">
                                                         {item.product_name || item.packaging_name || '—'}
                                                     </TableCell>
-                                                    <TableCell className="py-4">
-                                                        <Badge className={`rounded-lg px-2.5 py-0.5 text-[9px] font-semibold uppercase border-none ${
-                                                            item.inventory_type === 'product' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
-                                                        }`}>
-                                                            {item.inventory_type === 'product' ? 'Produit' : 'Emballage'}
-                                                        </Badge>
+                                                    <TableCell>
+                                                        <StatusBadge
+                                                            label={item.inventory_type === 'product' ? 'Produit' : 'Emballage'}
+                                                            tone={item.inventory_type === 'product' ? 'info' : 'default'}
+                                                        />
                                                     </TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-blue-600">{item.loaded_quantity}</TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-emerald-600">{item.unloaded_quantity}</TableCell>
-                                                    <TableCell className="py-4 text-center font-semibold text-amber-600">{item.returned_quantity}</TableCell>
-                                                    <TableCell className="py-4 text-center pr-8 font-semibold text-rose-600">{item.damaged_quantity}</TableCell>
+                                                    <TableCell className="tabular text-right font-medium text-foreground">{formatNumber(item.loaded_quantity)}</TableCell>
+                                                    <TableCell className="tabular text-right">{formatNumber(item.unloaded_quantity)}</TableCell>
+                                                    <TableCell className="tabular text-right">{formatNumber(item.returned_quantity)}</TableCell>
+                                                    <TableCell
+                                                        className={`tabular pr-5 text-right ${Number(item.damaged_quantity) > 0 ? 'font-medium text-destructive' : ''}`}
+                                                    >
+                                                        {formatNumber(item.damaged_quantity)}
+                                                    </TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>
                                     </Table>
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </Panel>
                         )}
                     </div>
 
-                    {/* Sidebar */}
+                    {/* Résumé */}
                     <div className="space-y-6">
-                        <Card className="rounded-lg border-slate-200/60 shadow-sm">
-                            <CardHeader className="px-8 py-6 border-b border-slate-100">
-                                <CardTitle className="text-lg font-semibold text-slate-950">Informations</CardTitle>
-                            </CardHeader>
-                            <CardContent className="p-8 space-y-5">
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2 text-slate-400">
-                                        <Calendar className="h-4 w-4" />
-                                        <span className="text-[10px] font-semibold uppercase tracking-wider">Date</span>
-                                    </div>
-                                    <span className="text-sm font-semibold text-slate-950">
-                                        {new Date(tour.tour_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
-                                    </span>
-                                </div>
-                                <Separator />
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2 text-slate-400">
-                                        <User className="h-4 w-4" />
-                                        <span className="text-[10px] font-semibold uppercase tracking-wider">Chauffeur</span>
-                                    </div>
-                                    <span className="text-sm font-semibold text-slate-950">{tour.driver_name || 'Non assigné'}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-2 text-slate-400">
-                                        <Truck className="h-4 w-4" />
-                                        <span className="text-[10px] font-semibold uppercase tracking-wider">Véhicule</span>
-                                    </div>
-                                    <span className="text-sm font-semibold text-slate-950">
-                                        {tour.vehicle_name || 'Non assigné'}
-                                        {tour.vehicle_plate && <code className="ml-1 text-xs bg-slate-100 px-1.5 py-0.5 rounded">{tour.vehicle_plate}</code>}
-                                    </span>
-                                </div>
-                                {tour.depot_name && (
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-slate-400">
-                                            <Package className="h-4 w-4" />
-                                            <span className="text-[10px] font-semibold uppercase tracking-wider">Dépôt</span>
-                                        </div>
-                                        <span className="text-sm font-semibold text-slate-950">{tour.depot_name}</span>
-                                    </div>
-                                )}
-                                <Separator />
-                                {tour.started_at && (
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-slate-400">
-                                            <Clock className="h-4 w-4" />
-                                            <span className="text-[10px] font-semibold uppercase tracking-wider">Départ</span>
-                                        </div>
-                                        <span className="text-xs font-bold text-slate-600">
-                                            {new Date(tour.started_at).toLocaleString('fr-FR')}
+                        <Panel title="Informations" bodyClassName="space-y-3 p-5">
+                            <InfoRow label="Date" value={formatDate(tour.tour_date)} />
+                            <InfoRow label="Chauffeur" value={tour.driver_name || 'Non assigné'} muted={!tour.driver_name} />
+                            <InfoRow
+                                label="Véhicule"
+                                value={
+                                    tour.vehicle_name ? (
+                                        <span className="flex flex-col items-end">
+                                            <span>{tour.vehicle_name}</span>
+                                            {tour.vehicle_plate && (
+                                                <span className="font-mono text-xs text-muted-foreground">{tour.vehicle_plate}</span>
+                                            )}
                                         </span>
-                                    </div>
-                                )}
-                                {tour.completed_at && (
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2 text-slate-400">
-                                            <CheckCircle2 className="h-4 w-4" />
-                                            <span className="text-[10px] font-semibold uppercase tracking-wider">Fin</span>
-                                        </div>
-                                        <span className="text-xs font-bold text-slate-600">
-                                            {new Date(tour.completed_at).toLocaleString('fr-FR')}
-                                        </span>
-                                    </div>
-                                )}
-                                {tour.created_by_name && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Créé par</span>
-                                        <span className="text-xs font-bold text-slate-600">{tour.created_by_name}</span>
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                                    ) : (
+                                        'Non assigné'
+                                    )
+                                }
+                                muted={!tour.vehicle_name}
+                            />
+                            {tour.depot_name && <InfoRow label="Dépôt" value={tour.depot_name} />}
+                            {(tour.started_at || tour.completed_at || tour.created_by_name) && <Separator />}
+                            {tour.started_at && <InfoRow label="Départ" value={formatDateTime(tour.started_at)} />}
+                            {tour.completed_at && <InfoRow label="Fin" value={formatDateTime(tour.completed_at)} />}
+                            {tour.created_by_name && <InfoRow label="Créée par" value={tour.created_by_name} />}
+                        </Panel>
 
                         {tour.notes && (
-                            <Card className="rounded-lg border-slate-200/60 shadow-sm">
-                                <CardHeader className="px-8 py-5 border-b border-slate-100">
-                                    <CardTitle className="text-sm font-semibold uppercase tracking-wider text-slate-400">Notes</CardTitle>
-                                </CardHeader>
-                                <CardContent className="p-8">
-                                    <p className="text-sm font-medium text-slate-600 italic leading-relaxed">&ldquo;{tour.notes}&rdquo;</p>
-                                </CardContent>
-                            </Card>
+                            <Panel title="Notes" bodyClassName="p-5">
+                                <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{tour.notes}</p>
+                            </Panel>
                         )}
                     </div>
                 </div>
-            </main>
+            </PageShell>
+        </div>
+    )
+}
+
+function InfoRow({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
+    return (
+        <div className="flex items-start justify-between gap-4 text-sm">
+            <span className="text-muted-foreground">{label}</span>
+            <span className={`tabular text-right font-medium ${muted ? 'text-muted-foreground' : 'text-foreground'}`}>{value}</span>
         </div>
     )
 }

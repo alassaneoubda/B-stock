@@ -5,9 +5,13 @@ import useSWR from 'swr'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { PageShell, PageIntro } from '@/components/app/blocks'
+import { Search, ChevronLeft, ChevronRight, ScrollText } from 'lucide-react'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { formatDateTime, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
 
 type Log = {
   id: string
@@ -25,7 +29,7 @@ export default function AdminAuditPage() {
   const [page, setPage] = useState(1)
 
   const qs = new URLSearchParams({ search, action, page: String(page) }).toString()
-  const { data, isLoading } = useSWR<{
+  const { data, error, isLoading, mutate } = useSWR<{
     data: Log[]
     actions: string[]
     pagination: { page: number; pages: number; total: number }
@@ -36,20 +40,19 @@ export default function AdminAuditPage() {
   const pagination = data?.pagination
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-zinc-950">Journal d&apos;audit</h1>
-        <p className="text-sm text-zinc-500">
-          {pagination ? `${pagination.total} action(s) enregistrée(s)` : 'Traçabilité des actions admin'}
-        </p>
-      </header>
+    <PageShell>
+      <PageIntro
+        title="Journal d’audit"
+        description={pagination ? `${formatNumber(pagination.total)} action(s) enregistrée(s)` : 'Traçabilité des actions admin'}
+      />
 
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
             placeholder="Rechercher (admin, action, cible)…"
-            className="pl-9 h-10"
+            className="h-10 pl-9"
+            aria-label="Rechercher"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -63,7 +66,8 @@ export default function AdminAuditPage() {
             setAction(e.target.value)
             setPage(1)
           }}
-          className="h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+          className="h-10 rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Filtrer par action"
         >
           <option value="">Toutes les actions</option>
           {actions.map((a) => (
@@ -74,18 +78,25 @@ export default function AdminAuditPage() {
         </select>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={5} />
           </div>
+        ) : error ? (
+          <ErrorState className="m-5" description={errorMessage(error)} onRetry={() => mutate()} />
         ) : logs.length === 0 ? (
-          <div className="py-20 text-center text-sm text-zinc-400">Aucune action</div>
+          <EmptyState
+            className="m-5"
+            icon={ScrollText}
+            title="Aucune action"
+            description={search || action ? 'Aucune action ne correspond à ces filtres.' : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs text-zinc-500 uppercase tracking-wide">
+                <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium">Admin</th>
                   <th className="px-5 py-3 font-medium">Action</th>
@@ -95,27 +106,30 @@ export default function AdminAuditPage() {
               </thead>
               <tbody>
                 {logs.map((l) => (
-                  <tr key={l.id} className="border-b border-zinc-50 hover:bg-zinc-50">
-                    <td className="px-5 py-3 text-zinc-500 whitespace-nowrap">
-                      {new Date(l.created_at).toLocaleString('fr-FR')}
+                  <tr key={l.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
+                    <td className="tabular whitespace-nowrap px-5 py-3 text-muted-foreground">
+                      {formatDateTime(l.created_at)}
                     </td>
-                    <td className="px-5 py-3 text-zinc-700">{l.admin_email || '—'}</td>
+                    <td className="px-5 py-3 text-foreground">{l.admin_email || '—'}</td>
                     <td className="px-5 py-3">
-                      <Badge className="bg-zinc-100 text-zinc-700 hover:bg-zinc-100 font-mono text-xs">
+                      <Badge variant="muted" className="font-mono text-xs">
                         {l.action}
                       </Badge>
                     </td>
-                    <td className="px-5 py-3 text-zinc-500">
+                    <td className="px-5 py-3 text-muted-foreground">
                       {l.target_type ? (
                         <span>
                           {l.target_type}
-                          {l.target_id && <span className="text-zinc-400"> · {l.target_id.slice(0, 8)}</span>}
+                          {l.target_id && <span className="font-mono text-xs"> · {l.target_id.slice(0, 8)}</span>}
                         </span>
                       ) : (
                         '—'
                       )}
                     </td>
-                    <td className="px-5 py-3 text-zinc-400 text-xs max-w-xs truncate">
+                    <td
+                      className="max-w-xs truncate px-5 py-3 font-mono text-xs text-muted-foreground"
+                      title={l.metadata ? JSON.stringify(l.metadata) : undefined}
+                    >
                       {l.metadata ? JSON.stringify(l.metadata) : '—'}
                     </td>
                   </tr>
@@ -127,28 +141,30 @@ export default function AdminAuditPage() {
       </Card>
 
       {pagination && pagination.pages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-zinc-500">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
             Page {pagination.page} / {pagination.pages}
           </p>
           <div className="flex gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
+              aria-label="Page précédente"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               disabled={page >= pagination.pages}
               onClick={() => setPage((p) => p + 1)}
-              className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-200 bg-white disabled:opacity-40 hover:bg-zinc-50"
+              aria-label="Page suivante"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

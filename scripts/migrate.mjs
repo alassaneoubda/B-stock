@@ -16,10 +16,15 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(scriptsDir, '..')
 
 // --- Chargement des variables d'environnement (sans dépendance externe) ---
-// .env.local a TOUJOURS priorité sur les variables déjà présentes dans le shell
-// (évite qu'un vieux DATABASE_URL=host.neon.tech fantôme bloque la migration).
+// Même ordre de priorité que Next.js : .env < .env.local < .env.<mode>.local
+// (mode = development par défaut, `--production` pour cibler la prod).
+// Les fichiers ont priorité sur le shell (évite un DATABASE_URL fantôme).
+const isProductionMode = process.argv.includes('--production')
+const allowRemote = process.argv.includes('--allow-remote') || isProductionMode
+
 function loadEnv() {
-  for (const name of ['.env', '.env.local']) {
+  const mode = isProductionMode ? 'production' : 'development'
+  for (const name of ['.env', '.env.local', `.env.${mode}.local`]) {
     const path = join(projectRoot, name)
     if (!existsSync(path)) continue
     const content = readFileSync(path, 'utf8')
@@ -130,8 +135,27 @@ async function main() {
   })()
   console.log(`Base cible : ${host}\n`)
 
-  // TCP vers le pooler Neon (évite api.neon.tech / HTTP, souvent bloqué en entreprise)
+  const hostname = (() => {
+    try {
+      return new URL(url).hostname
+    } catch {
+      return ''
+    }
+  })()
+  const isLocal = ['localhost', '127.0.0.1', '::1'].includes(hostname)
+
+  // Garde-fou : on ne migre jamais une base distante par accident.
+  if (!isLocal && !allowRemote) {
+    console.error(
+      '✖ Base distante détectée. Pour migrer volontairement la production :\n' +
+        '    node scripts/migrate.mjs --production'
+    )
+    process.exit(1)
+  }
+
+  // Distant (Neon) : TCP vers le pooler en SSL. Local : connexion directe sans SSL.
   const connectionString = (() => {
+    if (isLocal) return url
     try {
       const u = new URL(url)
       u.searchParams.set('sslmode', 'require')
@@ -144,7 +168,7 @@ async function main() {
   })()
   const pool = new pg.Pool({
     connectionString,
-    ssl: { rejectUnauthorized: false },
+    ssl: isLocal ? false : { rejectUnauthorized: false },
     connectionTimeoutMillis: 20_000,
   })
   const sql = async (text, params = []) => {

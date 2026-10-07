@@ -1,7 +1,10 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { Card } from '@/components/ui/card'
+import { useAdmin } from '@/components/admin/admin-role'
+import { PageShell, PageIntro, StatCard, Panel } from '@/components/app/blocks'
 import {
   Building2,
   Users,
@@ -9,13 +12,13 @@ import {
   Clock,
   Ban,
   Sparkles,
-  Loader2,
 } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { ErrorState } from '@/components/states'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
-
-const xof = (n: number) =>
-  new Intl.NumberFormat('fr-FR').format(n) + ' FCFA'
+const fetcher = (url: string) => apiFetch(url)
 
 type Stats = {
   companies: {
@@ -34,86 +37,103 @@ type Stats = {
 }
 
 export default function AdminDashboardPage() {
-  const { data, isLoading } = useSWR<{ data: Stats }>('/api/admin/stats', fetcher)
+  const router = useRouter()
+  const { can } = useAdmin()
+  const allowed = can('reports.read')
+  // Le support n'a pas accès aux chiffres de la plateforme : il arrive sur les entreprises
+  useEffect(() => {
+    if (!allowed) router.replace('/admin/companies')
+  }, [allowed, router])
+  const { data, error, isLoading, mutate } = useSWR<{ data: Stats }>(allowed ? '/api/admin/stats' : null, fetcher)
   const s = data?.data
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold text-zinc-950">Tableau de bord</h1>
-        <p className="text-sm text-zinc-500">Vue d&apos;ensemble de la plateforme</p>
-      </header>
+    <PageShell>
+      <PageIntro title="Tableau de bord" description="Vue d’ensemble de la plateforme" />
 
-      {isLoading || !s ? (
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      {isLoading ? (
+        <div className="space-y-6" aria-busy="true" aria-label="Chargement">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-[118px] rounded-xl" />
+            ))}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Skeleton className="h-64 rounded-xl" />
+            <Skeleton className="h-64 rounded-xl" />
+          </div>
         </div>
+      ) : error || !s ? (
+        <ErrorState
+          description={error ? errorMessage(error) : 'Les statistiques sont indisponibles.'}
+          onRetry={() => mutate()}
+        />
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <Stat icon={Building2} label="Entreprises" value={s.companies.total} hint={`+${s.companies.new_30d} ce mois`} />
-            <Stat icon={TrendingUp} label="MRR" value={xof(s.mrr)} hint={`ARR ${xof(s.arr)}`} isText />
-            <Stat icon={Users} label="Utilisateurs" value={s.users.total} hint={`${s.users.active_7d} actifs / 7j`} />
-            <Stat icon={Sparkles} label="Abonnés actifs" value={s.companies.active} hint={`${s.companies.trialing} en essai`} />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              icon={TrendingUp}
+              label="Revenu mensuel (MRR)"
+              value={formatMoney(s.mrr)}
+              hint={`ARR ${formatMoney(s.arr)}`}
+              emphasis
+            />
+            <StatCard
+              icon={Building2}
+              label="Entreprises"
+              value={formatNumber(s.companies.total)}
+              hint={`+${formatNumber(s.companies.new_30d)} sur 30 jours`}
+            />
+            <StatCard
+              icon={Sparkles}
+              label="Abonnés actifs"
+              value={formatNumber(s.companies.active)}
+              hint={`${formatNumber(s.companies.trialing)} en essai`}
+              tone="success"
+            />
+            <StatCard
+              icon={Users}
+              label="Utilisateurs"
+              value={formatNumber(s.users.total)}
+              hint={`${formatNumber(s.users.active_7d)} actifs sur 7 jours`}
+              tone="info"
+            />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-            <MiniStat icon={Clock} label="En période d'essai" value={s.companies.trialing} tone="amber" />
-            <MiniStat icon={Ban} label="Suspendues" value={s.companies.suspended} tone="red" />
-            <MiniStat icon={Building2} label="Inactives / impayées" value={s.companies.inactive} tone="zinc" />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <MiniStat icon={Clock} label="En période d’essai" value={s.companies.trialing} tone="warning" />
+            <MiniStat icon={Ban} label="Suspendues" value={s.companies.suspended} tone="danger" />
+            <MiniStat icon={Building2} label="Inactives / impayées" value={s.companies.inactive} tone="muted" />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="p-6">
-              <h2 className="text-sm font-semibold text-zinc-950 mb-4">Inscriptions (6 mois)</h2>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Panel title="Inscriptions" description="6 derniers mois" bodyClassName="p-5">
               <SignupBars data={s.signups} />
-            </Card>
+            </Panel>
 
-            <Card className="p-6">
-              <h2 className="text-sm font-semibold text-zinc-950 mb-4">Répartition par plan</h2>
-              <div className="space-y-2">
-                {s.byPlan.map((p) => (
-                  <div key={p.plan} className="flex items-center justify-between text-sm">
-                    <span className="capitalize text-zinc-700">{p.plan}</span>
-                    <span className="font-semibold text-zinc-950">{p.count}</span>
-                  </div>
-                ))}
-                {s.byPlan.length === 0 && (
-                  <p className="text-sm text-zinc-400">Aucune donnée</p>
-                )}
-              </div>
-            </Card>
+            <Panel title="Répartition par plan" description="Entreprises par offre">
+              {s.byPlan.length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-muted-foreground">Aucune donnée</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {s.byPlan.map((p) => (
+                    <li key={p.plan} className="flex items-center justify-between px-5 py-3 text-sm">
+                      <span className="capitalize text-foreground">{p.plan}</span>
+                      <span className="tabular font-semibold text-foreground">{formatNumber(p.count)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
           </div>
         </>
       )}
-    </div>
-  )
-}
-
-function Stat({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  isText,
-}: {
-  icon: React.ElementType
-  label: string
-  value: number | string
-  hint?: string
-  isText?: boolean
-}) {
-  return (
-    <Card className="p-5">
-      <div className="flex items-center gap-2 text-zinc-500 mb-3">
-        <Icon className="h-4 w-4" />
-        <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-      </div>
-      <p className={isText ? 'text-xl font-bold text-zinc-950' : 'text-3xl font-bold text-zinc-950'}>
-        {value}
-      </p>
-      {hint && <p className="text-xs text-zinc-400 mt-1">{hint}</p>}
-    </Card>
+    </PageShell>
   )
 }
 
@@ -126,43 +146,47 @@ function MiniStat({
   icon: React.ElementType
   label: string
   value: number
-  tone: 'amber' | 'red' | 'zinc'
+  tone: 'warning' | 'danger' | 'muted'
 }) {
   const tones: Record<string, string> = {
-    amber: 'text-amber-600 bg-amber-50',
-    red: 'text-red-600 bg-red-50',
-    zinc: 'text-zinc-600 bg-zinc-100',
+    warning: 'text-warning-foreground bg-warning-soft',
+    danger: 'text-destructive bg-destructive/10',
+    muted: 'text-muted-foreground bg-muted',
   }
   return (
-    <Card className="p-4 flex items-center gap-3">
-      <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${tones[tone]}`}>
-        <Icon className="h-4 w-4" />
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]">
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tones[tone]}`}>
+        <Icon className="h-4 w-4" aria-hidden="true" />
       </div>
-      <div>
-        <p className="text-xl font-bold text-zinc-950 leading-tight">{value}</p>
-        <p className="text-xs text-zinc-500">{label}</p>
+      <div className="min-w-0">
+        <p className="tabular text-xl font-semibold leading-tight tracking-tight text-foreground">{formatNumber(value)}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
       </div>
-    </Card>
+    </div>
   )
 }
 
 function SignupBars({ data }: { data: { month: string; count: number }[] }) {
-  if (data.length === 0) return <p className="text-sm text-zinc-400">Aucune donnée</p>
+  if (data.length === 0) return <p className="py-8 text-center text-sm text-muted-foreground">Aucune donnée</p>
   const max = Math.max(...data.map((d) => d.count), 1)
   return (
-    <div className="flex items-end gap-3 h-40">
-      {data.map((d) => (
-        <div key={d.month} className="flex-1 flex flex-col items-center gap-2">
-          <div className="w-full flex items-end justify-center" style={{ height: '120px' }}>
-            <div
-              className="w-full max-w-[40px] bg-zinc-950 rounded-t-md transition-all"
-              style={{ height: `${(d.count / max) * 100}%`, minHeight: d.count > 0 ? '4px' : '0' }}
-              title={`${d.count}`}
-            />
+    <div className="flex h-44 items-end gap-3">
+      {data.map((d, i) => {
+        const isCurrent = i === data.length - 1
+        return (
+          <div key={d.month} className="flex flex-1 flex-col items-center gap-2">
+            <span className="tabular text-[11px] font-medium text-muted-foreground">{formatNumber(d.count)}</span>
+            <div className="flex w-full items-end justify-center" style={{ height: '120px' }}>
+              <div
+                className={`w-full max-w-[40px] rounded-t-md ${isCurrent ? 'bg-brand' : 'bg-primary/80'}`}
+                style={{ height: `${(d.count / max) * 100}%`, minHeight: d.count > 0 ? '4px' : '0' }}
+                title={`${formatNumber(d.count)} inscription(s)`}
+              />
+            </div>
+            <span className="tabular text-[11px] text-muted-foreground">{d.month.slice(5)}</span>
           </div>
-          <span className="text-[10px] text-zinc-500">{d.month.slice(5)}</span>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

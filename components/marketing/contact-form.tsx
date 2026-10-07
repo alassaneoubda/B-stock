@@ -26,7 +26,7 @@ export function ContactForm({ email }: { email: string }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid sm:grid-cols-2 gap-4">
         <div className="space-y-1.5">
-          <Label htmlFor="c-name" className="text-sm font-medium text-zinc-700">Nom</Label>
+          <Label htmlFor="c-name" className="text-sm font-medium text-foreground/80">Nom</Label>
           <Input
             id="c-name"
             value={name}
@@ -37,7 +37,7 @@ export function ContactForm({ email }: { email: string }) {
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="c-email" className="text-sm font-medium text-zinc-700">Email</Label>
+          <Label htmlFor="c-email" className="text-sm font-medium text-foreground/80">Email</Label>
           <Input
             id="c-email"
             type="email"
@@ -51,7 +51,7 @@ export function ContactForm({ email }: { email: string }) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="c-subject" className="text-sm font-medium text-zinc-700">Sujet</Label>
+        <Label htmlFor="c-subject" className="text-sm font-medium text-foreground/80">Sujet</Label>
         <Input
           id="c-subject"
           value={subject}
@@ -62,7 +62,7 @@ export function ContactForm({ email }: { email: string }) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="c-message" className="text-sm font-medium text-zinc-700">Message</Label>
+        <Label htmlFor="c-message" className="text-sm font-medium text-foreground/80">Message</Label>
         <Textarea
           id="c-message"
           value={message}
@@ -73,11 +73,11 @@ export function ContactForm({ email }: { email: string }) {
         />
       </div>
 
-      <Button type="submit" className="h-10 px-5 bg-zinc-950 hover:bg-zinc-800 text-white text-sm font-semibold">
+      <Button type="submit" className="h-10 px-5 bg-primary hover:bg-primary text-white text-sm font-semibold">
         <Send className="h-4 w-4 mr-2" />
         Envoyer le message
       </Button>
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-muted-foreground/70">
         L&apos;envoi ouvre votre application de messagerie avec le message pré-rempli.
       </p>
     </form>

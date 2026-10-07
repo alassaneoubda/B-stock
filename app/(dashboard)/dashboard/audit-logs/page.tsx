@@ -4,12 +4,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Search, FileText, Loader2, User, Calendar, Activity, Filter } from 'lucide-react'
+import { Search, FileText, User, RotateCw, ScrollText } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
+import { ROLE_LABELS } from '@/lib/permissions'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import type { UserRole } from '@/lib/types'
 
 interface AuditLog {
   id: string; action: string; entity_type: string; entity_id: string | null
@@ -20,6 +24,13 @@ interface AuditLog {
 const actionLabels: Record<string, string> = {
   create: 'Création', update: 'Modification', delete: 'Suppression',
   login: 'Connexion', logout: 'Déconnexion', export: 'Export', print: 'Impression',
+  impersonation_started: 'Assistance B-Stock', password_reset_link: 'Lien de réinitialisation',
+}
+
+const actionTones: Record<string, 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'> = {
+  create: 'success', update: 'info', delete: 'danger',
+  login: 'default', logout: 'default', export: 'brand', print: 'brand',
+  impersonation_started: 'warning', password_reset_link: 'info',
 }
 
 const entityLabels: Record<string, string> = {
@@ -27,11 +38,36 @@ const entityLabels: Record<string, string> = {
   user: 'Utilisateur', cash_session: 'Session caisse', credit_note: 'Créance',
   return: 'Retour', depot_transfer: 'Transfert', inventory_session: 'Inventaire',
   breakage_record: 'Casse', price_rule: 'Règle prix', promotion: 'Promotion',
+  support: 'Assistance',
+}
+
+function formatDetailValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+function detailsText(log: AuditLog): string {
+  if (!log.details) return '—'
+  // Connexion du support B-Stock à votre compte : qui, pourquoi, jusqu'à quand
+  if (log.action === 'impersonation_started' && typeof log.details === 'object') {
+    const d = log.details as { adminEmail?: string; reason?: string; expiresAt?: string }
+    const until = d.expiresAt ? formatDateTime(d.expiresAt) : null
+    return [
+      d.adminEmail ? `Par ${d.adminEmail}` : 'Par le support B-Stock',
+      d.reason ? `motif : ${d.reason}` : null,
+      until ? `jusqu’au ${until}` : null,
+    ].filter(Boolean).join(' · ')
+  }
+  return typeof log.details === 'object'
+    ? Object.entries(log.details).map(([k, v]) => `${k}: ${formatDetailValue(v)}`).join(', ')
+    : String(log.details)
 }
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [entityType, setEntityType] = useState('all')
   const [action, setAction] = useState('all')
@@ -39,176 +75,202 @@ export default function AuditLogsPage() {
 
   const fetchData = useCallback(async () => {
     setIsLoading(true)
+    setLoadError(null)
     try {
       const params = new URLSearchParams({
         ...(entityType !== 'all' && { entity_type: entityType }),
         ...(action !== 'all' && { action }),
         limit,
       })
-      const res = await fetch(`/api/audit-logs?${params}`)
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`)
-      }
-      const json = await res.json()
+      const json = await apiFetch<{ data: AuditLog[] }>(`/api/audit-logs?${params}`)
       setLogs(Array.isArray(json.data) ? json.data : [])
-    } catch (e) { 
-      console.error('Error fetching audit logs:', e)
-      setLogs([])
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Erreur inconnue')
+    } finally {
+      setIsLoading(false)
     }
-    finally { setIsLoading(false) }
   }, [entityType, action, limit])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  const filtered = logs.filter(log =>
-    log.user_name?.toLowerCase().includes(search.toLowerCase()) ||
-    log.entity_type?.toLowerCase().includes(search.toLowerCase()) ||
-    log.action?.toLowerCase().includes(search.toLowerCase())
-  )
+  const term = search.trim().toLowerCase()
+  const filtered = term
+    ? logs.filter(log =>
+        log.user_name?.toLowerCase().includes(term) ||
+        log.entity_type?.toLowerCase().includes(term) ||
+        (entityLabels[log.entity_type] || '').toLowerCase().includes(term) ||
+        log.action?.toLowerCase().includes(term) ||
+        (actionLabels[log.action] || '').toLowerCase().includes(term)
+      )
+    : logs
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Journal d'Audit" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
-      </div>
-    )
-  }
+  const showBodyPadding = isLoading || !!loadError || filtered.length === 0
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
-      <DashboardHeader title="Journal d'Audit" />
-      <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
-
-        {/* Filters */}
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-col lg:flex-row gap-4">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                <Input
-                  placeholder="Rechercher par utilisateur, entité, action..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
+    <div className="flex min-h-screen flex-col">
+      <DashboardHeader title="Journal d'audit" description="Historique des actions sensibles de votre équipe" />
+      <PageShell>
+        {/* Barre d'outils */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="relative w-full sm:max-w-sm sm:flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                placeholder="Rechercher par utilisateur, entité, action…"
+                aria-label="Rechercher dans le journal"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-10 pl-9"
+              />
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="audit-entity" className="text-xs text-muted-foreground">Entité</Label>
+                <Select value={entityType} onValueChange={setEntityType}>
+                  <SelectTrigger id="audit-entity" className="h-10 w-40"><SelectValue placeholder="Toutes" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes</SelectItem>
+                    {Object.entries(entityLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="flex gap-2">
-                <div>
-                  <Label className="text-xs">Entité</Label>
-                  <Select value={entityType} onValueChange={setEntityType}>
-                    <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Toutes" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Toutes</SelectItem>
-                      {Object.entries(entityLabels).map(([key, label]) => (
-                        <SelectItem key={key} value={key}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Action</Label>
-                  <Select value={action} onValueChange={setAction}>
-                    <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Toutes" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Toutes</SelectItem>
-                      {Object.entries(actionLabels).map(([key, label]) => (
-                        <SelectItem key={key} value={key}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Limite</Label>
-                  <Select value={limit} onValueChange={setLimit}>
-                    <SelectTrigger className="w-24 h-9"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="20">20</SelectItem>
-                      <SelectItem value="50">50</SelectItem>
-                      <SelectItem value="100">100</SelectItem>
-                      <SelectItem value="200">200</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button size="sm" variant="outline" onClick={fetchData} className="mt-5">
-                  <Filter className="h-4 w-4 mr-2" /> Filtrer
-                </Button>
+              <div className="space-y-1">
+                <Label htmlFor="audit-action" className="text-xs text-muted-foreground">Action</Label>
+                <Select value={action} onValueChange={setAction}>
+                  <SelectTrigger id="audit-action" className="h-10 w-40"><SelectValue placeholder="Toutes" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes</SelectItem>
+                    {Object.entries(actionLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="audit-limit" className="text-xs text-muted-foreground">Limite</Label>
+                <Select value={limit} onValueChange={setLimit}>
+                  <SelectTrigger id="audit-limit" className="h-10 w-24"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="200">200</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <Button variant="outline" onClick={fetchData} disabled={isLoading} className="h-10 self-start lg:self-auto">
+            <RotateCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" /> Actualiser
+          </Button>
+        </div>
 
-        {/* Logs table */}
-        <Card>
-          <CardContent className="p-0">
-            {filtered.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucune entrée trouvée</div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Utilisateur</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entité</TableHead>
-                    <TableHead>Détails</TableHead>
-                    <TableHead>IP</TableHead>
-                    <TableHead>Agent</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="text-sm text-zinc-500">
-                        {new Date(log.created_at).toLocaleString('fr-FR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-zinc-400" />
-                          <div>
-                            <div className="text-sm font-medium">{log.user_name || 'Système'}</div>
-                            {log.user_role && <div className="text-xs text-zinc-400">{log.user_role}</div>}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="border-zinc-200 text-zinc-700">
-                          {actionLabels[log.action] || log.action}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-zinc-400" />
-                          <span className="text-sm">{entityLabels[log.entity_type] || log.entity_type}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-zinc-600 max-w-[200px] truncate">
-                        {log.details ? (
-                          <span title={JSON.stringify(log.details)}>
-                            {typeof log.details === 'object'
-                              ? Object.entries(log.details).map(([k, v]) => `${k}: ${v}`).join(', ')
-                              : String(log.details)}
-                          </span>
-                        ) : '-'}
-                      </TableCell>
-                      <TableCell className="text-sm text-zinc-500">{log.ip_address || '-'}</TableCell>
-                      <TableCell className="text-sm text-zinc-500 max-w-[150px] truncate" title={log.user_agent || ''}>
-                        {log.user_agent ? (log.user_agent as string).split(' ')[0] : '-'}
-                      </TableCell>
+        {/* Journal */}
+        <Panel
+          title="Entrées du journal"
+          description={
+            !isLoading && !loadError
+              ? `${filtered.length} entrée${filtered.length > 1 ? 's' : ''} affichée${filtered.length > 1 ? 's' : ''}`
+              : undefined
+          }
+          bodyClassName={showBodyPadding ? 'p-5' : undefined}
+        >
+          {isLoading ? (
+            <TableSkeleton rows={8} columns={5} />
+          ) : loadError ? (
+            <ErrorState description={loadError} onRetry={fetchData} />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={ScrollText}
+              title={logs.length === 0 ? 'Aucune entrée dans le journal' : 'Aucune entrée ne correspond à la recherche'}
+              description={logs.length === 0 ? 'Les actions sensibles (créations, modifications, suppressions) apparaîtront ici.' : undefined}
+            />
+          ) : (
+            <>
+              {/* Mobile : liste de cartes */}
+              <ul className="divide-y divide-border md:hidden">
+                {filtered.map((log) => (
+                  <li key={log.id} className="space-y-1.5 px-5 py-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{log.user_name || 'Système'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {entityLabels[log.entity_type] || log.entity_type} · <span className="tabular">{formatDateTime(log.created_at)}</span>
+                        </p>
+                      </div>
+                      <StatusBadge label={actionLabels[log.action] || log.action} tone={actionTones[log.action] ?? 'default'} />
+                    </div>
+                    {log.details && (
+                      <p className="truncate text-xs text-muted-foreground" title={JSON.stringify(log.details)}>
+                        {detailsText(log)}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              {/* Bureau : tableau */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Utilisateur</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Entité</TableHead>
+                      <TableHead>Détails</TableHead>
+                      <TableHead>IP</TableHead>
+                      <TableHead>Agent</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </main>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="tabular whitespace-nowrap text-sm text-muted-foreground">
+                          {formatDateTime(log.created_at)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2.5">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                              <User className="h-3.5 w-3.5" aria-hidden="true" />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-foreground">{log.user_name || 'Système'}</div>
+                              {log.user_role && (
+                                <div className="text-xs text-muted-foreground">
+                                  {ROLE_LABELS[log.user_role as UserRole] || log.user_role}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge label={actionLabels[log.action] || log.action} tone={actionTones[log.action] ?? 'default'} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                            <span className="text-sm text-foreground">{entityLabels[log.entity_type] || log.entity_type}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[220px] truncate text-sm text-muted-foreground">
+                          {log.details ? <span title={JSON.stringify(log.details)}>{detailsText(log)}</span> : '—'}
+                        </TableCell>
+                        <TableCell className="tabular text-sm text-muted-foreground">{log.ip_address || '—'}</TableCell>
+                        <TableCell className="max-w-[150px] truncate text-sm text-muted-foreground" title={log.user_agent || ''}>
+                          {log.user_agent ? log.user_agent.split(' ')[0] : '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+        </Panel>
+      </PageShell>
     </div>
   )
 }

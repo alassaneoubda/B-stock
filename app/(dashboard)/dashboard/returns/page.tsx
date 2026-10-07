@@ -3,12 +3,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { RotateCcw, Loader2, CheckCircle2, XCircle, Package, Eye } from 'lucide-react'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { RotateCcw, Loader2, CheckCircle2, XCircle, Plus } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
+import { PageShell, StatusBadge } from '@/components/app/blocks'
+import { cn } from '@/lib/utils'
 
 interface ReturnRecord {
   id: string; return_number: string; return_type: string; client_name: string | null
@@ -17,13 +24,13 @@ interface ReturnRecord {
   created_by_name: string | null; created_at: string
 }
 
-function fmt(n: number) { return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0 }).format(n) + ' FCFA' }
+const fmt = formatMoney
 
-const statusBadge: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'En attente', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  approved: { label: 'Approuvé', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  processed: { label: 'Traité', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  rejected: { label: 'Rejeté', cls: 'bg-red-50 text-red-700 border-red-200' },
+const statusBadge: Record<string, { label: string; tone: 'warning' | 'info' | 'success' | 'danger' }> = {
+  pending: { label: 'En attente', tone: 'warning' },
+  approved: { label: 'Approuvé', tone: 'info' },
+  processed: { label: 'Traité', tone: 'success' },
+  rejected: { label: 'Rejeté', tone: 'danger' },
 }
 
 export default function ReturnsPage() {
@@ -31,76 +38,157 @@ export default function ReturnsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [processing, setProcessing] = useState<string | null>(null)
   const [tab, setTab] = useState('all')
+  const [loadError, setLoadError] = useState(false)
+  const [confirm, setConfirm] = useState<{ record: ReturnRecord; action: 'approve' | 'reject' } | null>(null)
 
   const fetchData = useCallback(async () => {
+    setLoadError(false)
     try {
-      const res = await fetch('/api/returns')
-      const json = await res.json()
+      const json = await apiFetch('/api/returns')
       setReturns(json.data || [])
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      setLoadError(true)
+      toastError(e, 'Impossible de charger les retours')
+    }
     finally { setIsLoading(false) }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  async function handleProcess(id: string, action: string) {
+  async function handleProcess(id: string, action: 'approve' | 'reject') {
+    if (processing) return
     setProcessing(id)
     try {
-      await fetch(`/api/returns/${id}/process`, {
+      const res = await apiFetch(`/api/returns/${id}/process`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: { action },
       })
+      toast.success(res?.message || (action === 'approve' ? 'Retour traité' : 'Retour rejeté'))
+      toastWarnings(res?.warnings)
+      setConfirm(null)
       fetchData()
+    } catch (e) {
+      setConfirm(null)
+      toastError(e, action === 'approve' ? 'Traitement impossible' : 'Rejet impossible')
     } finally { setProcessing(null) }
   }
 
   const filtered = tab === 'all' ? returns : returns.filter(r => r.return_type === tab)
 
+  const typeFilters = [
+    { value: 'all', label: 'Tous', count: returns.length },
+    { value: 'client', label: 'Clients', count: returns.filter(r => r.return_type === 'client').length },
+    { value: 'supplier', label: 'Fournisseurs', count: returns.filter(r => r.return_type === 'supplier').length },
+  ]
+
+  const newReturnButton = (
+    <Button variant="brand" asChild>
+      <Link href="/dashboard/returns/new">
+        <Plus className="h-4 w-4" aria-hidden="true" />
+        Nouveau retour
+      </Link>
+    </Button>
+  )
+
   if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen bg-zinc-50/50">
-        <DashboardHeader title="Retours" />
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-zinc-400" /></div>
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Retours" description="Produits et emballages rendus par les clients ou renvoyés aux fournisseurs" />
+        <PageShell>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <TableSkeleton rows={6} columns={6} />
+          </div>
+        </PageShell>
       </div>
     )
   }
 
-  return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
-      <DashboardHeader title="Gestion des Retours" />
-      <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
+  if (loadError && returns.length === 0) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Retours" description="Produits et emballages rendus par les clients ou renvoyés aux fournisseurs" />
+        <PageShell>
+          <ErrorState title="Impossible de charger les retours" onRetry={() => { setIsLoading(true); fetchData() }} />
+        </PageShell>
+      </div>
+    )
+  }
 
-        <div className="flex items-center justify-between">
-          <Tabs value={tab} onValueChange={setTab}>
-            <TabsList>
-              <TabsTrigger value="all">Tous ({returns.length})</TabsTrigger>
-              <TabsTrigger value="client">Clients ({returns.filter(r => r.return_type === 'client').length})</TabsTrigger>
-              <TabsTrigger value="supplier">Fournisseurs ({returns.filter(r => r.return_type === 'supplier').length})</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Link href="/dashboard/returns/new">
-            <Button size="sm"><RotateCcw className="h-4 w-4 mr-2" /> Nouveau retour</Button>
-          </Link>
+  const renderActions = (r: ReturnRecord) =>
+    r.status === 'pending' ? (
+      <div className="flex items-center justify-end gap-1">
+        <Button size="sm" variant="outline" onClick={() => setConfirm({ record: r, action: 'approve' })} disabled={processing !== null}>
+          {processing === r.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+          Traiter
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          onClick={() => setConfirm({ record: r, action: 'reject' })}
+          disabled={processing !== null}
+          aria-label={`Rejeter le retour ${r.return_number}`}
+        >
+          <XCircle className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </div>
+    ) : null
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <DashboardHeader
+        title="Retours"
+        description="Produits et emballages rendus par les clients ou renvoyés aux fournisseurs"
+        actions={newReturnButton}
+      />
+      <PageShell>
+        {/* Barre d'outils */}
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrer par type de retour">
+          {typeFilters.map((f) => {
+            const active = tab === f.value
+            return (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setTab(f.value)}
+                aria-pressed={active}
+                className={cn(
+                  'inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  active
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
+                )}
+              >
+                {f.label}
+                <span className={cn('tabular text-xs', active ? 'text-primary-foreground/70' : 'text-muted-foreground')}>{formatNumber(f.count)}</span>
+              </button>
+            )
+          })}
         </div>
 
-        <Card>
-          <CardContent className="p-0">
-            {filtered.length === 0 ? (
-              <div className="p-8 text-center text-sm text-zinc-400">Aucun retour enregistré</div>
-            ) : (
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={RotateCcw}
+            title={tab === 'all' ? 'Aucun retour enregistré' : 'Aucun retour de ce type'}
+            description="Enregistrez les produits ou emballages rendus par un client ou renvoyés à un fournisseur."
+            action={{ label: 'Nouveau retour', href: '/dashboard/returns/new' }}
+          />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            {/* Tableau (desktop) */}
+            <div className="hidden overflow-x-auto md:block">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>N°</TableHead>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-5">N° retour</TableHead>
+                    <TableHead>Client / fournisseur</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Client / Fournisseur</TableHead>
                     <TableHead>Commande</TableHead>
-                    <TableHead className="text-center">Articles</TableHead>
+                    <TableHead className="text-right">Articles</TableHead>
                     <TableHead className="text-right">Montant</TableHead>
                     <TableHead>Statut</TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead></TableHead>
+                    <TableHead className="pr-5"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -108,39 +196,82 @@ export default function ReturnsPage() {
                     const st = statusBadge[r.status] || statusBadge.pending
                     return (
                       <TableRow key={r.id}>
-                        <TableCell className="font-medium text-sm">{r.return_number}</TableCell>
+                        <TableCell className="pl-5 font-mono text-sm font-medium text-foreground">{r.return_number}</TableCell>
+                        <TableCell className="text-sm text-foreground">{r.client_name || r.supplier_name || '—'}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={r.return_type === 'client' ? 'border-blue-200 text-blue-700' : 'border-purple-200 text-purple-700'}>
-                            {r.return_type === 'client' ? 'Client' : 'Fournisseur'}
-                          </Badge>
+                          <StatusBadge
+                            label={r.return_type === 'client' ? 'Client' : 'Fournisseur'}
+                            tone={r.return_type === 'client' ? 'brand' : 'info'}
+                          />
                         </TableCell>
-                        <TableCell className="text-sm">{r.client_name || r.supplier_name || '-'}</TableCell>
-                        <TableCell className="text-sm text-zinc-500">{r.order_number || '-'}</TableCell>
-                        <TableCell className="text-center text-sm">{r.items_count}</TableCell>
-                        <TableCell className="text-right text-sm font-medium">{fmt(Number(r.total_amount))}</TableCell>
-                        <TableCell><Badge variant="outline" className={st.cls}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-sm text-zinc-500">{new Date(r.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</TableCell>
-                        <TableCell>
-                          {r.status === 'pending' && (
-                            <div className="flex gap-1">
-                              <Button size="sm" variant="outline" className="h-7 text-xs text-emerald-600" onClick={() => handleProcess(r.id, 'approve')} disabled={processing === r.id}>
-                                <CheckCircle2 className="h-3 w-3 mr-1" /> Traiter
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleProcess(r.id, 'reject')} disabled={processing === r.id}>
-                                <XCircle className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          )}
-                        </TableCell>
+                        <TableCell className="font-mono text-sm text-muted-foreground">{r.order_number || '—'}</TableCell>
+                        <TableCell className="tabular text-right text-sm">{formatNumber(r.items_count)}</TableCell>
+                        <TableCell className="tabular text-right text-sm font-medium text-foreground">{fmt(Number(r.total_amount))}</TableCell>
+                        <TableCell><StatusBadge label={st.label} tone={st.tone} /></TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{formatDateShort(r.created_at)}</TableCell>
+                        <TableCell className="pr-5 text-right">{renderActions(r)}</TableCell>
                       </TableRow>
                     )
                   })}
                 </TableBody>
               </Table>
-            )}
-          </CardContent>
-        </Card>
-      </main>
+            </div>
+
+            {/* Cartes (mobile) */}
+            <ul className="divide-y divide-border md:hidden">
+              {filtered.map((r) => {
+                const st = statusBadge[r.status] || statusBadge.pending
+                return (
+                  <li key={r.id} className="space-y-3 px-4 py-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <p className="truncate text-sm font-medium text-foreground">{r.client_name || r.supplier_name || 'Sans nom'}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          <span className="font-mono">{r.return_number}</span> · {formatDateShort(r.created_at)} · {r.return_type === 'client' ? 'Client' : 'Fournisseur'}
+                        </p>
+                        <StatusBadge label={st.label} tone={st.tone} />
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="tabular text-sm font-semibold text-foreground">{fmt(Number(r.total_amount))}</p>
+                        <p className="tabular text-xs text-muted-foreground">
+                          {formatNumber(r.items_count)} article{Number(r.items_count) > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </div>
+                    {r.status === 'pending' && renderActions(r)}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+
+        <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o && !processing) setConfirm(null) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirm?.action === 'approve' ? 'Traiter' : 'Rejeter'} le retour {confirm?.record.return_number} ?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirm?.action === 'approve'
+                  ? `Le stock et le compte ${confirm.record.return_type === 'client' ? 'du client' : 'fournisseur'} seront mis à jour (${fmt(Number(confirm.record.total_amount))}). Cette action est définitive.`
+                  : 'Le retour sera rejeté : aucun mouvement de stock ni avoir ne sera créé. Cette action est définitive.'}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={processing !== null}>Revenir</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); if (confirm) handleProcess(confirm.record.id, confirm.action) }}
+                disabled={processing !== null}
+                className={confirm?.action === 'reject' ? 'bg-destructive text-white hover:bg-destructive/90' : ''}
+              >
+                {processing && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                {confirm?.action === 'approve' ? 'Oui, traiter' : 'Oui, rejeter'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PageShell>
     </div>
   )
 }

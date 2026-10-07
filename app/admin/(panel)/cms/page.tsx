@@ -1,10 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Save, Trash2, Plus } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { Loader2, Save, Trash2, Plus, Newspaper, Eye, Send, EyeOff } from 'lucide-react'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { EmptyState, ErrorState } from '@/components/states'
+import { PageShell, PageIntro, StatusBadge } from '@/components/app/blocks'
 
 type Section = {
   section_key: string
@@ -44,34 +59,46 @@ type Feature = {
 }
 
 type Tab = 'sections' | 'features' | 'faq' | 'testimonials'
+type Entity = 'section' | 'feature' | 'faq' | 'testimonial'
+
+/** Le formulaire a-t-il été soumis par le bouton « … et publier » ? */
+function wantsPublish(e: React.FormEvent<HTMLFormElement>): boolean {
+  const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null
+  return submitter?.value === 'publish'
+}
+
+/** Suppression en attente de confirmation (payload envoyé tel quel à PATCH /api/admin/cms). */
+type PendingDelete = { kind: string; label: string; body: Record<string, unknown> }
 
 export default function AdminCmsPage() {
   const [tab, setTab] = useState<Tab>('sections')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
 
   const [sections, setSections] = useState<Section[]>([])
   const [features, setFeatures] = useState<Feature[]>([])
   const [faq, setFaq] = useState<Faq[]>([])
   const [testimonials, setTestimonials] = useState<Testimonial[]>([])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  /** `silent` : rechargement après enregistrement, sans remplacer la page par le squelette. */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
-      const res = await fetch('/api/admin/cms')
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Erreur de chargement')
+      const json = await apiFetch<{
+        data: { sections?: Section[]; features?: Feature[]; faq?: Faq[]; testimonials?: Testimonial[] }
+      }>('/api/admin/cms')
       setSections(json.data.sections || [])
       setFeatures(json.data.features || [])
       setFaq(json.data.faq || [])
       setTestimonials(json.data.testimonials || [])
+      setLoadError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur')
+      if (silent) toastError(e, 'Rechargement impossible')
+      else setLoadError(errorMessage(e))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -79,25 +106,41 @@ export default function AdminCmsPage() {
     load()
   }, [load])
 
-  async function patch(body: Record<string, unknown>) {
+  /** Retourne true si l'enregistrement a réussi. */
+  async function patch(body: Record<string, unknown>, success = 'Modifications enregistrées'): Promise<boolean> {
+    if (saving) return false
     setSaving(true)
-    setMessage(null)
-    setError(null)
     try {
-      const res = await fetch('/api/admin/cms', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Échec')
-      setMessage('Enregistré')
-      await load()
+      await apiFetch('/api/admin/cms', { method: 'PATCH', body })
+      toast.success(success)
+      await load(true)
+      return true
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur')
+      toastError(e, 'Enregistrement impossible')
+      return false
     } finally {
       setSaving(false)
     }
+  }
+
+  async function togglePublish(entity: Entity, id: string, published: boolean) {
+    await patch({ type: 'publish', entity, id, published }, published ? 'Élément publié' : 'Élément dépublié (brouillon)')
+  }
+
+  async function publishAll() {
+    await patch({ type: 'publish_all' }, 'Tous les brouillons sont publiés')
+  }
+
+  const draftCount =
+    sections.filter((x) => !x.is_published).length +
+    features.filter((x) => !x.is_published).length +
+    faq.filter((x) => !x.is_published).length +
+    testimonials.filter((x) => !x.is_published).length
+
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    await patch(pendingDelete.body, `${pendingDelete.kind} supprimé(e)`)
+    setPendingDelete(null)
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -109,42 +152,71 @@ export default function AdminCmsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-zinc-500 gap-2">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        Chargement du CMS…
-      </div>
+      <PageShell className="max-w-5xl">
+        <div className="space-y-6" aria-busy="true" aria-label="Chargement du CMS">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-9 w-80" />
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-56 rounded-xl" />
+          ))}
+        </div>
+      </PageShell>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <PageShell className="max-w-5xl">
+        <ErrorState description={loadError} onRetry={() => load()} />
+      </PageShell>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-950">CMS Landing</h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          Modifiez les textes, FAQ et témoignages affichés sur la page d’accueil — sans toucher au code.
+    <PageShell className="max-w-5xl">
+      <PageIntro
+        title="CMS landing"
+        description="Modifiez les textes, FAQ et témoignages de la page d’accueil. Les modifications sont enregistrées en brouillon : elles ne sont visibles du public qu’une fois publiées."
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <a href="/preview/landing" target="_blank" rel="noopener noreferrer">
+                <Eye className="h-4 w-4" aria-hidden="true" />
+                Aperçu
+                <span className="sr-only"> (s’ouvre dans un nouvel onglet)</span>
+              </a>
+            </Button>
+            <Button variant="brand" onClick={publishAll} disabled={saving || draftCount === 0}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+              Tout publier{draftCount > 0 ? ` (${draftCount})` : ''}
+            </Button>
+          </>
+        }
+      />
+
+      {draftCount > 0 && (
+        <p role="status" className="rounded-lg border border-warning/30 bg-warning-soft px-4 py-2.5 text-sm text-warning-foreground">
+          {draftCount === 1 ? '1 élément en brouillon, non visible' : `${draftCount} éléments en brouillon, non visibles`} sur la page
+          publique. Vérifiez l’aperçu puis publiez.
         </p>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {message}
-        </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-zinc-200 pb-3">
+      <div
+        role="tablist"
+        aria-label="Contenus de la landing"
+        className="inline-flex flex-wrap gap-1 rounded-lg border border-border bg-muted/60 p-1"
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`h-8 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               tab === t.id
-                ? 'bg-zinc-950 text-white'
-                : 'text-zinc-600 hover:bg-zinc-100'
+                ? 'bg-card text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {t.label}
@@ -154,10 +226,11 @@ export default function AdminCmsPage() {
 
       {tab === 'sections' && (
         <div className="space-y-4">
+          {sections.length === 0 && <EmptyState icon={Newspaper} title="Aucune section configurée" />}
           {sections.map((s) => (
             <form
               key={s.section_key}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -169,51 +242,44 @@ export default function AdminCmsPage() {
                   body: String(fd.get('body') || '') || null,
                   cta_primary_label: String(fd.get('cta_primary_label') || '') || null,
                   image_url: String(fd.get('image_url') || '') || null,
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-zinc-900">{s.section_key}</h2>
-                <label className="flex items-center gap-2 text-xs text-zinc-500">
-                  <input
-                    type="checkbox"
-                    name="is_published"
-                    defaultChecked={s.is_published}
+              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+                <h2 className="font-mono text-sm font-semibold text-foreground">{s.section_key}</h2>
+                <PublishControl published={s.is_published} disabled={saving} label={s.section_key} onToggle={() => togglePublish('section', s.section_key, !s.is_published)} />
+              </div>
+              <div className="grid gap-4 p-5 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${s.section_key}-title`}>Titre</Label>
+                  <Input id={`${s.section_key}-title`} name="title" defaultValue={s.title || ''} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${s.section_key}-cta`}>Bouton principal</Label>
+                  <Input id={`${s.section_key}-cta`} name="cta_primary_label" defaultValue={s.cta_primary_label || ''} />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`${s.section_key}-subtitle`}>Sous-titre</Label>
+                  <Input id={`${s.section_key}-subtitle`} name="subtitle" defaultValue={s.subtitle || ''} />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`${s.section_key}-body`}>Corps</Label>
+                  <textarea
+                    id={`${s.section_key}-body`}
+                    name="body"
+                    defaultValue={s.body || ''}
+                    className={`${TEXTAREA} min-h-[80px]`}
                   />
-                  Publié
-                </label>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <Label>Titre</Label>
-                  <Input name="title" defaultValue={s.title || ''} />
                 </div>
-                <div>
-                  <Label>CTA primaire</Label>
-                  <Input name="cta_primary_label" defaultValue={s.cta_primary_label || ''} />
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`${s.section_key}-image`}>URL de l’image</Label>
+                  <Input id={`${s.section_key}-image`} name="image_url" defaultValue={s.image_url || ''} />
                 </div>
               </div>
-              <div>
-                <Label>Sous-titre</Label>
-                <Input name="subtitle" defaultValue={s.subtitle || ''} />
+              <div className="flex justify-end border-t border-border px-5 py-3">
+                <SaveButtons saving={saving} />
               </div>
-              <div>
-                <Label>Corps</Label>
-                <textarea
-                  name="body"
-                  defaultValue={s.body || ''}
-                  className="w-full min-h-[80px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <Label>Image URL</Label>
-                <Input name="image_url" defaultValue={s.image_url || ''} />
-              </div>
-              <Button type="submit" disabled={saving} className="gap-2">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Enregistrer
-              </Button>
             </form>
           ))}
         </div>
@@ -221,10 +287,11 @@ export default function AdminCmsPage() {
 
       {tab === 'features' && (
         <div className="space-y-4">
+          {features.length === 0 && <EmptyState icon={Newspaper} title="Aucune fonctionnalité configurée" />}
           {features.map((f) => (
             <form
               key={f.id}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -234,34 +301,44 @@ export default function AdminCmsPage() {
                   title: String(fd.get('title')),
                   description: String(fd.get('description') || '') || null,
                   highlight: String(fd.get('highlight') || '') || null,
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
-              <div className="flex justify-between">
-                <span className="text-xs font-mono text-zinc-400">{f.slug}</span>
-                <button
-                  type="button"
-                  className="text-red-600 text-xs flex items-center gap-1"
-                  onClick={() => patch({ type: 'feature', id: f.id, title: f.title, delete: true })}
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                </button>
+              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+                <span className="font-mono text-xs text-muted-foreground">{f.slug}</span>
+                <PublishControl published={f.is_published} disabled={saving} label={f.title} onToggle={() => togglePublish('feature', f.id, !f.is_published)} />
               </div>
-              <Input name="title" defaultValue={f.title} required />
-              <textarea
-                name="description"
-                defaultValue={f.description || ''}
-                className="w-full min-h-[60px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+              <div className="grid gap-4 p-5 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`feature-${f.id}-title`}>Titre</Label>
+                  <Input id={`feature-${f.id}-title`} name="title" defaultValue={f.title} required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`feature-${f.id}-highlight`}>Mise en avant</Label>
+                  <Input id={`feature-${f.id}-highlight`} name="highlight" defaultValue={f.highlight || ''} placeholder="Highlight" />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label htmlFor={`feature-${f.id}-description`}>Description</Label>
+                  <textarea
+                    id={`feature-${f.id}-description`}
+                    name="description"
+                    defaultValue={f.description || ''}
+                    className={`${TEXTAREA} min-h-[60px]`}
+                  />
+                </div>
+              </div>
+              <ItemFooter
+                saving={saving}
+                onDelete={() =>
+                  setPendingDelete({
+                    kind: 'Fonctionnalité',
+                    label: f.title,
+                    body: { type: 'feature', id: f.id, title: f.title, delete: true },
+                  })
+                }
+                deleteLabel={`Supprimer la fonctionnalité « ${f.title} »`}
               />
-              <Input name="highlight" defaultValue={f.highlight || ''} placeholder="Highlight" />
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" name="is_published" defaultChecked={f.is_published} />
-                Publié
-              </label>
-              <Button type="submit" disabled={saving} size="sm">
-                Enregistrer
-              </Button>
             </form>
           ))}
         </div>
@@ -272,7 +349,7 @@ export default function AdminCmsPage() {
           {faq.map((item) => (
             <form
               key={item.id}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -281,70 +358,89 @@ export default function AdminCmsPage() {
                   id: item.id,
                   question: String(fd.get('question')),
                   answer: String(fd.get('answer')),
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="text-red-600 text-xs flex items-center gap-1"
-                  onClick={() =>
-                    patch({
+              <div className="space-y-4 p-5">
+                <div className="flex items-end justify-between gap-3">
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor={`faq-${item.id}-question`}>Question</Label>
+                    <Input id={`faq-${item.id}-question`} name="question" defaultValue={item.question} required />
+                  </div>
+                  <div className="pb-2">
+                    <PublishControl published={item.is_published} disabled={saving} label={item.question} onToggle={() => togglePublish('faq', item.id, !item.is_published)} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`faq-${item.id}-answer`}>Réponse</Label>
+                  <textarea
+                    id={`faq-${item.id}-answer`}
+                    name="answer"
+                    defaultValue={item.answer}
+                    required
+                    className={`${TEXTAREA} min-h-[80px]`}
+                  />
+                </div>
+              </div>
+              <ItemFooter
+                saving={saving}
+                onDelete={() =>
+                  setPendingDelete({
+                    kind: 'Question',
+                    label: item.question,
+                    body: {
                       type: 'faq',
                       id: item.id,
                       question: item.question,
                       answer: item.answer,
                       delete: true,
-                    })
-                  }
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                </button>
-              </div>
-              <Input name="question" defaultValue={item.question} required />
-              <textarea
-                name="answer"
-                defaultValue={item.answer}
-                required
-                className="w-full min-h-[80px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+                    },
+                  })
+                }
+                deleteLabel={`Supprimer la question « ${item.question} »`}
               />
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" name="is_published" defaultChecked={item.is_published} />
-                Publié
-              </label>
-              <Button type="submit" disabled={saving} size="sm">
-                Enregistrer
-              </Button>
             </form>
           ))}
 
           <form
-            className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-5 space-y-3"
-            onSubmit={(e) => {
+            className="space-y-4 rounded-xl border border-dashed border-border bg-muted/40 p-5"
+            onSubmit={async (e) => {
               e.preventDefault()
-              const fd = new FormData(e.currentTarget)
-              patch({
-                type: 'faq',
-                question: String(fd.get('question')),
-                answer: String(fd.get('answer')),
-              })
-              e.currentTarget.reset()
+              const formEl = e.currentTarget
+              const fd = new FormData(formEl)
+              const ok = await patch(
+                {
+                  type: 'faq',
+                  question: String(fd.get('question')),
+                  answer: String(fd.get('answer')),
+                  publish: wantsPublish(e),
+                },
+                wantsPublish(e) ? 'Question ajoutée et publiée' : 'Question ajoutée en brouillon'
+              )
+              if (ok) formEl.reset()
             }}
           >
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <Plus className="h-4 w-4" /> Nouvelle FAQ
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Plus className="h-4 w-4" aria-hidden="true" /> Nouvelle question
             </p>
-            <Input name="question" placeholder="Question" required />
-            <textarea
-              name="answer"
-              placeholder="Réponse"
-              required
-              className="w-full min-h-[60px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
-            />
-            <Button type="submit" disabled={saving} size="sm">
-              Ajouter
-            </Button>
+            <div className="space-y-1.5">
+              <Label htmlFor="faq-new-question">Question</Label>
+              <Input id="faq-new-question" name="question" placeholder="Question" required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="faq-new-answer">Réponse</Label>
+              <textarea
+                id="faq-new-answer"
+                name="answer"
+                placeholder="Réponse"
+                required
+                className={`${TEXTAREA} min-h-[60px]`}
+              />
+            </div>
+            <div className="flex justify-end">
+              <SaveButtons saving={saving} draftLabel="Ajouter en brouillon" publishLabel="Ajouter et publier" />
+            </div>
           </form>
         </div>
       )}
@@ -354,7 +450,7 @@ export default function AdminCmsPage() {
           {testimonials.map((t) => (
             <form
               key={t.id}
-              className="rounded-xl border border-zinc-200 bg-white p-5 space-y-3"
+              className={CARD}
               onSubmit={(e) => {
                 e.preventDefault()
                 const fd = new FormData(e.currentTarget)
@@ -366,86 +462,233 @@ export default function AdminCmsPage() {
                   company_name: String(fd.get('company_name') || '') || null,
                   quote: String(fd.get('quote')),
                   rating: Number(fd.get('rating') || 5),
-                  is_published: fd.get('is_published') === 'on',
+                  publish: wantsPublish(e),
                 })
               }}
             >
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="text-red-600 text-xs flex items-center gap-1"
-                  onClick={() =>
-                    patch({
+              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+                <h2 className="text-sm font-semibold text-foreground">{t.author_name}</h2>
+                <PublishControl published={t.is_published} disabled={saving} label={t.author_name} onToggle={() => togglePublish('testimonial', t.id, !t.is_published)} />
+              </div>
+              <div className="grid gap-4 p-5 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-name`}>Nom</Label>
+                  <Input id={`t-${t.id}-name`} name="author_name" defaultValue={t.author_name} required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-role`}>Rôle</Label>
+                  <Input id={`t-${t.id}-role`} name="author_role" defaultValue={t.author_role || ''} placeholder="Rôle" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-company`}>Entreprise</Label>
+                  <Input
+                    id={`t-${t.id}-company`}
+                    name="company_name"
+                    defaultValue={t.company_name || ''}
+                    placeholder="Entreprise"
+                  />
+                </div>
+                <div className="space-y-1.5 md:col-span-3">
+                  <Label htmlFor={`t-${t.id}-quote`}>Citation</Label>
+                  <textarea
+                    id={`t-${t.id}-quote`}
+                    name="quote"
+                    defaultValue={t.quote}
+                    required
+                    className={`${TEXTAREA} min-h-[80px]`}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`t-${t.id}-rating`}>Note (1 à 5)</Label>
+                  <Input id={`t-${t.id}-rating`} name="rating" type="number" min={1} max={5} className="tabular" defaultValue={t.rating} />
+                </div>
+              </div>
+              <ItemFooter
+                saving={saving}
+                onDelete={() =>
+                  setPendingDelete({
+                    kind: 'Témoignage',
+                    label: t.author_name,
+                    body: {
                       type: 'testimonial',
                       id: t.id,
                       author_name: t.author_name,
                       quote: t.quote,
                       delete: true,
-                    })
-                  }
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Supprimer
-                </button>
-              </div>
-              <div className="grid sm:grid-cols-3 gap-3">
-                <Input name="author_name" defaultValue={t.author_name} required />
-                <Input name="author_role" defaultValue={t.author_role || ''} placeholder="Rôle" />
-                <Input
-                  name="company_name"
-                  defaultValue={t.company_name || ''}
-                  placeholder="Entreprise"
-                />
-              </div>
-              <textarea
-                name="quote"
-                defaultValue={t.quote}
-                required
-                className="w-full min-h-[80px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
+                    },
+                  })
+                }
+                deleteLabel={`Supprimer le témoignage de ${t.author_name}`}
               />
-              <Input name="rating" type="number" min={1} max={5} defaultValue={t.rating} />
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" name="is_published" defaultChecked={t.is_published} />
-                Publié
-              </label>
-              <Button type="submit" disabled={saving} size="sm">
-                Enregistrer
-              </Button>
             </form>
           ))}
 
           <form
-            className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-5 space-y-3"
-            onSubmit={(e) => {
+            className="space-y-4 rounded-xl border border-dashed border-border bg-muted/40 p-5"
+            onSubmit={async (e) => {
               e.preventDefault()
-              const fd = new FormData(e.currentTarget)
-              patch({
-                type: 'testimonial',
-                author_name: String(fd.get('author_name')),
-                author_role: String(fd.get('author_role') || '') || null,
-                company_name: String(fd.get('company_name') || '') || null,
-                quote: String(fd.get('quote')),
-              })
-              e.currentTarget.reset()
+              const formEl = e.currentTarget
+              const fd = new FormData(formEl)
+              const ok = await patch(
+                {
+                  type: 'testimonial',
+                  author_name: String(fd.get('author_name')),
+                  author_role: String(fd.get('author_role') || '') || null,
+                  company_name: String(fd.get('company_name') || '') || null,
+                  quote: String(fd.get('quote')),
+                  publish: wantsPublish(e),
+                },
+                wantsPublish(e) ? 'Témoignage ajouté et publié' : 'Témoignage ajouté en brouillon'
+              )
+              if (ok) formEl.reset()
             }}
           >
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <Plus className="h-4 w-4" /> Nouveau témoignage
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Plus className="h-4 w-4" aria-hidden="true" /> Nouveau témoignage
             </p>
-            <Input name="author_name" placeholder="Nom" required />
-            <Input name="author_role" placeholder="Rôle" />
-            <Input name="company_name" placeholder="Entreprise" />
-            <textarea
-              name="quote"
-              placeholder="Citation"
-              required
-              className="w-full min-h-[60px] rounded-md border border-zinc-200 px-3 py-2 text-sm"
-            />
-            <Button type="submit" disabled={saving} size="sm">
-              Ajouter
-            </Button>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="t-new-name">Nom</Label>
+                <Input id="t-new-name" name="author_name" placeholder="Nom" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-new-role">Rôle</Label>
+                <Input id="t-new-role" name="author_role" placeholder="Rôle" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-new-company">Entreprise</Label>
+                <Input id="t-new-company" name="company_name" placeholder="Entreprise" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="t-new-quote">Citation</Label>
+              <textarea
+                id="t-new-quote"
+                name="quote"
+                placeholder="Citation"
+                required
+                className={`${TEXTAREA} min-h-[60px]`}
+              />
+            </div>
+            <div className="flex justify-end">
+              <SaveButtons saving={saving} draftLabel="Ajouter en brouillon" publishLabel="Ajouter et publier" />
+            </div>
           </form>
         </div>
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(o) => !o && !saving && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Supprimer {pendingDelete?.kind.toLowerCase()} « {pendingDelete?.label} » ?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              L’élément sera retiré immédiatement de la page d’accueil publique. Cette action est irréversible :
+              pour le masquer temporairement, utilisez plutôt « Dépublier ».
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              className={buttonVariants({ variant: 'destructive' })}
+              onClick={(e) => {
+                e.preventDefault()
+                confirmDelete()
+              }}
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              Supprimer définitivement
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageShell>
+  )
+}
+
+const CARD = 'overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_0_rgb(15_23_42/0.04)]'
+const TEXTAREA =
+  'w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+/** Statut « Brouillon » / « Publié » + action Publier / Dépublier. */
+function PublishControl({
+  published,
+  disabled,
+  label,
+  onToggle,
+}: {
+  published: boolean
+  disabled: boolean
+  label: string
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <StatusBadge label={published ? 'Publié' : 'Brouillon'} tone={published ? 'success' : 'warning'} />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        onClick={onToggle}
+        aria-label={`${published ? 'Dépublier' : 'Publier'} « ${label} »`}
+      >
+        {published ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Send className="h-3.5 w-3.5" aria-hidden="true" />}
+        {published ? 'Dépublier' : 'Publier'}
+      </Button>
+    </div>
+  )
+}
+
+/** « Enregistrer le brouillon » (par défaut) et « Enregistrer et publier ». */
+function SaveButtons({
+  saving,
+  draftLabel = 'Enregistrer le brouillon',
+  publishLabel = 'Enregistrer et publier',
+}: {
+  saving: boolean
+  draftLabel?: string
+  publishLabel?: string
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <Button type="submit" name="intent" value="draft" variant="outline" size="sm" disabled={saving}>
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+        {draftLabel}
+      </Button>
+      <Button type="submit" name="intent" value="publish" size="sm" disabled={saving}>
+        <Send className="h-4 w-4" aria-hidden="true" />
+        {publishLabel}
+      </Button>
+    </div>
+  )
+}
+
+function ItemFooter({
+  saving,
+  onDelete,
+  deleteLabel,
+}: {
+  saving: boolean
+  onDelete: () => void
+  deleteLabel: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+        disabled={saving}
+        onClick={onDelete}
+        aria-label={deleteLabel}
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Supprimer
+      </Button>
+      <SaveButtons saving={saving} />
     </div>
   )
 }

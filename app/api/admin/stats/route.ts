@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { requireSuperAdmin } from '@/lib/admin-auth'
+import { requireAdmin } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 
 // GET /api/admin/stats — Platform-wide KPIs
 export async function GET() {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('reports.read')
   if (!authz.ok) return authz.response
 
   try {

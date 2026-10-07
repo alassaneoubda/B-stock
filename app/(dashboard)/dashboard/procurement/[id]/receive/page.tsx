@@ -1,31 +1,95 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageShell, StatusBadge } from '@/components/app/blocks'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
     ArrowLeft,
     Loader2,
     CheckCircle2,
     ArchiveRestore,
-    Plus,
-    Minus,
-    Package,
-    AlertTriangle
+    AlertTriangle,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useForm, useFieldArray } from 'react-hook-form'
+import { toast } from 'sonner'
+import { ApiError, apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatNumber } from '@/lib/format'
+import { ErrorState, PageSkeleton } from '@/components/states'
 
 interface POItem {
     id: string
     product_name: string
     quantity_ordered: number
-    quantity_received: number
-    packaging_name: string
+    quantity_received: number | null
+    quantity_damaged?: number | null
+    packaging_name: string | null
+}
+
+interface PurchaseOrderDetail {
+    id: string
+    order_number: string
+    status: string
+    depot_name: string | null
+    items: POItem[]
+}
+
+interface ReceiveLine {
+    itemId: string
+    productName: string
+    packagingName: string
+    quantityOrdered: number
+    alreadyReceived: number
+    alreadyDamaged: number
+    remaining: number
+    quantityReceived: string | number
+    quantityDamaged: string | number
+    lotNumber: string
+    expiryDate: string
+}
+
+interface ReceiveResponse {
+    success: boolean
+    data: { status: string }
+    message?: string
+    warnings?: string[]
+}
+
+/** Statuts acceptés par l'API pour une réception (cf. RECEIVABLE_STATUSES). */
+const RECEIVABLE_STATUSES = ['pending', 'confirmed', 'partial']
+
+/** Quantité saisie → entier ≥ 0, ou null si invalide. Champ vide = 0. */
+function parseQuantity(value: unknown): number | null {
+    if (value === '' || value === null || value === undefined) return 0
+    const n = Number(value)
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return null
+    return n
+}
+
+/** Message d'erreur d'une ligne, ou null si elle est valide. */
+function lineError(line: ReceiveLine): string | null {
+    const received = parseQuantity(line.quantityReceived)
+    const damaged = parseQuantity(line.quantityDamaged)
+    if (received === null || damaged === null) return 'Saisissez des quantités entières positives.'
+    if (received + damaged > line.remaining) {
+        return `Reçu + casse (${formatNumber(received + damaged)}) dépasse le reste à réceptionner (${formatNumber(line.remaining)}).`
+    }
+    return null
 }
 
 export default function ReceiveProcurementPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,12 +97,14 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
     const [isFetching, setIsFetching] = useState(true)
-    const [order, setOrder] = useState<any>(null)
-    const [error, setError] = useState<string | null>(null)
+    const [loadError, setLoadError] = useState<string | null>(null)
+    const [order, setOrder] = useState<PurchaseOrderDetail | null>(null)
+    const [formError, setFormError] = useState<string | null>(null)
+    const [pendingSubmit, setPendingSubmit] = useState<ReceiveLine[] | null>(null)
 
-    const { register, handleSubmit, control, setValue, watch } = useForm({
+    const { register, handleSubmit, control, reset, watch } = useForm<{ items: ReceiveLine[] }>({
         defaultValues: {
-            items: [] as any[]
+            items: []
         }
     })
 
@@ -47,204 +113,342 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
         name: "items"
     })
 
-    useEffect(() => {
-        async function fetchOrder() {
-            try {
-                const res = await fetch(`/api/procurement/${id}`)
-                const data = await res.json()
-                if (!res.ok) throw new Error(data.error)
+    const watchedItems = watch('items')
 
-                setOrder(data.data)
+    const fetchOrder = useCallback(async () => {
+        setIsFetching(true)
+        setLoadError(null)
+        try {
+            const res = await apiFetch<{ data: PurchaseOrderDetail }>(`/api/procurement/${id}`)
+            setOrder(res.data)
 
-                // Set default values for items
-                const initialItems = data.data.items.map((item: any) => ({
+            const initialItems: ReceiveLine[] = res.data.items.map((item) => {
+                const ordered = Number(item.quantity_ordered) || 0
+                const alreadyReceived = Number(item.quantity_received) || 0
+                const alreadyDamaged = Number(item.quantity_damaged) || 0
+                // Reste à recevoir : commandé − déjà reçu − déjà déclaré cassé
+                const remaining = Math.max(0, ordered - alreadyReceived - alreadyDamaged)
+                return {
                     itemId: item.id,
                     productName: item.product_name,
-                    packagingName: item.packaging_name,
-                    quantityOrdered: item.quantity_ordered,
-                    quantityReceived: item.quantity_ordered - (item.quantity_received || 0), // Default to remaining
+                    packagingName: item.packaging_name || '',
+                    quantityOrdered: ordered,
+                    alreadyReceived,
+                    alreadyDamaged,
+                    remaining,
+                    quantityReceived: remaining,
                     quantityDamaged: 0,
                     lotNumber: '',
                     expiryDate: ''
-                }))
-                setValue('items', initialItems)
-            } catch (err: any) {
-                setError(err.message)
-            } finally {
-                setIsFetching(false)
-            }
+                }
+            })
+            reset({ items: initialItems })
+        } catch (err) {
+            setLoadError(err instanceof Error ? err.message : 'Impossible de charger la commande.')
+        } finally {
+            setIsFetching(false)
         }
-        fetchOrder()
-    }, [id, setValue])
+    }, [id, reset])
 
-    async function onSubmit(data: any) {
+    useEffect(() => {
+        fetchOrder()
+    }, [fetchOrder])
+
+    // Étape 1 : validation locale puis demande de confirmation
+    function onValidate(data: { items: ReceiveLine[] }) {
+        setFormError(null)
+        const invalid = data.items.find((line) => lineError(line) !== null)
+        if (invalid) {
+            setFormError(`${invalid.productName} : ${lineError(invalid)}`)
+            return
+        }
+        const total = data.items.reduce(
+            (sum, line) => sum + (parseQuantity(line.quantityReceived) ?? 0) + (parseQuantity(line.quantityDamaged) ?? 0),
+            0
+        )
+        if (total === 0) {
+            setFormError('Aucune quantité à réceptionner : saisissez au moins une quantité reçue ou cassée.')
+            return
+        }
+        setPendingSubmit(data.items)
+    }
+
+    // Étape 2 : envoi après confirmation
+    async function confirmSubmit() {
+        if (!pendingSubmit || isLoading) return
         setIsLoading(true)
-        setError(null)
         try {
-            const res = await fetch('/api/procurement', {
+            const res = await apiFetch<ReceiveResponse>('/api/procurement', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: {
                     purchaseOrderId: id,
-                    items: data.items.map((item: any) => ({
-                        itemId: item.itemId,
-                        quantityReceived: Number(item.quantityReceived),
-                        quantityDamaged: Number(item.quantityDamaged),
-                        lotNumber: item.lotNumber,
-                        expiryDate: item.expiryDate
-                    }))
-                })
+                    items: pendingSubmit
+                        .filter((line) => line.remaining > 0)
+                        .map((line) => ({
+                            itemId: line.itemId,
+                            quantityReceived: parseQuantity(line.quantityReceived) ?? 0,
+                            quantityDamaged: parseQuantity(line.quantityDamaged) ?? 0,
+                            lotNumber: line.lotNumber,
+                            expiryDate: line.expiryDate
+                        }))
+                }
             })
 
-            if (!res.ok) {
-                const result = await res.json()
-                throw new Error(result.error || 'Erreur lors de la réception')
-            }
-
+            toast.success(res.message || 'Réception enregistrée')
+            toastWarnings(res.warnings)
+            setPendingSubmit(null)
             router.push(`/dashboard/procurement/${id}`)
             router.refresh()
-        } catch (err: any) {
-            setError(err.message)
+        } catch (err) {
+            // 409 : commande déjà réceptionnée ou quantité dépassant le reste (réception concurrente)
+            toastError(err, 'Réception impossible')
+            setPendingSubmit(null)
+            // Les quantités affichées sont périmées : on recharge la commande
+            if (err instanceof ApiError && err.status === 409) fetchOrder()
         } finally {
             setIsLoading(false)
         }
     }
 
-    if (isFetching) {
+    if (isFetching && !order) {
+        return <PageSkeleton />
+    }
+
+    if (loadError || !order) {
         return (
-            <div className="flex items-center justify-center min-h-screen">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Réception de marchandises" description="Réception de commande fournisseur" />
+                <PageShell className="max-w-3xl">
+                    <ErrorState
+                        title="Impossible de charger la commande"
+                        description={loadError || undefined}
+                        onRetry={fetchOrder}
+                    />
+                    <div className="text-center">
+                        <Button variant="outline" asChild>
+                            <Link href="/dashboard/procurement">Retour aux commandes</Link>
+                        </Button>
+                    </div>
+                </PageShell>
             </div>
         )
     }
 
-    if (error && !order) {
-        return (
-            <div className="p-10 text-center">
-                <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
-                <h3 className="text-xl font-bold">Erreur</h3>
-                <p className="text-muted-foreground">{error}</p>
-                <Button asChild className="mt-6">
-                    <Link href="/dashboard/procurement">Retour</Link>
-                </Button>
-            </div>
-        )
-    }
+    const isReceivable = RECEIVABLE_STATUSES.includes(order.status)
+    const depotLabel = order.depot_name || 'le dépôt de destination'
+    const confirmTotals = (pendingSubmit || []).reduce(
+        (acc, line) => {
+            acc.received += parseQuantity(line.quantityReceived) ?? 0
+            acc.damaged += parseQuantity(line.quantityDamaged) ?? 0
+            return acc
+        },
+        { received: 0, damaged: 0 }
+    )
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Décharger & Réceptionner"
-                description={`Pointage de la commande ${order?.order_number}`}
+                title="Réception de marchandises"
+                description={`Pointage de la commande ${order.order_number}`}
             />
 
-            <main className="flex-1 p-4 lg:p-6 max-w-5xl mx-auto w-full ">
-                <div className="mb-6 flex items-center justify-between">
-                    <Button variant="ghost" size="sm" asChild className="rounded-xl border border-slate-200">
+            <PageShell className="max-w-3xl">
+                <div className="space-y-4">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
                         <Link href={`/dashboard/procurement/${id}`}>
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour au détail
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Commande {order.order_number}
                         </Link>
                     </Button>
-                    <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-md border border-blue-100">
-                        <ArchiveRestore className="h-4 w-4 text-blue-600" />
-                        <span className="text-sm font-semibold text-blue-700 tracking-tight uppercase tracking-wider text-[10px]">Réception de stock</span>
+                    <div className="space-y-1">
+                        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Réceptionner la commande</h2>
+                        <p className="text-sm text-muted-foreground">
+                            Pointez les quantités reçues en bon état et la casse. Le stock sera ajouté à {depotLabel}.
+                        </p>
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                    {error && (
-                        <div className="p-4 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm font-bold flex items-center gap-2">
-                            <AlertTriangle className="h-4 w-4" />
-                            {error}
+                <form onSubmit={handleSubmit(onValidate)} className="space-y-6" noValidate>
+                    {!isReceivable && (
+                        <div role="status" className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-soft p-4 text-sm font-medium text-warning-foreground">
+                            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            {order.status === 'received'
+                                ? 'Cette commande a déjà été entièrement réceptionnée.'
+                                : 'Cette commande ne peut pas être réceptionnée dans son état actuel.'}
                         </div>
                     )}
 
-                    <div className="grid gap-6">
-                        {fields.map((field, index) => (
-                            <Card key={field.id} className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden hover:shadow-lg transition-all duration-300">
-                                <CardContent className="p-8">
-                                    <div className="flex flex-col md:flex-row gap-8">
-                                        {/* Product Info */}
-                                        <div className="md:w-1/3 space-y-4">
-                                            <div className="flex items-start gap-4">
-                                                <div className="h-12 w-12 rounded-md bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
-                                                    <Package className="h-6 w-6" />
-                                                </div>
-                                                <div className="flex flex-col gap-1">
-                                                    <span className="font-semibold text-lg text-slate-950 leading-tight">{(field as any).productName}</span>
-                                                    <span className="inline-flex px-2.5 py-1 rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-600 uppercase tracking-wider w-fit">
-                                                        {(field as any).packagingName}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <div className="p-4 rounded-md bg-amber-50/50 border border-amber-100/50">
-                                                <div className="flex justify-between items-center text-sm">
-                                                    <span className="font-bold text-amber-700 uppercase tracking-wider text-[10px]">Quantité commandée :</span>
-                                                    <span className="font-semibold text-amber-900">{(field as any).quantityOrdered}</span>
-                                                </div>
-                                            </div>
-                                        </div>
+                    {formError && (
+                        <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm font-medium text-destructive">
+                            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            {formError}
+                        </div>
+                    )}
 
-                                        {/* Inputs */}
-                                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                            <div className="space-y-2">
-                                                <Label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Quantité Reçue *</Label>
-                                                <div className="flex items-center gap-3">
+                    <div className="space-y-4">
+                        {fields.map((field, index) => {
+                            const current = watchedItems?.[index] ?? field
+                            const error = lineError(current)
+                            const isClosed = field.remaining === 0
+                            return (
+                                <Card key={field.id}>
+                                    <CardHeader>
+                                        <CardTitle>{field.productName}</CardTitle>
+                                        {field.packagingName && <CardDescription>{field.packagingName}</CardDescription>}
+                                        <CardAction>
+                                            {isClosed ? (
+                                                <StatusBadge label="Réceptionnée" tone="success" />
+                                            ) : (
+                                                <StatusBadge label="À réceptionner" tone="warning" />
+                                            )}
+                                        </CardAction>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        <dl className="grid grid-cols-3 gap-3 rounded-lg bg-muted/40 p-3 text-sm">
+                                            <div className="space-y-0.5">
+                                                <dt className="text-xs text-muted-foreground">Commandé</dt>
+                                                <dd className="tabular font-medium text-foreground">{formatNumber(field.quantityOrdered)}</dd>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                                <dt className="text-xs text-muted-foreground">Déjà traité</dt>
+                                                <dd className="tabular font-medium text-foreground">
+                                                    {field.alreadyReceived > 0 || field.alreadyDamaged > 0
+                                                        ? `${formatNumber(field.alreadyReceived)} reçu(s) · ${formatNumber(field.alreadyDamaged)} casse`
+                                                        : '—'}
+                                                </dd>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                                <dt className="text-xs text-muted-foreground">Reste à réceptionner</dt>
+                                                <dd className="tabular font-semibold text-foreground">{formatNumber(field.remaining)}</dd>
+                                            </div>
+                                        </dl>
+
+                                        {isClosed ? (
+                                            <p className="flex items-center gap-2 text-sm text-success">
+                                                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                                                Ligne entièrement réceptionnée
+                                            </p>
+                                        ) : (
+                                            <div className="grid gap-4 md:grid-cols-2">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`received-${index}`}>Quantité reçue *</Label>
                                                     <Input
+                                                        id={`received-${index}`}
                                                         type="number"
+                                                        min={0}
+                                                        max={field.remaining}
+                                                        step={1}
+                                                        aria-invalid={error ? true : undefined}
                                                         {...register(`items.${index}.quantityReceived`)}
-                                                        className="h-12 rounded-xl text-lg font-semibold"
+                                                        className="tabular h-10 text-right font-medium"
                                                         placeholder="0"
                                                     />
+                                                    <p className="text-xs text-muted-foreground">Unités en bon état, ajoutées au stock.</p>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`damaged-${index}`}>Casse / manquants</Label>
+                                                    <Input
+                                                        id={`damaged-${index}`}
+                                                        type="number"
+                                                        min={0}
+                                                        max={field.remaining}
+                                                        step={1}
+                                                        aria-invalid={error ? true : undefined}
+                                                        {...register(`items.${index}.quantityDamaged`)}
+                                                        className="tabular h-10 text-right"
+                                                        placeholder="0"
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">Tracées sur la commande, sans entrée en stock.</p>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`lot-${index}`}>Numéro de lot</Label>
+                                                    <Input
+                                                        id={`lot-${index}`}
+                                                        {...register(`items.${index}.lotNumber`)}
+                                                        className="h-10"
+                                                        placeholder="Ex. : LOT-2024-001"
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">Facultatif.</p>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor={`expiry-${index}`}>Date de péremption</Label>
+                                                    <Input
+                                                        id={`expiry-${index}`}
+                                                        type="date"
+                                                        {...register(`items.${index}.expiryDate`)}
+                                                        className="h-10"
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">Facultatif.</p>
                                                 </div>
                                             </div>
-                                            <div className="space-y-2">
-                                                <Label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Casse / Manquants</Label>
-                                                <Input
-                                                    type="number"
-                                                    {...register(`items.${index}.quantityDamaged`)}
-                                                    className="h-12 rounded-xl border-dashed bg-rose-50/20 text-rose-600 font-bold"
-                                                    placeholder="0"
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">N° Lot (Optionnel)</Label>
-                                                <Input
-                                                    {...register(`items.${index}.lotNumber`)}
-                                                    className="h-12 rounded-xl"
-                                                    placeholder="EX: LOT-2024-001"
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Date Péremption</Label>
-                                                <Input
-                                                    type="date"
-                                                    {...register(`items.${index}.expiryDate`)}
-                                                    className="h-12 rounded-xl"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+                                        )}
+                                        {!isClosed && error && (
+                                            <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
+                                                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                                {error}
+                                            </p>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            )
+                        })}
                     </div>
 
-                    <div className="flex items-center justify-end gap-4 pt-6">
-                        <Button variant="outline" type="button" asChild className="rounded-md h-14 px-8 border-slate-200 font-bold">
+                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-6">
+                        <Button variant="outline" type="button" asChild>
                             <Link href={`/dashboard/procurement/${id}`}>Annuler</Link>
                         </Button>
-                        <Button type="submit" disabled={isLoading} className="rounded-md h-14 px-10 bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 font-semibold text-lg group">
+                        <Button type="submit" variant="brand" disabled={isLoading || !isReceivable}>
                             {isLoading ? (
-                                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                             ) : (
-                                <CheckCircle2 className="h-5 w-5 mr-2 group-hover:scale-110 transition-transform" />
+                                <ArchiveRestore className="h-4 w-4" aria-hidden="true" />
                             )}
                             Valider la réception
                         </Button>
                     </div>
                 </form>
-            </main>
+            </PageShell>
+
+            <AlertDialog
+                open={pendingSubmit !== null}
+                onOpenChange={(open) => {
+                    if (!open && !isLoading) setPendingSubmit(null)
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Confirmer la réception ?</AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                            <div className="space-y-2 text-sm text-muted-foreground">
+                                <p>
+                                    <strong className="tabular text-foreground">{formatNumber(confirmTotals.received)}</strong> unité(s) en bon état
+                                    seront ajoutées au stock de <strong className="text-foreground">{depotLabel}</strong>.
+                                </p>
+                                {confirmTotals.damaged > 0 && (
+                                    <p>
+                                        {formatNumber(confirmTotals.damaged)} unité(s) seront déclarées en casse / manquants
+                                        (tracées sur la commande, sans entrée en stock).
+                                    </p>
+                                )}
+                                <p>Cette opération ne peut pas être annulée depuis cet écran.</p>
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isLoading}>Annuler</AlertDialogCancel>
+                        <AlertDialogAction
+                            disabled={isLoading}
+                            onClick={(e) => {
+                                e.preventDefault()
+                                confirmSubmit()
+                            }}
+                        >
+                            {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                            Confirmer la réception
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
 }

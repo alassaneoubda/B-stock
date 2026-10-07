@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell } from '@/components/app/blocks'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +14,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage } from '@/lib/api-client'
 
 const vehicleSchema = z.object({
     name: z.string().optional(),
@@ -56,83 +59,71 @@ export default function NewVehiclePage() {
         setError(null)
 
         try {
-            const response = await fetch('/api/vehicles', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            })
-
-            const result = await response.json()
-
-            if (!response.ok) {
-                setError(result.error || 'Une erreur est survenue')
-                return
-            }
-
+            await apiFetch('/api/vehicles', { method: 'POST', body: data })
+            toast.success('Véhicule ajouté')
             router.push('/dashboard/vehicles')
             router.refresh()
-        } catch {
-            setError('Une erreur est survenue. Veuillez réessayer.')
+        } catch (e) {
+            // Erreur affichée dans le formulaire (message du serveur, ex. immatriculation déjà utilisée)
+            setError(errorMessage(e))
         } finally {
             setIsLoading(false)
         }
     }
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Ajouter un véhicule"
-                description="Créer un nouveau véhicule de livraison"
+                title="Nouveau véhicule"
+                description="Ajouter un véhicule de livraison à votre flotte"
             />
-            <main className="flex-1 p-4 lg:p-6 ">
-                <div className="mb-6">
-                    <Button variant="ghost" size="sm" asChild>
+            <PageShell>
+                <div className="mx-auto w-full max-w-3xl space-y-6">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2">
                         <Link href="/dashboard/vehicles">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Retour
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Véhicules
                         </Link>
                     </Button>
-                </div>
 
-                <form onSubmit={handleSubmit(onSubmit)} className="max-w-2xl space-y-6">
-                    {error && (
-                        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                            {error}
-                        </div>
-                    )}
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                        {error && (
+                            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+                                {error}
+                            </div>
+                        )}
 
-                    <Card className="rounded-lg border-slate-200/60 shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-8 border-b border-slate-100">
-                            <CardTitle className="text-xl font-semibold text-slate-950">Nouveau véhicule</CardTitle>
-                            <CardDescription>Informations et capacitiés du véhicule</CardDescription>
-                        </CardHeader>
-                        <CardContent className="p-8 space-y-6">
-                            <div className="grid gap-4 sm:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Véhicule</CardTitle>
+                                <CardDescription>Identification et capacité de chargement</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="plateNumber">Plaque d'immatriculation *</Label>
+                                    <Label htmlFor="plateNumber">Plaque d&apos;immatriculation *</Label>
                                     <Input
                                         id="plateNumber"
-                                        placeholder="Ex: 1234 AB 01"
+                                        placeholder="Ex. 1234 AB 01"
                                         {...register('plateNumber')}
                                         disabled={isLoading}
+                                        aria-invalid={!!errors.plateNumber}
                                     />
                                     {errors.plateNumber && (
-                                        <p className="text-sm text-destructive">{errors.plateNumber.message}</p>
+                                        <p className="text-xs text-destructive">{errors.plateNumber.message}</p>
                                     )}
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="name">Nom / Alias (Optionnel)</Label>
+                                    <Label htmlFor="name">Nom ou alias</Label>
                                     <Input
                                         id="name"
-                                        placeholder="Ex: Camion Livraison Nord"
+                                        placeholder="Ex. Camion livraison nord"
                                         {...register('name')}
                                         disabled={isLoading}
                                     />
+                                    <p className="text-xs text-muted-foreground">Facultatif, pour le reconnaître facilement.</p>
                                 </div>
-                            </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="vehicleType">Type de véhicule</Label>
                                     <Select
@@ -140,7 +131,7 @@ export default function NewVehiclePage() {
                                         value={selectedVehicleType}
                                         disabled={isLoading}
                                     >
-                                        <SelectTrigger>
+                                        <SelectTrigger id="vehicleType" className="w-full">
                                             <SelectValue placeholder="Sélectionner un type" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -152,67 +143,73 @@ export default function NewVehiclePage() {
                                         </SelectContent>
                                     </Select>
                                     {errors.vehicleType && (
-                                        <p className="text-sm text-destructive">{errors.vehicleType.message}</p>
+                                        <p className="text-xs text-destructive">{errors.vehicleType.message}</p>
                                     )}
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="capacityCases">Capacité (en casiers)</Label>
+                                    <Label htmlFor="capacityCases">Capacité (casiers)</Label>
                                     <Input
                                         id="capacityCases"
                                         type="number"
                                         min="0"
-                                        placeholder="Ex: 200"
+                                        inputMode="numeric"
+                                        placeholder="Ex. 200"
+                                        className="tabular"
                                         {...register('capacityCases', { setValueAs: v => v === "" ? undefined : parseInt(v, 10) })}
                                         disabled={isLoading}
                                     />
-                                    {errors.capacityCases && (
-                                        <p className="text-sm text-destructive">{errors.capacityCases.message}</p>
+                                    {errors.capacityCases ? (
+                                        <p className="text-xs text-destructive">{String(errors.capacityCases.message ?? 'Capacité invalide')}</p>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground">Nombre de casiers transportables par tournée.</p>
                                     )}
                                 </div>
-                            </div>
+                            </CardContent>
+                        </Card>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Chauffeur</CardTitle>
+                                <CardDescription>Chauffeur attitré à ce véhicule (facultatif)</CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="driverName">Chauffeur attitré</Label>
+                                    <Label htmlFor="driverName">Nom du chauffeur</Label>
                                     <Input
                                         id="driverName"
-                                        placeholder="Nom du chauffeur"
+                                        placeholder="Nom et prénom"
                                         {...register('driverName')}
                                         disabled={isLoading}
                                     />
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="driverPhone">Téléphone du chauffeur</Label>
+                                    <Label htmlFor="driverPhone">Téléphone</Label>
                                     <Input
                                         id="driverPhone"
-                                        placeholder="+225 0102030405"
+                                        type="tel"
+                                        placeholder="+225 01 02 03 04 05"
+                                        className="tabular"
                                         {...register('driverPhone')}
                                         disabled={isLoading}
                                     />
                                 </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <div className="flex justify-end gap-4">
-                        <Button type="button" variant="outline" asChild disabled={isLoading}>
-                            <Link href="/dashboard/vehicles">Annuler</Link>
-                        </Button>
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Création...
-                                </>
-                            ) : (
-                                'Enregistrer le véhicule'
-                            )}
-                        </Button>
-                    </div>
-                </form>
-            </main>
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                            <Button type="button" variant="outline" asChild disabled={isLoading}>
+                                <Link href="/dashboard/vehicles">Annuler</Link>
+                            </Button>
+                            <Button type="submit" disabled={isLoading}>
+                                {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                                {isLoading ? 'Enregistrement…' : 'Enregistrer le véhicule'}
+                            </Button>
+                        </div>
+                    </form>
+                </div>
+            </PageShell>
         </div>
     )
 }

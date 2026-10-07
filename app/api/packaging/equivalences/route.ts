@@ -1,38 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { badRequest, conflict, handleRouteError, notFound } from '@/lib/errors'
+import { assertOwned, isUuid } from '@/lib/tenant'
 
 const equivalenceSchema = z.object({
     packagingTypeA: z.string().uuid(),
     packagingTypeB: z.string().uuid(),
 })
 
+/** ?limit (défaut 500, max 500) / ?offset */
+function parsePage(searchParams: URLSearchParams, defaultLimit = 500) {
+    const limit = Number.parseInt(searchParams.get('limit') ?? '', 10)
+    const offset = Number.parseInt(searchParams.get('offset') ?? '', 10)
+    return {
+        limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : defaultLimit,
+        offset: Number.isFinite(offset) && offset > 0 ? offset : 0,
+    }
+}
+
 // GET /api/packaging/equivalences — List all equivalences
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
         const authz = await requirePermission('packaging.read')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
 
+        const { limit, offset } = parsePage(new URL(request.url).searchParams)
         const equivalences = await sql`
             SELECT pe.id, pe.packaging_type_a, pe.packaging_type_b, pe.created_at,
-                   pta.name as name_a, pta.units_per_case as units_a,
-                   ptb.name as name_b, ptb.units_per_case as units_b
+                   pta.name AS name_a, pta.units_per_case AS units_a,
+                   ptb.name AS name_b, ptb.units_per_case AS units_b
             FROM packaging_equivalences pe
-            JOIN packaging_types pta ON pe.packaging_type_a = pta.id
-            JOIN packaging_types ptb ON pe.packaging_type_b = ptb.id
-            WHERE pe.company_id = ${session.user.companyId}
-            ORDER BY pta.name, ptb.name
+            JOIN packaging_types pta ON pe.packaging_type_a = pta.id AND pta.company_id = ${companyId}
+            JOIN packaging_types ptb ON pe.packaging_type_b = ptb.id AND ptb.company_id = ${companyId}
+            WHERE pe.company_id = ${companyId}
+            ORDER BY pta.name, ptb.name, pe.id
+            LIMIT ${limit} OFFSET ${offset}
         `
 
         return NextResponse.json({ success: true, data: equivalences })
     } catch (error) {
-        console.error('Error fetching equivalences:', error)
-        return NextResponse.json(
-            { error: 'Erreur lors de la récupération des équivalences' },
-            { status: 500 }
-        )
+        return handleRouteError(error, 'packaging.equivalences.list')
     }
 }
 
@@ -43,104 +53,67 @@ export async function POST(request: NextRequest) {
         if (!authz.ok) return authz.response
         const { companyId } = authz
 
-        const body = await request.json()
-        const data = equivalenceSchema.parse(body)
-
+        const data = equivalenceSchema.parse(await request.json())
         if (data.packagingTypeA === data.packagingTypeB) {
-            return NextResponse.json(
-                { error: 'Les deux emballages doivent être différents' },
-                { status: 400 }
-            )
+            throw badRequest('Les deux emballages doivent être différents')
         }
 
-        // Verify both packaging types belong to this company
-        const types = await sql`
-            SELECT id FROM packaging_types
-            WHERE id IN (${data.packagingTypeA}, ${data.packagingTypeB})
-              AND company_id = ${companyId}
-        `
-        if (types.length < 2) {
-            return NextResponse.json(
-                { error: 'Un ou les deux emballages sont introuvables' },
-                { status: 404 }
-            )
-        }
+        const created = await withTransaction(async (tx) => {
+            await assertOwned(tx.sql, companyId, {
+                packagingTypes: [data.packagingTypeA, data.packagingTypeB],
+            })
 
-        // Check for existing equivalence (in either direction)
-        const existing = await sql`
-            SELECT id FROM packaging_equivalences
-            WHERE company_id = ${companyId}
-              AND (
-                (packaging_type_a = ${data.packagingTypeA} AND packaging_type_b = ${data.packagingTypeB})
-                OR (packaging_type_a = ${data.packagingTypeB} AND packaging_type_b = ${data.packagingTypeA})
-              )
-        `
-        if (existing.length > 0) {
-            return NextResponse.json(
-                { error: 'Cette équivalence existe déjà' },
-                { status: 409 }
-            )
-        }
+            // Sérialise les créations concurrentes de la même paire (dans les deux sens)
+            const [a, b] = [data.packagingTypeA, data.packagingTypeB].sort()
+            await tx.sql`SELECT pg_advisory_xact_lock(hashtext(${`${companyId}:pkg-equiv:${a}:${b}`}))`
 
-        const result = await sql`
-            INSERT INTO packaging_equivalences (packaging_type_a, packaging_type_b, company_id)
-            VALUES (${data.packagingTypeA}, ${data.packagingTypeB}, ${companyId})
-            RETURNING *
-        `
+            const existing = await tx.sql`
+                SELECT id FROM packaging_equivalences
+                WHERE company_id = ${companyId}
+                  AND (
+                    (packaging_type_a = ${data.packagingTypeA} AND packaging_type_b = ${data.packagingTypeB})
+                    OR (packaging_type_a = ${data.packagingTypeB} AND packaging_type_b = ${data.packagingTypeA})
+                  )
+            `
+            if (existing.length > 0) throw conflict('Cette équivalence existe déjà')
 
-        return NextResponse.json({
-            success: true,
-            data: result[0],
-            message: 'Équivalence créée avec succès',
-        }, { status: 201 })
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json(
-                { error: 'Données invalides', details: error.errors },
-                { status: 400 }
-            )
-        }
-        console.error('Error creating equivalence:', error)
+            const [row] = await tx.sql`
+                INSERT INTO packaging_equivalences (packaging_type_a, packaging_type_b, company_id)
+                VALUES (${data.packagingTypeA}, ${data.packagingTypeB}, ${companyId})
+                RETURNING *
+            `
+            return row
+        })
+
         return NextResponse.json(
-            { error: 'Erreur lors de la création de l\'équivalence' },
-            { status: 500 }
+            { success: true, data: created, message: 'Équivalence créée avec succès' },
+            { status: 201 }
         )
+    } catch (error) {
+        return handleRouteError(error, 'packaging.equivalences.create')
     }
 }
 
-// DELETE /api/packaging/equivalences — Delete an equivalence
+// DELETE /api/packaging/equivalences?id=… — Delete an equivalence
 export async function DELETE(request: NextRequest) {
     try {
         const authz = await requirePermission('packaging.write')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
 
-        const { searchParams } = new URL(request.url)
-        const equivalenceId = searchParams.get('id')
-
-        if (!equivalenceId) {
-            return NextResponse.json({ error: 'ID requis' }, { status: 400 })
-        }
+        const equivalenceId = new URL(request.url).searchParams.get('id')
+        if (!equivalenceId) throw badRequest('ID requis')
+        if (!isUuid(equivalenceId)) throw notFound('Équivalence')
 
         const result = await sql`
             DELETE FROM packaging_equivalences
-            WHERE id = ${equivalenceId} AND company_id = ${session.user.companyId}
+            WHERE id = ${equivalenceId} AND company_id = ${companyId}
             RETURNING id
         `
+        if (result.length === 0) throw notFound('Équivalence')
 
-        if (result.length === 0) {
-            return NextResponse.json({ error: 'Équivalence introuvable' }, { status: 404 })
-        }
-
-        return NextResponse.json({
-            success: true,
-            message: 'Équivalence supprimée',
-        })
+        return NextResponse.json({ success: true, message: 'Équivalence supprimée' })
     } catch (error) {
-        console.error('Error deleting equivalence:', error)
-        return NextResponse.json(
-            { error: 'Erreur lors de la suppression' },
-            { status: 500 }
-        )
+        return handleRouteError(error, 'packaging.equivalences.delete')
     }
 }

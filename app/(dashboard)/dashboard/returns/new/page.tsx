@@ -1,20 +1,35 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, Plus, Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { apiFetch, toastError, toastWarnings } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { ErrorState, PageSkeleton } from '@/components/states'
+import { PageShell } from '@/components/app/blocks'
 
 interface ReturnItem {
   id: string; item_type: string; product_variant_id?: string; packaging_type_id?: string
   quantity: number; unit_price?: number; reason: string; product_name?: string; packaging_name?: string
 }
+
+/** Une ligne sélectionnable = une variante « Produit — Emballage » (ce que l'API attend). */
+interface VariantOption {
+  id: string
+  label: string
+  price: number
+  cost_price: number
+}
+
+const NO_ORDER = '__none__'
 
 export default function NewReturnPage() {
   const router = useRouter()
@@ -32,58 +47,90 @@ export default function NewReturnPage() {
   const [products, setProducts] = useState<any[]>([])
   const [packagings, setPackagings] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [newItemType, setNewItemType] = useState('product')
   const [newItemId, setNewItemId] = useState('')
   const [newItemQty, setNewItemQty] = useState('')
   const [newItemReason, setNewItemReason] = useState('')
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/clients'),
-      fetch('/api/suppliers'),
-      fetch('/api/sales'),
-      fetch('/api/depots'),
-      fetch('/api/products'),
-      fetch('/api/packaging-types'),
-    ]).then(async ([clientRes, supplierRes, orderRes, depotRes, prodRes, pkgRes]) => {
-      const clientJson = await clientRes.json()
-      const supplierJson = await supplierRes.json()
-      const orderJson = await orderRes.json()
-      const depotJson = await depotRes.json()
-      const prodJson = await prodRes.json()
-      const pkgJson = await pkgRes.json()
-      setClients(Array.isArray(clientJson.data) ? clientJson.data : [])
-      setSuppliers(Array.isArray(supplierJson.data) ? supplierJson.data : [])
-      setOrders(Array.isArray(orderJson.data) ? orderJson.data : [])
-      setDepots(Array.isArray(depotJson.data) ? depotJson.data : Array.isArray(depotJson) ? depotJson : [])
-      setProducts(Array.isArray(prodJson.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : [])
-      setPackagings(Array.isArray(pkgJson.data) ? pkgJson.data : Array.isArray(pkgJson) ? pkgJson : [])
-    })
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setLoadError(false)
+    try {
+      const [clientJson, supplierJson, orderJson, depotJson, prodJson, pkgJson] = await Promise.all([
+        apiFetch('/api/clients?limit=500'),
+        apiFetch('/api/suppliers'),
+        apiFetch('/api/sales?limit=500'),
+        apiFetch('/api/depots'),
+        apiFetch('/api/products?limit=500'),
+        apiFetch('/api/packaging-types'),
+      ])
+      setClients(Array.isArray(clientJson?.data) ? clientJson.data : [])
+      setSuppliers(Array.isArray(supplierJson?.data) ? supplierJson.data : [])
+      setOrders(Array.isArray(orderJson?.data) ? orderJson.data : [])
+      setDepots(Array.isArray(depotJson?.data) ? depotJson.data : Array.isArray(depotJson) ? depotJson : [])
+      setProducts(Array.isArray(prodJson?.data) ? prodJson.data : Array.isArray(prodJson) ? prodJson : [])
+      setPackagings(Array.isArray(pkgJson?.data) ? pkgJson.data : Array.isArray(pkgJson) ? pkgJson : [])
+    } catch (e) {
+      setLoadError(true)
+      toastError(e, 'Impossible de charger le formulaire')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  function addItem() {
-    if (!newItemId || !newItemQty) return
-    const item = newItemType === 'product' 
-      ? products.find((p: any) => p.id === newItemId)
-      : packagings.find((p: any) => p.id === newItemId)
-    if (!item) return
-    
-    // Get unit price from item data
-    let unitPrice = 0
-    if (newItemType === 'product' && item.variants && item.variants.length > 0) {
-      unitPrice = item.variants[0].price || 0
-    } else if (newItemType === 'packaging') {
-      unitPrice = item.deposit_price || 0
+  useEffect(() => { loadData() }, [loadData])
+
+  // Produits aplatis en variantes : « Produit — Emballage »
+  const variantOptions = useMemo<VariantOption[]>(
+    () =>
+      products.flatMap((p: any) =>
+        (Array.isArray(p.variants) ? p.variants : []).map((v: any) => ({
+          id: v.id,
+          label: v.packaging_name ? `${p.name} — ${v.packaging_name}` : p.name,
+          price: Number(v.price || 0),
+          cost_price: Number(v.cost_price ?? v.price ?? 0),
+        }))
+      ),
+    [products]
+  )
+
+  // Ventes proposées : non annulées, du client choisi le cas échéant
+  const orderOptions = useMemo(
+    () => orders.filter((o: any) => o.status !== 'cancelled' && (!clientId || o.client_id === clientId)),
+    [orders, clientId]
+  )
+
+  function indicativePrice(type: string, id: string): number {
+    if (type === 'product') {
+      const v = variantOptions.find((o) => o.id === id)
+      return v ? (returnType === 'supplier' ? v.cost_price : v.price) : 0
     }
-    
+    const pkg = packagings.find((p: any) => p.id === id)
+    return Number(pkg?.deposit_price || 0)
+  }
+
+  function addItem() {
+    const qty = Number(newItemQty)
+    if (!newItemId || !Number.isInteger(qty) || qty <= 0) {
+      toast.error('Quantité invalide', { description: 'Saisissez un nombre entier supérieur à 0.' })
+      return
+    }
+    const label =
+      newItemType === 'product'
+        ? variantOptions.find((v) => v.id === newItemId)?.label
+        : packagings.find((p: any) => p.id === newItemId)?.name
+    if (!label) return
+
     setItems([...items, {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random()}`,
       item_type: newItemType,
       [newItemType === 'product' ? 'product_variant_id' : 'packaging_type_id']: newItemId,
-      quantity: Number(newItemQty),
-      unit_price: unitPrice,
+      quantity: qty,
+      unit_price: indicativePrice(newItemType, newItemId),
       reason: newItemReason,
-      [newItemType === 'product' ? 'product_name' : 'packaging_name']: item.name,
+      [newItemType === 'product' ? 'product_name' : 'packaging_name']: label,
     }])
     setNewItemId(''); setNewItemQty(''); setNewItemReason('')
   }
@@ -92,64 +139,108 @@ export default function NewReturnPage() {
     setItems(items.filter(i => i.id !== id))
   }
 
+  const estimatedTotal = items.reduce((s, i) => s + (i.unit_price || 0) * i.quantity, 0)
+
   async function handleSubmit() {
-    if (!depotId || items.length === 0) return
+    if (!depotId || items.length === 0 || submitting) return
+    if (returnType === 'client' && !clientId && !orderId) {
+      toast.error('Client requis', { description: 'Choisissez le client (ou la vente d’origine).' })
+      return
+    }
+    if (returnType === 'supplier' && !supplierId) {
+      toast.error('Fournisseur requis')
+      return
+    }
     const payload = {
       return_type: returnType,
       depot_id: depotId,
       reason,
-      items: items.map(({ id, ...item }) => item),
-      ...(returnType === 'client' && { client_id: clientId }),
+      // Le prix n'est pas envoyé : le serveur applique le prix de la vente d'origine / du catalogue
+      items: items.map(({ id, unit_price, product_name, packaging_name, ...item }) => item),
+      ...(returnType === 'client' && clientId && { client_id: clientId }),
       ...(returnType === 'supplier' && { supplier_id: supplierId }),
-      ...(orderId && { order_id: orderId }),
+      ...(returnType === 'client' && orderId && { sales_order_id: orderId }),
     }
     setSubmitting(true)
     try {
-      await fetch('/api/returns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const res = await apiFetch('/api/returns', { method: 'POST', body: payload })
+      toast.success(res?.data?.return_number ? `Retour ${res.data.return_number} enregistré` : 'Retour enregistré')
+      toastWarnings(res?.warnings)
       router.push('/dashboard/returns')
+    } catch (e) {
+      toastError(e, 'Retour non enregistré')
     } finally { setSubmitting(false) }
   }
 
+  if (loading) return <PageSkeleton />
+
+  const backButton = (
+    <Button variant="ghost" size="sm" onClick={() => router.back()} className="-ml-2 w-fit text-muted-foreground">
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Retours
+    </Button>
+  )
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <DashboardHeader title="Nouveau retour" />
+        <PageShell className="max-w-3xl">
+          {backButton}
+          <ErrorState title="Impossible de charger le formulaire" onRetry={loadData} />
+        </PageShell>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50/50">
-      <DashboardHeader title="Nouveau Retour" />
-      <main className="flex-1 p-4 lg:p-6 space-y-6 max-w-[1000px] mx-auto w-full">
-        <Button variant="ghost" onClick={() => router.back()} className="w-fit">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-        </Button>
+    <div className="flex min-h-screen flex-col">
+      <DashboardHeader
+        title="Nouveau retour"
+        description="Produits ou emballages rendus par un client, ou renvoyés à un fournisseur"
+      />
+      <PageShell className="max-w-3xl">
+        {backButton}
 
         <Card>
-          <CardHeader><CardTitle>Informations du retour</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Informations du retour</CardTitle>
+            <CardDescription>Qui retourne la marchandise et dans quel dépôt elle est reprise.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Type de retour</Label>
-                <Select value={returnType} onValueChange={setReturnType}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="return-type">Type de retour</Label>
+                <Select value={returnType} onValueChange={(v) => { setReturnType(v); setOrderId('') }}>
+                  <SelectTrigger id="return-type" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="client">Retour client</SelectItem>
                     <SelectItem value="supplier">Retour fournisseur</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Dépôt</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="return-depot">Dépôt</Label>
                 <Select value={depotId} onValueChange={setDepotId}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                  <SelectTrigger id="return-depot" className="w-full"><SelectValue placeholder="Choisir un dépôt" /></SelectTrigger>
                   <SelectContent>
                     {depots.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">Le stock retourné sera mis à jour dans ce dépôt.</p>
               </div>
               {returnType === 'client' && (
-                <div>
-                  <Label>Client</Label>
-                  <Select value={clientId} onValueChange={setClientId}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                <div className="space-y-1.5">
+                  <Label htmlFor="return-client">Client</Label>
+                  <Select
+                    value={clientId}
+                    onValueChange={(v) => {
+                      setClientId(v)
+                      // La vente choisie doit appartenir au client
+                      if (orderId && !orders.some((o: any) => o.id === orderId && o.client_id === v)) setOrderId('')
+                    }}
+                  >
+                    <SelectTrigger id="return-client" className="w-full"><SelectValue placeholder="Choisir un client" /></SelectTrigger>
                     <SelectContent>
                       {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
@@ -157,99 +248,146 @@ export default function NewReturnPage() {
                 </div>
               )}
               {returnType === 'supplier' && (
-                <div>
-                  <Label>Fournisseur</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="return-supplier">Fournisseur</Label>
                   <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                    <SelectTrigger id="return-supplier" className="w-full"><SelectValue placeholder="Choisir un fournisseur" /></SelectTrigger>
                     <SelectContent>
                       {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              <div>
-                <Label>Commande (optionnel)</Label>
-                <Select value={orderId} onValueChange={setOrderId}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
-                  <SelectContent>
-                    {orders.map(o => <SelectItem key={o.id} value={o.id}>{o.order_number}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              {returnType === 'client' && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="return-order">Vente d&apos;origine <span className="font-normal text-muted-foreground">(facultatif)</span></Label>
+                  <Select value={orderId || NO_ORDER} onValueChange={(v) => setOrderId(v === NO_ORDER ? '' : v)}>
+                    <SelectTrigger id="return-order" className="w-full"><SelectValue placeholder="Choisir une vente" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_ORDER}>Aucune</SelectItem>
+                      {orderOptions.map(o => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.order_number}{o.client_name ? ` — ${o.client_name}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Le prix de cette vente est appliqué et la quantité est limitée à ce qui a été vendu.
+                  </p>
+                </div>
+              )}
             </div>
-            <div>
-              <Label>Raison générale</Label>
-              <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Raison du retour..." className="mt-1" />
+            <div className="space-y-1.5">
+              <Label htmlFor="return-reason">Motif général</Label>
+              <Textarea id="return-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex. : casse à la livraison, produits périmés…" />
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Articles retournés</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Articles retournés</CardTitle>
+            <CardDescription>Ajoutez chaque produit ou emballage avec sa quantité.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <div>
-                <Label>Type</Label>
-                <Select value={newItemType} onValueChange={setNewItemType}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="item-type">Type d&apos;article</Label>
+                <Select value={newItemType} onValueChange={(v) => { setNewItemType(v); setNewItemId('') }}>
+                  <SelectTrigger id="item-type" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="product">Produit</SelectItem>
                     <SelectItem value="packaging">Emballage</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Article</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="item-id">Article</Label>
                 <Select value={newItemId} onValueChange={setNewItemId}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choisir..." /></SelectTrigger>
+                  <SelectTrigger id="item-id" className="w-full"><SelectValue placeholder="Choisir un article" /></SelectTrigger>
                   <SelectContent>
-                    {(newItemType === 'product' ? products : packagings).map(item => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                    ))}
+                    {newItemType === 'product'
+                      ? variantOptions.map(v => <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>)
+                      : packagings.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {newItemId && (
+                  <p className="text-xs text-muted-foreground">
+                    Prix indicatif : <span className="tabular">{formatMoney(indicativePrice(newItemType, newItemId))}</span>
+                  </p>
+                )}
               </div>
-              <div>
-                <Label>Quantité</Label>
-                <Input type="number" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="mt-1" />
+              <div className="space-y-1.5">
+                <Label htmlFor="item-qty">Quantité</Label>
+                <Input id="item-qty" type="number" inputMode="numeric" min={1} step={1} value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="tabular" />
               </div>
-              <div>
-                <Label>Raison</Label>
-                <Input value={newItemReason} onChange={(e) => setNewItemReason(e.target.value)} placeholder="Pourquoi?" className="mt-1" />
-              </div>
-              <div className="flex items-end">
-                <Button onClick={addItem} disabled={!newItemId || !newItemQty} className="w-full">
-                  <Plus className="h-4 w-4 mr-2" /> Ajouter
-                </Button>
+              <div className="space-y-1.5">
+                <Label htmlFor="item-reason">Motif <span className="font-normal text-muted-foreground">(facultatif)</span></Label>
+                <Input id="item-reason" value={newItemReason} onChange={(e) => setNewItemReason(e.target.value)} placeholder="Ex. : bouteille cassée" />
               </div>
             </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={addItem} disabled={!newItemId || !newItemQty}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Ajouter l&apos;article
+              </Button>
+            </div>
 
-            {items.length > 0 && (
-              <div className="space-y-2">
-                {items.map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">{item.product_name || item.packaging_name}</div>
-                      <div className="text-sm text-zinc-500">Qté: {item.quantity} • {item.reason}</div>
-                    </div>
-                    <Button size="sm" variant="ghost" onClick={() => removeItem(item.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+            {items.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                Aucun article ajouté pour le moment.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <ul className="divide-y divide-border">
+                  {items.map(item => (
+                    <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{item.product_name || item.packaging_name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {item.item_type === 'product' ? 'Produit' : 'Emballage'}
+                          {item.reason ? ` · ${item.reason}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
+                        <div className="text-right">
+                          <p className="tabular text-sm font-medium text-foreground">× {formatNumber(item.quantity)}</p>
+                          <p className="tabular text-xs text-muted-foreground">{formatMoney(item.unit_price)} / u</p>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeItem(item.id)}
+                          aria-label={`Retirer ${item.product_name || item.packaging_name}`}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/40 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Total estimé</p>
+                    <p className="text-xs text-muted-foreground">Le montant final est calculé par le serveur.</p>
                   </div>
-                ))}
+                  <p className="tabular text-base font-semibold text-foreground">{formatMoney(estimatedTotal)}</p>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => router.back()}>Annuler</Button>
-          <Button onClick={handleSubmit} disabled={!depotId || items.length === 0 || submitting}>
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
-            Créer le retour
+          <Button variant="brand" onClick={handleSubmit} disabled={!depotId || items.length === 0 || submitting}>
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="h-4 w-4" aria-hidden="true" />}
+            {submitting ? 'Enregistrement…' : 'Créer le retour'}
           </Button>
         </div>
-      </main>
+      </PageShell>
     </div>
   )
 }

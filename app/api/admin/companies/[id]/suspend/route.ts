@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
 
 // POST /api/admin/companies/:id/suspend — Suspend or reactivate a tenant
@@ -7,7 +7,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('companies.suspend')
   if (!authz.ok) return authz.response
 
   try {

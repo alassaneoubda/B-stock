@@ -6,14 +6,30 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
+import { apiFetch, errorMessage, toastError } from '@/lib/api-client'
+import { formatDateTime, formatNumber } from '@/lib/format'
+import { PageShell, PageIntro, StatusBadge } from '@/components/app/blocks'
+import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -28,38 +44,83 @@ import {
   AlertOctagon,
 } from 'lucide-react'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
+
+const STATUS_LABELS: Record<string, string> = {
+  trialing: 'Période d\u2019essai',
+  active: 'Actif',
+  past_due: 'Impayé',
+  canceled: 'Résilié',
+}
+
+/** ISO (UTC) → valeur d'un <input type="datetime-local"> en heure locale. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** Valeur datetime-local (heure locale) → ISO avec fuseau, pour le serveur. */
+function fromLocalInput(v: string): string | null {
+  if (!v) return null
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
 
 type Announcement = {
   id: string
   title: string
   body: string
   level: 'info' | 'success' | 'warning' | 'critical'
-  audience: 'all' | 'company' | 'status'
+  audience: 'all' | 'company' | 'status' | 'plan'
   target_company_id: string | null
   company_name: string | null
   target_status: string | null
+  target_plan_id: string | null
+  plan_name: string | null
   dismissible: boolean
   is_active: boolean
   starts_at: string | null
   ends_at: string | null
   dismissals: number
+  views: number
+  target_users: number
   created_at: string
 }
 
 type Company = { id: string; name: string }
+type Plan = { id: string; name: string; display_name: string | null; is_active: boolean }
 
-const levelMeta: Record<string, { label: string; cls: string; icon: React.ElementType }> = {
-  info: { label: 'Info', cls: 'bg-blue-100 text-blue-700', icon: Info },
-  success: { label: 'Succès', cls: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  warning: { label: 'Avertissement', cls: 'bg-amber-100 text-amber-800', icon: AlertTriangle },
-  critical: { label: 'Critique', cls: 'bg-red-100 text-red-700', icon: AlertOctagon },
+/** Diffusion selon l'état et les dates : Inactive / Programmée / En cours / Terminée. */
+function scheduleStatus(a: Announcement, now = Date.now()): { label: string; tone: 'default' | 'info' | 'success' } {
+  if (!a.is_active) return { label: 'Inactive', tone: 'default' }
+  if (a.starts_at && new Date(a.starts_at).getTime() > now) return { label: 'Programmée', tone: 'info' }
+  if (a.ends_at && new Date(a.ends_at).getTime() < now) return { label: 'Terminée', tone: 'default' }
+  return { label: 'En cours', tone: 'success' }
+}
+
+function reach(a: Announcement): string {
+  if (!a.target_users) return '—'
+  return `${Math.min(100, Math.round((a.views / a.target_users) * 100))} %`
+}
+
+const levelMeta: Record<
+  string,
+  { label: string; variant: 'info' | 'success' | 'warning' | 'danger'; icon: React.ElementType }
+> = {
+  info: { label: 'Info', variant: 'info', icon: Info },
+  success: { label: 'Succès', variant: 'success', icon: CheckCircle2 },
+  warning: { label: 'Avertissement', variant: 'warning', icon: AlertTriangle },
+  critical: { label: 'Critique', variant: 'danger', icon: AlertOctagon },
 }
 
 const audienceLabel = (a: Announcement) => {
   if (a.audience === 'all') return 'Toutes les entreprises'
   if (a.audience === 'company') return a.company_name ? `Entreprise : ${a.company_name}` : 'Entreprise ciblée'
-  if (a.audience === 'status') return `Statut : ${a.target_status}`
+  if (a.audience === 'status') return `Statut : ${STATUS_LABELS[a.target_status || ''] || a.target_status}`
+  if (a.audience === 'plan') return a.plan_name ? `Plan : ${a.plan_name}` : 'Plan supprimé'
   return a.audience
 }
 
@@ -70,6 +131,7 @@ const emptyForm = {
   audience: 'all' as Announcement['audience'],
   target_company_id: '',
   target_status: 'trialing',
+  target_plan_id: '',
   dismissible: true,
   is_active: true,
   starts_at: '',
@@ -77,7 +139,7 @@ const emptyForm = {
 }
 
 export default function AdminAnnouncementsPage() {
-  const { data, isLoading, mutate } = useSWR<{ data: Announcement[] }>(
+  const { data, error: loadError, isLoading, mutate } = useSWR<{ data: Announcement[] }>(
     '/api/admin/announcements',
     fetcher
   )
@@ -89,6 +151,8 @@ export default function AdminAnnouncementsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [companySearch, setCompanySearch] = useState('')
+  const [toDelete, setToDelete] = useState<Announcement | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   const { data: companiesData } = useSWR<{ data: Company[] }>(
     open && form.audience === 'company'
@@ -97,6 +161,12 @@ export default function AdminAnnouncementsPage() {
     fetcher
   )
   const companies = companiesData?.data || []
+
+  const { data: plansData, error: plansError } = useSWR<{ data: Plan[] }>(
+    open && form.audience === 'plan' ? '/api/admin/plans' : null,
+    fetcher
+  )
+  const plans = plansData?.data || []
 
   function openCreate() {
     setEditing(null)
@@ -114,18 +184,32 @@ export default function AdminAnnouncementsPage() {
       audience: a.audience,
       target_company_id: a.target_company_id || '',
       target_status: a.target_status || 'trialing',
+      target_plan_id: a.target_plan_id || '',
       dismissible: a.dismissible,
       is_active: a.is_active,
-      starts_at: a.starts_at ? a.starts_at.slice(0, 16) : '',
-      ends_at: a.ends_at ? a.ends_at.slice(0, 16) : '',
+      starts_at: toLocalInput(a.starts_at),
+      ends_at: toLocalInput(a.ends_at),
     })
     setError('')
     setOpen(true)
   }
 
   async function save() {
-    setSaving(true)
+    if (saving) return
     setError('')
+    if (!editing && form.audience === 'company' && !form.target_company_id) {
+      setError('Sélectionnez l\u2019entreprise ciblée.')
+      return
+    }
+    if (!editing && form.audience === 'plan' && !form.target_plan_id) {
+      setError('Sélectionnez le plan ciblé.')
+      return
+    }
+    if (form.starts_at && form.ends_at && new Date(form.ends_at) <= new Date(form.starts_at)) {
+      setError('La date de fin doit être postérieure à la date de début.')
+      return
+    }
+    setSaving(true)
     try {
       const payload = {
         title: form.title,
@@ -133,86 +217,105 @@ export default function AdminAnnouncementsPage() {
         level: form.level,
         dismissible: form.dismissible,
         is_active: form.is_active,
-        starts_at: form.starts_at || null,
-        ends_at: form.ends_at || null,
+        starts_at: fromLocalInput(form.starts_at),
+        ends_at: fromLocalInput(form.ends_at),
         ...(editing
           ? {}
           : {
               audience: form.audience,
               target_company_id: form.audience === 'company' ? form.target_company_id : null,
               target_status: form.audience === 'status' ? form.target_status : null,
+              target_plan_id: form.audience === 'plan' ? form.target_plan_id : null,
             }),
       }
       const url = editing ? `/api/admin/announcements/${editing.id}` : '/api/admin/announcements'
-      const res = await fetch(url, {
-        method: editing ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        setError(json.error || 'Erreur')
-        return
-      }
+      await apiFetch(url, { method: editing ? 'PATCH' : 'POST', body: payload })
+      toast.success(editing ? 'Annonce mise à jour' : 'Annonce créée')
       setOpen(false)
       mutate()
-    } catch {
-      setError('Erreur réseau')
+    } catch (e) {
+      setError(errorMessage(e))
     } finally {
       setSaving(false)
     }
   }
 
   async function toggleActive(a: Announcement) {
-    await fetch(`/api/admin/announcements/${a.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: !a.is_active }),
-    })
-    mutate()
+    if (busyId) return
+    setBusyId(a.id)
+    try {
+      await apiFetch(`/api/admin/announcements/${a.id}`, {
+        method: 'PATCH',
+        body: { is_active: !a.is_active },
+      })
+      toast.success(a.is_active ? 'Annonce désactivée' : 'Annonce activée')
+      await mutate()
+    } catch (e) {
+      toastError(e, 'Modification impossible')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   async function remove(a: Announcement) {
-    if (!confirm(`Supprimer l'annonce « ${a.title} » ?`)) return
-    await fetch(`/api/admin/announcements/${a.id}`, { method: 'DELETE' })
-    mutate()
+    if (busyId) return
+    setBusyId(a.id)
+    try {
+      await apiFetch(`/api/admin/announcements/${a.id}`, { method: 'DELETE' })
+      toast.success('Annonce supprimée')
+      setToDelete(null)
+      await mutate()
+    } catch (e) {
+      setToDelete(null)
+      toastError(e, 'Suppression impossible')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-950">Annonces</h1>
-          <p className="text-sm text-zinc-500">
-            Bannières in-app diffusées aux entreprises ({items.length})
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Nouvelle annonce
-        </Button>
-      </header>
+    <PageShell>
+      <PageIntro
+        title="Annonces"
+        description={`Bannières in-app diffusées aux entreprises (${items.length})`}
+        actions={
+          <Button variant="brand" onClick={openCreate}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Nouvelle annonce
+          </Button>
+        }
+      />
 
-      <Card className="overflow-hidden">
+      <Card className="gap-0 overflow-hidden py-0">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <div className="p-5">
+            <TableSkeleton columns={8} />
           </div>
+        ) : loadError ? (
+          <ErrorState className="m-5" description={errorMessage(loadError)} onRetry={() => mutate()} />
         ) : items.length === 0 ? (
-          <div className="py-20 text-center">
-            <Megaphone className="h-10 w-10 mx-auto text-zinc-300 mb-3" />
-            <p className="text-sm text-zinc-400">Aucune annonce pour le moment</p>
-          </div>
+          <EmptyState
+            className="m-5"
+            icon={Megaphone}
+            title="Aucune annonce pour le moment"
+            action={{ label: 'Nouvelle annonce', onClick: openCreate }}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-100 text-left text-xs text-zinc-500 uppercase tracking-wide">
+                <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Annonce</th>
                   <th className="px-5 py-3 font-medium">Niveau</th>
                   <th className="px-5 py-3 font-medium">Audience</th>
-                  <th className="px-5 py-3 font-medium">Statut</th>
-                  <th className="px-5 py-3 font-medium">Fermetures</th>
+                  <th className="px-5 py-3 font-medium">Diffusion</th>
+                  <th className="px-5 py-3 text-right font-medium">Vues</th>
+                  <th className="px-5 py-3 text-right font-medium">Fermetures</th>
+                  <th className="px-5 py-3 text-right font-medium">
+                    <abbr title="Utilisateurs ayant vu l\u2019annonce / utilisateurs actuellement ciblés" className="no-underline">
+                      Portée
+                    </abbr>
+                  </th>
                   <th className="px-5 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -220,48 +323,62 @@ export default function AdminAnnouncementsPage() {
                 {items.map((a) => {
                   const meta = levelMeta[a.level] || levelMeta.info
                   const Icon = meta.icon
+                  const schedule = scheduleStatus(a)
                   return (
-                    <tr key={a.id} className="border-b border-zinc-50 hover:bg-zinc-50 align-top">
+                    <tr key={a.id} className="border-b border-border align-top transition-colors last:border-0 hover:bg-muted/50">
                       <td className="px-5 py-3 max-w-md">
-                        <p className="font-medium text-zinc-900">{a.title}</p>
-                        <p className="text-zinc-500 text-xs line-clamp-2">{a.body}</p>
+                        <p className="font-medium text-foreground">{a.title}</p>
+                        <p className="line-clamp-2 text-xs text-muted-foreground">{a.body}</p>
                       </td>
                       <td className="px-5 py-3">
-                        <Badge className={`${meta.cls} hover:${meta.cls} gap-1`}>
+                        <Badge variant={meta.variant} className="gap-1">
                           <Icon className="h-3 w-3" />
                           {meta.label}
                         </Badge>
                       </td>
-                      <td className="px-5 py-3 text-zinc-600">{audienceLabel(a)}</td>
+                      <td className="px-5 py-3 text-muted-foreground">{audienceLabel(a)}</td>
                       <td className="px-5 py-3">
-                        <button onClick={() => toggleActive(a)}>
-                          <Badge
-                            className={
-                              a.is_active
-                                ? 'bg-green-100 text-green-700 hover:bg-green-100'
-                                : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-100'
-                            }
-                          >
-                            {a.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
+                        <button
+                          onClick={() => toggleActive(a)}
+                          disabled={!!busyId}
+                          className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                          aria-label={a.is_active ? `Désactiver l\u2019annonce « ${a.title} »` : `Activer l\u2019annonce « ${a.title} »`}
+                        >
+                          <StatusBadge label={schedule.label} tone={schedule.tone} />
                         </button>
+                        {(a.starts_at || a.ends_at) && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {a.starts_at ? `Du ${formatDateTime(a.starts_at)}` : 'Dès maintenant'}
+                            {a.ends_at ? ` au ${formatDateTime(a.ends_at)}` : ''}
+                          </p>
+                        )}
                       </td>
-                      <td className="px-5 py-3 text-zinc-500">{a.dismissals}</td>
+                      <td className="tabular px-5 py-3 text-right text-muted-foreground">{formatNumber(a.views)}</td>
+                      <td className="tabular px-5 py-3 text-right text-muted-foreground">{formatNumber(a.dismissals)}</td>
+                      <td
+                        className="tabular px-5 py-3 text-right text-muted-foreground"
+                        title={`${formatNumber(a.views)} vue(s) sur ${formatNumber(a.target_users)} utilisateur(s) ciblé(s)`}
+                      >
+                        {reach(a)}
+                      </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => openEdit(a)}
-                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-500"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             title="Modifier"
+                            aria-label={`Modifier l\u2019annonce « ${a.title} »`}
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>
                           <button
-                            onClick={() => remove(a)}
-                            className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-500"
+                            onClick={() => setToDelete(a)}
+                            disabled={!!busyId}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                             title="Supprimer"
+                            aria-label={`Supprimer l\u2019annonce « ${a.title} »`}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
                           </button>
                         </div>
                       </td>
@@ -274,16 +391,18 @@ export default function AdminAnnouncementsPage() {
         )}
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <Dialog open={open} onOpenChange={(o) => !saving && setOpen(o)}>
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'Modifier l\u2019annonce' : 'Nouvelle annonce'}</DialogTitle>
+            <DialogDescription>Bannière affichée en haut de l’application des entreprises ciblées.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Titre</Label>
+              <Label htmlFor="ann-title">Titre</Label>
               <Input
+                id="ann-title"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 placeholder="Maintenance planifiée"
@@ -291,8 +410,9 @@ export default function AdminAnnouncementsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Message</Label>
+              <Label htmlFor="ann-body">Message</Label>
               <Textarea
+                id="ann-body"
                 value={form.body}
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
                 placeholder="Le service sera indisponible dimanche de 2h à 4h."
@@ -301,11 +421,12 @@ export default function AdminAnnouncementsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Niveau</Label>
+              <Label htmlFor="ann-level">Niveau</Label>
               <select
+                id="ann-level"
                 value={form.level}
                 onChange={(e) => setForm({ ...form, level: e.target.value as Announcement['level'] })}
-                className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="info">Info</option>
                 <option value="success">Succès</option>
@@ -316,34 +437,38 @@ export default function AdminAnnouncementsPage() {
 
             {!editing && (
               <div className="space-y-1.5">
-                <Label>Audience</Label>
+                <Label htmlFor="ann-audience">Audience</Label>
                 <select
+                  id="ann-audience"
                   value={form.audience}
                   onChange={(e) =>
                     setForm({ ...form, audience: e.target.value as Announcement['audience'] })
                   }
-                  className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="all">Toutes les entreprises</option>
                   <option value="company">Une entreprise spécifique</option>
                   <option value="status">Par statut d&apos;abonnement</option>
+                  <option value="plan">Par plan d&apos;abonnement</option>
                 </select>
               </div>
             )}
 
             {!editing && form.audience === 'company' && (
               <div className="space-y-1.5">
-                <Label>Entreprise</Label>
+                <Label htmlFor="ann-company">Entreprise</Label>
                 <Input
+                  id="ann-company"
                   value={companySearch}
                   onChange={(e) => setCompanySearch(e.target.value)}
                   placeholder="Rechercher une entreprise…"
                   className="mb-1.5"
                 />
                 <select
+                  aria-label="Entreprise ciblée"
                   value={form.target_company_id}
                   onChange={(e) => setForm({ ...form, target_company_id: e.target.value })}
-                  className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="">— Sélectionner —</option>
                   {companies.map((c) => (
@@ -357,11 +482,12 @@ export default function AdminAnnouncementsPage() {
 
             {!editing && form.audience === 'status' && (
               <div className="space-y-1.5">
-                <Label>Statut d&apos;abonnement</Label>
+                <Label htmlFor="ann-status">Statut d’abonnement</Label>
                 <select
+                  id="ann-status"
                   value={form.target_status}
                   onChange={(e) => setForm({ ...form, target_status: e.target.value })}
-                  className="w-full h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm"
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="trialing">Période d&apos;essai</option>
                   <option value="active">Actif</option>
@@ -371,18 +497,46 @@ export default function AdminAnnouncementsPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            {!editing && form.audience === 'plan' && (
               <div className="space-y-1.5">
-                <Label>Début (optionnel)</Label>
+                <Label htmlFor="ann-plan">Plan d’abonnement</Label>
+                <select
+                  id="ann-plan"
+                  value={form.target_plan_id}
+                  onChange={(e) => setForm({ ...form, target_plan_id: e.target.value })}
+                  className="h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-describedby="ann-plan-help"
+                >
+                  <option value="">{plansData || plansError ? '— Sélectionner —' : 'Chargement des plans…'}</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name || p.name}
+                      {p.is_active ? '' : ' (inactif)'}
+                    </option>
+                  ))}
+                </select>
+                <p id="ann-plan-help" className="text-xs text-muted-foreground">
+                  {plansError
+                    ? `Plans indisponibles : ${errorMessage(plansError)}`
+                    : 'Diffusée aux entreprises actuellement abonnées à ce plan.'}
+                </p>
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="ann-start">Début (optionnel)</Label>
                 <Input
+                  id="ann-start"
                   type="datetime-local"
                   value={form.starts_at}
                   onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Fin (optionnel)</Label>
+                <Label htmlFor="ann-end">Fin (optionnel)</Label>
                 <Input
+                  id="ann-end"
                   type="datetime-local"
                   value={form.ends_at}
                   onChange={(e) => setForm({ ...form, ends_at: e.target.value })}
@@ -390,29 +544,35 @@ export default function AdminAnnouncementsPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
               <div>
-                <p className="text-sm font-medium">Fermable par l&apos;utilisateur</p>
-                <p className="text-xs text-zinc-500">L&apos;utilisateur peut masquer l&apos;annonce</p>
+                <p id="ann-dismissible" className="text-sm font-medium text-foreground">Fermable par l’utilisateur</p>
+                <p className="text-xs text-muted-foreground">L&apos;utilisateur peut masquer l&apos;annonce</p>
               </div>
               <Switch
+                aria-labelledby="ann-dismissible"
                 checked={form.dismissible}
                 onCheckedChange={(v) => setForm({ ...form, dismissible: v })}
               />
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
               <div>
-                <p className="text-sm font-medium">Active</p>
-                <p className="text-xs text-zinc-500">Diffusée immédiatement aux entreprises</p>
+                <p id="ann-active" className="text-sm font-medium text-foreground">Active</p>
+                <p className="text-xs text-muted-foreground">Diffusée aux entreprises ciblées pendant la période choisie</p>
               </div>
               <Switch
+                aria-labelledby="ann-active"
                 checked={form.is_active}
                 onCheckedChange={(v) => setForm({ ...form, is_active: v })}
               />
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+                {error}
+              </p>
+            )}
           </div>
 
           <DialogFooter>
@@ -420,12 +580,39 @@ export default function AdminAnnouncementsPage() {
               Annuler
             </Button>
             <Button onClick={save} disabled={saving || !form.title || !form.body}>
-              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               {editing ? 'Enregistrer' : 'Créer'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && !busyId && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer l&apos;annonce « {toDelete?.title} » ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La bannière disparaîtra immédiatement pour toutes les entreprises ciblées, et son historique de
+              fermetures sera perdu. Cette action est irréversible : pour la masquer temporairement,
+              désactivez-la plutôt.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!busyId}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!!busyId}
+              className={buttonVariants({ variant: 'destructive' })}
+              onClick={(e) => {
+                e.preventDefault()
+                if (toDelete) remove(toDelete)
+              }}
+            >
+              {busyId && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              Supprimer définitivement
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageShell>
   )
 }

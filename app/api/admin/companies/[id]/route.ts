@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, adminCan, logAdminAction, type AdminCapability } from '@/lib/admin-auth'
 import { recordSubscriptionPayment } from '@/lib/subscription'
 import { sql } from '@/lib/db'
 import { ensureUsersFullNameColumn } from '@/lib/ensure-users-schema'
+import { handleRouteError } from '@/lib/errors'
+import { scheduleCompanyDeletion } from '@/lib/admin/company-purge'
 
 // GET /api/admin/companies/:id — Full tenant detail (info, usage, users, plan)
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('companies.read')
   if (!authz.ok) return authz.response
 
   try {
@@ -63,13 +65,24 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin()
   if (!authz.ok) return authz.response
 
   try {
     const { id } = await params
     const body = await request.json()
     const action = body.action as string
+
+    // Capacité requise selon l'action (l'interface masque déjà ce que le rôle ne permet pas)
+    const ACTION_CAPABILITY: Record<string, AdminCapability> = {
+      set_plan: 'companies.plan',
+      extend_trial: 'companies.trial',
+      set_status: 'companies.plan',
+    }
+    const capability = ACTION_CAPABILITY[action]
+    if (capability && !adminCan(authz.role, capability)) {
+      return NextResponse.json({ error: 'Votre rôle ne permet pas cette action' }, { status: 403 })
+    }
 
     const [company] = await sql`SELECT id FROM companies WHERE id = ${id}`
     if (!company) {
@@ -215,37 +228,29 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/admin/companies/:id — Hard delete (guarded)
+// DELETE /api/admin/companies/:id — Programme la suppression (J+30) au lieu de supprimer
+// immédiatement : le compte est suspendu, la suppression reste annulable
+// (POST /api/admin/companies/:id/restore) et la purge est faite par /api/cron/purge-companies.
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authz = await requireSuperAdmin()
+  const authz = await requireAdmin('companies.delete')
   if (!authz.ok) return authz.response
 
   try {
     const { id } = await params
-    const [company] = await sql`SELECT name FROM companies WHERE id = ${id}`
-    if (!company) {
-      return NextResponse.json({ error: 'Entreprise introuvable' }, { status: 404 })
-    }
-
-    try {
-      await sql`DELETE FROM companies WHERE id = ${id}`
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            "Suppression impossible : des données liées existent encore. Suspendez l'entreprise à la place.",
-        },
-        { status: 409 }
-      )
-    }
-
-    await logAdminAction(authz.adminId, authz.adminEmail, 'company.delete', 'company', id, { name: company.name })
-    return NextResponse.json({ success: true })
-  } catch (e) {
-    console.error('admin company delete error:', e)
-    return NextResponse.json({ error: 'Erreur' }, { status: 500 })
+    const scheduled = await scheduleCompanyDeletion(id, authz.adminEmail)
+    await logAdminAction(authz.adminId, authz.adminEmail, 'company.schedule_deletion', 'company', id, {
+      name: scheduled.name,
+      deletionScheduledAt: scheduled.deletion_scheduled_at,
+      previous: scheduled.previous,
+    })
+    return NextResponse.json({
+      success: true,
+      data: { id, deletionScheduledAt: scheduled.deletion_scheduled_at },
+    })
+  } catch (error) {
+    return handleRouteError(error, 'admin.companies.schedule_deletion')
   }
 }

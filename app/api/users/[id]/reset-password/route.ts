@@ -1,48 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { hash } from 'bcryptjs'
-import { randomBytes } from 'crypto'
 import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
+import { AppError, handleRouteError, notFound } from '@/lib/errors'
+import { sendPasswordResetEmail } from '@/lib/password-reset'
+import { isUuid } from '@/lib/tenant'
 
 // POST /api/users/[id]/reset-password
-// Permet à l'owner/admin de l'entreprise de réinitialiser le mot de passe d'un
-// employé. Génère un mot de passe temporaire renvoyé une seule fois (à
-// communiquer à l'utilisateur). Scope strictement limité à l'entreprise.
+// Envoie à l'employé un lien de réinitialisation (60 min, usage unique).
+// Le lien n'est renvoyé que si l'email n'a pas pu partir (à transmettre en main propre).
+// Ses sessions sont fermées quand il choisit son nouveau mot de passe.
 export async function POST(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-    try {
-        const authz = await requirePermission('users.write')
-        if (!authz.ok) return authz.response
-        const { session } = authz
-        const { id } = await params
+  try {
+    const authz = await requirePermission('users.write')
+    if (!authz.ok) return authz.response
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Utilisateur')
 
-        const [user] = await sql`
-            SELECT id, email FROM users
-            WHERE id = ${id} AND company_id = ${session.user.companyId}
-        `
-        if (!user) {
-            return NextResponse.json({ error: 'Utilisateur introuvable' }, { status: 404 })
-        }
-
-        const body = await request.json().catch(() => ({}))
-        const tempPassword =
-            typeof body.password === 'string' && body.password.length >= 8
-                ? body.password
-                : randomBytes(6).toString('base64url') + 'A1!'
-
-        const passwordHash = await hash(tempPassword, 10)
-
-        await sql`
-            UPDATE users
-            SET password_hash = ${passwordHash}, auth_provider = 'credentials', updated_at = NOW()
-            WHERE id = ${id} AND company_id = ${session.user.companyId}
-        `
-
-        return NextResponse.json({ success: true, tempPassword, email: user.email })
-    } catch (error) {
-        console.error('Error resetting user password:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
+    if (id === authz.userId) {
+      throw new AppError(400, 'Utilisez « Sécurité » pour changer votre propre mot de passe', 'SELF_RESET')
     }
+
+    const [user] = await sql`
+      SELECT id, email, full_name, role, is_active FROM users
+      WHERE id = ${id} AND company_id = ${authz.companyId}
+    `
+    if (!user) throw notFound('Utilisateur')
+
+    if (user.role === 'owner') {
+      throw new AppError(403, 'Le mot de passe du propriétaire ne peut pas être réinitialisé ici', 'OWNER_PROTECTED')
+    }
+    if (user.role === 'manager' && authz.role !== 'owner') {
+      throw new AppError(403, 'Seul le propriétaire peut réinitialiser un gérant', 'OWNER_ONLY')
+    }
+    if (!user.is_active) {
+      throw new AppError(400, 'Ce compte est désactivé : réactivez-le d’abord', 'ACCOUNT_DISABLED')
+    }
+
+    const result = await sendPasswordResetEmail({ id: user.id, email: user.email, full_name: user.full_name })
+
+    await sql`
+      INSERT INTO audit_logs (company_id, user_id, action, entity_type, entity_id, details)
+      VALUES (${authz.companyId}, ${authz.userId}, 'password_reset_link', 'user', ${user.id},
+              ${JSON.stringify({ email: user.email, emailed: result.emailed })})
+    `.catch((e: unknown) => console.error('[users.reset-password] audit', e))
+
+    return NextResponse.json({
+      success: true,
+      emailed: result.emailed,
+      email: user.email,
+      expiresAt: result.expiresAt.toISOString(),
+      ...(result.emailed ? {} : { link: result.url }),
+    })
+  } catch (error) {
+    return handleRouteError(error, 'users.reset-password')
+  }
 }

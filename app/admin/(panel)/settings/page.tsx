@@ -2,15 +2,31 @@
 
 import { useEffect, useState } from 'react'
 import useSWR from 'swr'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageShell, PageIntro } from '@/components/app/blocks'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
 import { Loader2, Check, Settings as SettingsIcon, ShieldCheck, Wrench, UserPlus } from 'lucide-react'
+import { apiFetch, errorMessage } from '@/lib/api-client'
+import { ErrorState } from '@/components/states'
+import { useAdmin } from '@/components/admin/admin-role'
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = (url: string) => apiFetch(url)
 
 type Settings = {
   platform_name: string
@@ -26,11 +42,17 @@ type Settings = {
 }
 
 export default function AdminSettingsPage() {
-  const { data, isLoading, mutate } = useSWR<{ data: Settings }>('/api/admin/settings', fetcher)
+  // Paramètres plateforme : super-administrateurs uniquement (l'API refuse les autres rôles)
+  const canManage = useAdmin().can('settings.manage')
+  const { data, error: loadError, isLoading, mutate } = useSWR<{ data: Settings }>(canManage ? '/api/admin/settings' : null, fetcher, {
+    // Ne pas écraser une saisie en cours au retour sur l'onglet
+    revalidateOnFocus: false,
+  })
   const [form, setForm] = useState<Settings | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false)
 
   useEffect(() => {
     if (data?.data) setForm(data.data)
@@ -41,175 +63,270 @@ export default function AdminSettingsPage() {
     setSaved(false)
   }
 
+  /** Activer la maintenance coupe l'accès de toutes les entreprises : confirmation explicite. */
+  function requestSave() {
+    if (!form || saving) return
+    if (form.maintenance_mode && !data?.data?.maintenance_mode) {
+      setConfirmMaintenance(true)
+      return
+    }
+    save()
+  }
+
   async function save() {
-    if (!form) return
+    if (!form || saving) return
     setSaving(true)
     setError('')
     try {
-      const res = await fetch('/api/admin/settings', {
+      await apiFetch('/api/admin/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, trial_days: Number(form.trial_days) }),
+        body: { ...form, trial_days: Number(form.trial_days) },
       })
-      const json = await res.json()
-      if (!res.ok) {
-        setError(json.error || 'Erreur')
-        return
-      }
+      toast.success('Paramètres enregistrés')
+      setConfirmMaintenance(false)
       mutate()
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
-    } catch {
-      setError('Erreur réseau')
+    } catch (e) {
+      setConfirmMaintenance(false)
+      setError(errorMessage(e))
     } finally {
       setSaving(false)
     }
   }
 
-  if (isLoading || !form) {
+  if (!canManage) {
     return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
-      </div>
+      <PageShell className="max-w-3xl">
+        <PageIntro title="Paramètres" description="Configuration globale de la plateforme" />
+        <div role="status" className="flex items-start gap-3 rounded-xl border border-border bg-muted p-4 text-sm">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="text-muted-foreground">
+            Lecture seule : les paramètres de la plateforme ne peuvent être consultés et modifiés que par un
+            super-administrateur.
+          </p>
+        </div>
+      </PageShell>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <PageShell className="max-w-3xl">
+        <div className="space-y-5" aria-busy="true" aria-label="Chargement">
+          <Skeleton className="h-8 w-48" />
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-40 rounded-xl" />
+          ))}
+        </div>
+      </PageShell>
+    )
+  }
+
+  if (loadError || !form) {
+    return (
+      <PageShell className="max-w-3xl">
+        <ErrorState
+          description={loadError ? errorMessage(loadError) : 'Les paramètres sont indisponibles.'}
+          onRetry={() => mutate()}
+        />
+      </PageShell>
     )
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-3xl mx-auto">
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-950">Paramètres</h1>
-          <p className="text-sm text-zinc-500">Configuration globale de la plateforme</p>
-        </div>
-        <Button onClick={save} disabled={saving}>
-          {saving ? (
-            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-          ) : saved ? (
-            <Check className="h-4 w-4 mr-1.5" />
-          ) : null}
-          {saved ? 'Enregistré' : 'Enregistrer'}
-        </Button>
-      </header>
+    <PageShell className="max-w-3xl">
+      <PageIntro
+        title="Paramètres"
+        description="Configuration globale de la plateforme"
+        actions={
+          <Button variant="brand" onClick={requestSave} disabled={saving}>
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : saved ? (
+              <Check className="h-4 w-4" aria-hidden="true" />
+            ) : null}
+            {saved ? 'Enregistré' : 'Enregistrer'}
+          </Button>
+        }
+      />
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       {/* Général */}
-      <Card className="p-6 mb-5">
-        <div className="flex items-center gap-2 mb-4">
-          <SettingsIcon className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Général</h2>
-        </div>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>Nom de la plateforme</Label>
-            <Input value={form.platform_name} onChange={(e) => set('platform_name', e.target.value)} />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SettingsIcon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Général
+          </CardTitle>
+          <CardDescription>Identité de la plateforme et coordonnées du support.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="platform_name">Nom de la plateforme</Label>
+            <Input id="platform_name" value={form.platform_name} onChange={(e) => set('platform_name', e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>E-mail de support</Label>
+            <Label htmlFor="support_email">E-mail de support</Label>
             <Input
+              id="support_email"
               type="email"
               value={form.support_email}
               onChange={(e) => set('support_email', e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Téléphone de support</Label>
-            <Input value={form.support_phone} onChange={(e) => set('support_phone', e.target.value)} />
+            <Label htmlFor="support_phone">Téléphone de support</Label>
+            <Input id="support_phone" value={form.support_phone} onChange={(e) => set('support_phone', e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label>Devise par défaut</Label>
+            <Label htmlFor="default_currency">Devise par défaut</Label>
             <Input
+              id="default_currency"
               value={form.default_currency}
               onChange={(e) => set('default_currency', e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Fuseau horaire</Label>
+            <Label htmlFor="default_timezone">Fuseau horaire</Label>
             <Input
+              id="default_timezone"
               value={form.default_timezone}
               onChange={(e) => set('default_timezone', e.target.value)}
             />
           </div>
-        </div>
+        </CardContent>
       </Card>
 
       {/* Inscriptions & essai */}
-      <Card className="p-6 mb-5">
-        <div className="flex items-center gap-2 mb-4">
-          <UserPlus className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Inscriptions & essai</h2>
-        </div>
-        <div className="space-y-4">
-          <div className="space-y-1.5 max-w-[200px]">
-            <Label>Durée d&apos;essai (jours)</Label>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Inscriptions et essai
+          </CardTitle>
+          <CardDescription>Ouverture des inscriptions et durée de la période d’essai.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-[200px] space-y-1.5">
+            <Label htmlFor="trial_days">Durée d’essai (jours)</Label>
             <Input
+              id="trial_days"
               type="number"
               min={0}
               max={365}
+              className="tabular"
               value={form.trial_days}
               onChange={(e) => set('trial_days', Number(e.target.value))}
             />
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
             <div>
-              <p className="text-sm font-medium">Inscriptions ouvertes</p>
-              <p className="text-xs text-zinc-500">Autoriser la création de nouveaux comptes</p>
+              <p id="registrations_open_label" className="text-sm font-medium text-foreground">Inscriptions ouvertes</p>
+              <p className="text-xs text-muted-foreground">Autoriser la création de nouveaux comptes</p>
             </div>
             <Switch
+              aria-labelledby="registrations_open_label"
               checked={form.registrations_open}
               onCheckedChange={(v) => set('registrations_open', v)}
             />
           </div>
-        </div>
+        </CardContent>
       </Card>
 
       {/* Fonctionnalités */}
-      <Card className="p-6 mb-5">
-        <div className="flex items-center gap-2 mb-4">
-          <ShieldCheck className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Fonctionnalités</h2>
-        </div>
-        <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">Connexion Google (OAuth)</p>
-            <p className="text-xs text-zinc-500">Activer l&apos;inscription/connexion via Google</p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Fonctionnalités
+          </CardTitle>
+          <CardDescription>Méthodes de connexion proposées aux utilisateurs.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border px-4 py-3">
+            <div>
+              <p id="google_oauth_label" className="text-sm font-medium text-foreground">Connexion Google (OAuth)</p>
+              <p className="text-xs text-muted-foreground">Activer l’inscription et la connexion via Google</p>
+            </div>
+            <Switch
+              aria-labelledby="google_oauth_label"
+              checked={form.google_oauth_enabled}
+              onCheckedChange={(v) => set('google_oauth_enabled', v)}
+            />
           </div>
-          <Switch
-            checked={form.google_oauth_enabled}
-            onCheckedChange={(v) => set('google_oauth_enabled', v)}
-          />
-        </div>
+        </CardContent>
       </Card>
 
       {/* Maintenance */}
-      <Card className="p-6 mb-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Wrench className="h-4 w-4 text-zinc-500" />
-          <h2 className="font-semibold text-zinc-900">Maintenance</h2>
-        </div>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Maintenance
+          </CardTitle>
+          <CardDescription>Suspendre temporairement l’accès des entreprises.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 transition-colors ${
+              form.maintenance_mode ? 'border-destructive/30 bg-destructive/5' : 'border-border'
+            }`}
+          >
             <div>
-              <p className="text-sm font-medium">Mode maintenance</p>
-              <p className="text-xs text-zinc-500">
-                Bloque l&apos;accès des entreprises (les admins restent connectés)
+              <p id="maintenance_mode_label" className="text-sm font-medium text-foreground">Mode maintenance</p>
+              <p className="text-xs text-muted-foreground">
+                Bloque l’accès des entreprises (les admins restent connectés)
               </p>
             </div>
             <Switch
+              aria-labelledby="maintenance_mode_label"
               checked={form.maintenance_mode}
               onCheckedChange={(v) => set('maintenance_mode', v)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Message de maintenance</Label>
+            <Label htmlFor="maintenance_message">Message de maintenance</Label>
             <Textarea
+              id="maintenance_message"
               rows={2}
               value={form.maintenance_message}
               onChange={(e) => set('maintenance_message', e.target.value)}
             />
           </div>
-        </div>
+        </CardContent>
       </Card>
-    </div>
+
+      <AlertDialog open={confirmMaintenance} onOpenChange={(o) => !saving && setConfirmMaintenance(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Activer le mode maintenance ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Toutes les entreprises perdront immédiatement l’accès à l’application et verront le message de
+              maintenance, jusqu’à ce que vous le désactiviez. Les administrateurs restent connectés.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              className={buttonVariants({ variant: 'destructive' })}
+              onClick={(e) => {
+                e.preventDefault()
+                save()
+              }}
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+              Activer et enregistrer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageShell>
   )
 }

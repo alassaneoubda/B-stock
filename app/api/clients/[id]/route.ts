@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
 import { sql } from '@/lib/db'
+import { handleRouteError, notFound } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
 
 const clientUpdateSchema = z.object({
     name: z.string().min(1).optional(),
@@ -27,13 +29,14 @@ export async function GET(
     try {
         const authz = await requirePermission('clients.read')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
 
         const { id } = await params
+        if (!isUuid(id)) throw notFound('Client')
 
         const clients = await sql`
       SELECT * FROM clients
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
+      WHERE id = ${id} AND company_id = ${companyId}
     `
 
         if (clients.length === 0) {
@@ -49,7 +52,7 @@ export async function GET(
         const recentOrders = await sql`
       SELECT id, order_number, total_amount, paid_amount, status, payment_method, created_at
       FROM sales_orders
-      WHERE client_id = ${id}
+      WHERE client_id = ${id} AND company_id = ${companyId}
       ORDER BY created_at DESC
       LIMIT 20
     `
@@ -74,11 +77,7 @@ export async function GET(
             },
         })
     } catch (error) {
-        console.error('Error fetching client:', error)
-        return NextResponse.json(
-            { error: 'Erreur lors de la récupération du client' },
-            { status: 500 }
-        )
+        return handleRouteError(error, 'clients.get')
     }
 }
 
@@ -90,16 +89,17 @@ export async function PATCH(
     try {
         const authz = await requirePermission('clients.write')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
 
         const { id } = await params
+        if (!isUuid(id)) throw notFound('Client')
         const body = await request.json()
         const data = clientUpdateSchema.parse(body)
 
         // Verify client belongs to company
         const existing = await sql`
       SELECT id FROM clients
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
+      WHERE id = ${id} AND company_id = ${companyId}
     `
         if (existing.length === 0) {
             return NextResponse.json({ error: 'Client introuvable' }, { status: 404 })
@@ -121,7 +121,7 @@ export async function PATCH(
         notes = COALESCE(${data.notes ?? null}, notes),
         is_active = COALESCE(${data.isActive ?? null}, is_active),
         updated_at = NOW()
-      WHERE id = ${id}
+      WHERE id = ${id} AND company_id = ${companyId}
       RETURNING *
     `
 
@@ -131,17 +131,7 @@ export async function PATCH(
             message: 'Client mis à jour avec succès',
         })
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json(
-                { error: 'Données invalides', details: error.errors },
-                { status: 400 }
-            )
-        }
-        console.error('Error updating client:', error)
-        return NextResponse.json(
-            { error: 'Erreur lors de la mise à jour du client' },
-            { status: 500 }
-        )
+        return handleRouteError(error, 'clients.update')
     }
 }
 
@@ -153,14 +143,15 @@ export async function DELETE(
     try {
         const authz = await requirePermission('clients.delete')
         if (!authz.ok) return authz.response
-        const { session } = authz
+        const { companyId } = authz
 
         const { id } = await params
+        if (!isUuid(id)) throw notFound('Client')
 
         // Verify client belongs to company
         const existing = await sql`
       SELECT id FROM clients
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
+      WHERE id = ${id} AND company_id = ${companyId}
     `
         if (existing.length === 0) {
             return NextResponse.json({ error: 'Client introuvable' }, { status: 404 })
@@ -182,7 +173,7 @@ export async function DELETE(
         // Soft delete
         await sql`
       UPDATE clients SET is_active = false, updated_at = NOW()
-      WHERE id = ${id}
+      WHERE id = ${id} AND company_id = ${companyId}
     `
 
         return NextResponse.json({
@@ -190,10 +181,6 @@ export async function DELETE(
             message: 'Client désactivé avec succès',
         })
     } catch (error) {
-        console.error('Error deleting client:', error)
-        return NextResponse.json(
-            { error: 'Erreur lors de la suppression du client' },
-            { status: 500 }
-        )
+        return handleRouteError(error, 'clients.delete')
     }
 }

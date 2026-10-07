@@ -1,12 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import Link from 'next/link'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
     Table,
     TableBody,
@@ -15,17 +26,10 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import {
-    ArrowLeft,
-    User,
-    Package,
-    CreditCard,
-    Truck,
-    Clock,
-    CheckCircle2,
-    XCircle,
-    BoxesIcon,
-} from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, SearchX } from 'lucide-react'
+import { apiFetch, ApiError, toastError, toastWarnings } from '@/lib/api-client'
+import { formatDateShort, formatDateTime, formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface SaleDetail {
     id: string
@@ -75,21 +79,13 @@ interface SaleDetail {
     }>
 }
 
-const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    pending: { label: 'En attente', color: 'bg-slate-100 text-slate-600', icon: Clock },
-    confirmed: { label: 'Confirmée', color: 'bg-blue-50 text-blue-600', icon: CheckCircle2 },
-    preparing: { label: 'En préparation', color: 'bg-amber-50 text-amber-600', icon: Package },
-    ready: { label: 'Prête', color: 'bg-indigo-50 text-indigo-600', icon: Package },
-    delivered: { label: 'Livrée', color: 'bg-emerald-50 text-emerald-600', icon: Truck },
-    cancelled: { label: 'Annulée', color: 'bg-rose-50 text-rose-600', icon: XCircle },
-}
-
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
+const paymentMethodLabels: Record<string, string> = {
+    cash: 'Espèces',
+    mobile_money: 'Mobile Money',
+    credit: 'Crédit',
+    mixed: 'Mixte',
+    bank_transfer: 'Virement',
+    check: 'Chèque',
 }
 
 export default function SaleDetailPage() {
@@ -97,54 +93,77 @@ export default function SaleDetailPage() {
     const router = useRouter()
     const [sale, setSale] = useState<SaleDetail | null>(null)
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState<'not_found' | 'error' | null>(null)
 
-    useEffect(() => {
-        async function fetchSale() {
-            try {
-                const res = await fetch(`/api/sales/${params.id}`)
-                const data = await res.json()
-                if (data.success) {
-                    setSale(data.data)
-                }
-            } catch (error) {
-                console.error('Error fetching sale:', error)
-            }
+    const fetchSale = useCallback(async () => {
+        setLoading(true)
+        setLoadError(null)
+        try {
+            const data = await apiFetch(`/api/sales/${params.id}`)
+            setSale(data.data)
+        } catch (error) {
+            setLoadError(error instanceof ApiError && error.status === 404 ? 'not_found' : 'error')
+        } finally {
             setLoading(false)
         }
-        fetchSale()
     }, [params.id])
 
+    useEffect(() => {
+        fetchSale()
+    }, [fetchSale])
+
+    const [updating, setUpdating] = useState(false)
+
     async function updateStatus(newStatus: string) {
+        if (updating) return
+        setUpdating(true)
         try {
-            const res = await fetch(`/api/sales/${params.id}`, {
+            const data = await apiFetch(`/api/sales/${params.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
+                body: { status: newStatus },
             })
-            const data = await res.json()
-            if (data.success) {
-                setSale((prev) => prev ? { ...prev, status: newStatus } : prev)
+            setSale((prev) => prev ? { ...prev, status: newStatus } : prev)
+            toast.success(data.message || 'Statut mis à jour')
+            toastWarnings(data.warnings)
+            if (newStatus === 'cancelled') {
+                router.refresh()
+                fetchSale()
             }
-        } catch (error) {
-            console.error('Error updating status:', error)
+        } catch (e) {
+            toastError(e)
+        } finally {
+            setUpdating(false)
         }
     }
 
-    if (loading) {
+
+    if (loading && !sale) {
+        return <PageSkeleton />
+    }
+
+    if (loadError === 'error') {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-zinc-50/50">
-                <div className="text-slate-400 font-bold animate-pulse">Chargement...</div>
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Vente" />
+                <PageShell>
+                    <ErrorState title="Impossible de charger la vente" onRetry={fetchSale} />
+                </PageShell>
             </div>
         )
     }
 
     if (!sale) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50/50 gap-4">
-                <h2 className="text-2xl font-semibold text-slate-950">Commande introuvable</h2>
-                <Button onClick={() => router.back()} variant="outline" className="rounded-md">
-                    <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-                </Button>
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Vente" />
+                <PageShell>
+                    <EmptyState
+                        icon={SearchX}
+                        title="Vente introuvable"
+                        description="Cette vente n’existe pas ou a été supprimée."
+                        action={{ label: 'Retour aux ventes', href: '/dashboard/sales' }}
+                    />
+                </PageShell>
             </div>
         )
     }
@@ -152,275 +171,277 @@ export default function SaleDetailPage() {
     const remaining = Number(sale.total_amount) - Number(sale.paid_amount)
     const remainingProducts = Number(sale.subtotal) - Number(sale.paid_amount_products || 0)
     const remainingPackaging = Number(sale.packaging_total) - Number(sale.paid_amount_packaging || 0)
-    const status = statusConfig[sale.status] || statusConfig.pending
-    const StatusIcon = status.icon
+    const paymentLabel = paymentMethodLabels[sale.payment_method ?? ''] || sale.payment_method || '—'
+    const paymentStatus =
+        sale.status === 'cancelled'
+            ? { label: 'Vente annulée', tone: 'default' as const }
+            : remaining <= 0
+                ? { label: 'Soldée', tone: 'success' as const }
+                : Number(sale.paid_amount) > 0
+                    ? { label: 'Partiellement payée', tone: 'warning' as const }
+                    : { label: 'Non payée (à crédit)', tone: 'danger' as const }
+
+    const nextStep: { status: string; label: string } | null =
+        sale.status === 'pending'
+            ? { status: 'confirmed', label: 'Confirmer la commande' }
+            : sale.status === 'confirmed'
+                ? { status: 'preparing', label: 'Mettre en préparation' }
+                : sale.status === 'preparing'
+                    ? { status: 'ready', label: 'Marquer comme prête' }
+                    : sale.status === 'ready'
+                        ? { status: 'delivered', label: 'Marquer comme livrée' }
+                        : null
+    const canChangeStatus = sale.status !== 'cancelled' && sale.status !== 'delivered'
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
-            <DashboardHeader
-                title={`Commande ${sale.order_number}`}
-                description={`Créée le ${new Date(sale.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
-                actions={
-                    <Button variant="outline" asChild className="rounded-md h-11 px-6 font-bold">
+        <div className="flex min-h-screen flex-col">
+            <DashboardHeader title={`Vente ${sale.order_number}`} description={`Créée le ${formatDateTime(sale.created_at)}`} />
+
+            <PageShell>
+                {/* En-tête de détail */}
+                <div className="space-y-3">
+                    <Button variant="ghost" size="sm" asChild className="-ml-2 text-muted-foreground">
                         <Link href="/dashboard/sales">
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour aux ventes
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Ventes
                         </Link>
                     </Button>
-                }
-            />
-
-            <main className="flex-1 p-4 lg:p-6 space-y-8 ">
-                {/* Header cards */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    {/* Status */}
-                    <Card className="rounded-[2rem] border-slate-200/60 shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className={`h-14 w-14 rounded-md flex items-center justify-center ${status.color}`}>
-                                <StatusIcon className="h-7 w-7" />
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <h2 className="font-mono text-2xl font-semibold tracking-tight text-foreground">{sale.order_number}</h2>
+                                <StatusBadge status={sale.status} />
                             </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Statut</p>
-                                <p className="text-lg font-semibold text-slate-950">{status.label}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Client */}
-                    <Card className="rounded-[2rem] border-slate-200/60 shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-14 w-14 rounded-md bg-blue-50 flex items-center justify-center text-blue-600">
-                                <User className="h-7 w-7" />
-                            </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Client</p>
-                                <p className="text-lg font-semibold text-slate-950">{sale.client_name || 'Client Passager'}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Total */}
-                    <Card className="rounded-[2rem] border-slate-200/60 shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className="h-14 w-14 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600">
-                                <CreditCard className="h-7 w-7" />
-                            </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total</p>
-                                <p className="text-lg font-semibold text-slate-950">{formatCurrency(Number(sale.total_amount))}</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Remaining */}
-                    <Card className="rounded-[2rem] border-slate-200/60 shadow-sm">
-                        <CardContent className="p-6 flex items-center gap-4">
-                            <div className={`h-14 w-14 rounded-md flex items-center justify-center ${remaining > 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                <CreditCard className="h-7 w-7" />
-                            </div>
-                            <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Reste à payer</p>
-                                <p className={`text-lg font-semibold ${remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                    {remaining > 0 ? formatCurrency(remaining) : 'Soldé ✓'}
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            <p className="text-sm text-muted-foreground">
+                                {sale.client_name || 'Client passager'} · {formatDateTime(sale.created_at)}
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {updating && (
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-label="Mise à jour en cours" />
+                            )}
+                            <Button variant="outline" asChild>
+                                <Link href={`/dashboard/invoices/${sale.id}`}>
+                                    <FileText className="h-4 w-4" aria-hidden="true" />
+                                    Facture
+                                </Link>
+                            </Button>
+                            {canChangeStatus && (
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={updating}>
+                                            Annuler la vente
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Annuler la vente {sale.order_number} ?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                Les produits et emballages seront remis en stock, la dette du client sera
+                                                effacée et la facture annulée. Cette action est définitive.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Conserver la vente</AlertDialogCancel>
+                                            <AlertDialogAction
+                                                onClick={() => updateStatus('cancelled')}
+                                                className="bg-destructive text-white hover:bg-destructive/90"
+                                            >
+                                                Oui, annuler la vente
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            )}
+                            {canChangeStatus && nextStep && (
+                                <Button variant="brand" onClick={() => updateStatus(nextStep.status)} disabled={updating}>
+                                    {nextStep.label}
+                                </Button>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
-                {/* Debt breakdown */}
-                {remaining > 0 && (
-                    <Card className="rounded-[2rem] border-amber-200/60 bg-amber-50/30 shadow-sm">
-                        <CardContent className="p-6">
-                            <p className="text-sm font-semibold text-slate-600 mb-4">Détail des impayés</p>
-                            <div className="grid gap-4 sm:grid-cols-3">
-                                <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Dette Produits</p>
-                                    <p className={`text-xl font-semibold ${remainingProducts > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                        {remainingProducts > 0 ? formatCurrency(remainingProducts) : 'Soldé ✓'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Dette Emballages</p>
-                                    <p className={`text-xl font-semibold ${remainingPackaging > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                        {remainingPackaging > 0 ? formatCurrency(remainingPackaging) : 'Soldé ✓'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Restant</p>
-                                    <p className="text-xl font-semibold text-rose-600">{formatCurrency(remaining)}</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Status actions */}
-                {sale.status !== 'cancelled' && sale.status !== 'delivered' && (
-                    <Card className="rounded-[2rem] border-slate-200/60 shadow-sm">
-                        <CardContent className="p-6 flex flex-wrap gap-3">
-                            <p className="text-sm font-bold text-slate-500 mr-4 self-center">Changer le statut :</p>
-                            {sale.status === 'pending' && (
-                                <Button onClick={() => updateStatus('confirmed')} className="rounded-md bg-blue-600 hover:bg-blue-700 font-bold">
-                                    Confirmer la commande
-                                </Button>
-                            )}
-                            {sale.status === 'confirmed' && (
-                                <Button onClick={() => updateStatus('preparing')} className="rounded-md bg-amber-600 hover:bg-amber-700 font-bold">
-                                    Mettre en préparation
-                                </Button>
-                            )}
-                            {sale.status === 'preparing' && (
-                                <Button onClick={() => updateStatus('ready')} className="rounded-md bg-indigo-600 hover:bg-indigo-700 font-bold">
-                                    Marquer comme prête
-                                </Button>
-                            )}
-                            {sale.status === 'ready' && (
-                                <Button onClick={() => updateStatus('delivered')} className="rounded-md bg-emerald-600 hover:bg-emerald-700 font-bold">
-                                    Marquer comme livrée
-                                </Button>
-                            )}
-                            <Button onClick={() => updateStatus('cancelled')} variant="destructive" className="rounded-md font-bold ml-auto">
-                                Annuler
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Products table */}
-                <Card className="rounded-[2rem] border-slate-200/60 shadow-sm overflow-hidden">
-                    <CardHeader className="px-8 py-6 border-b border-slate-100">
-                        <CardTitle className="text-xl font-semibold text-slate-950 flex items-center gap-3">
-                            <Package className="h-5 w-5 text-blue-600" /> Produits commandés
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <Table>
-                            <TableHeader className="bg-slate-50/50">
-                                <TableRow className="border-none">
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Produit</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Format</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Qté</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">P.U.</TableHead>
-                                    <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right pr-8">Total</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {sale.items.map((item) => (
-                                    <TableRow key={item.id} className="border-b border-slate-50">
-                                        <TableCell className="py-5 pl-8">
-                                            <div className="flex flex-col">
-                                                <span className="font-semibold text-slate-950">{item.product_name}</span>
-                                                {item.brand && <span className="text-[11px] text-slate-400 font-bold">{item.brand}</span>}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="py-5">
-                                            <Badge className="rounded-lg bg-blue-50 text-blue-600 border-none font-bold text-[10px]">
-                                                {item.packaging_name || 'Standard'}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell className="py-5 text-right font-semibold text-slate-950">{item.quantity}</TableCell>
-                                        <TableCell className="py-5 text-right font-bold text-slate-600">{formatCurrency(Number(item.unit_price))}</TableCell>
-                                        <TableCell className="py-5 text-right font-semibold text-slate-950 pr-8">{formatCurrency(Number(item.total_price))}</TableCell>
-                                    </TableRow>
-                                ))}
-                                {/* Subtotal row */}
-                                <TableRow className="bg-slate-50/50 border-none">
-                                    <TableCell colSpan={4} className="py-4 pl-8 font-semibold text-slate-600 text-right">Sous-total produits :</TableCell>
-                                    <TableCell className="py-4 text-right font-semibold text-slate-950 pr-8">{formatCurrency(Number(sale.subtotal))}</TableCell>
-                                </TableRow>
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
-
-                {/* Packaging items */}
-                {sale.packagingItems && sale.packagingItems.length > 0 && (
-                    <Card className="rounded-[2rem] border-slate-200/60 shadow-sm overflow-hidden">
-                        <CardHeader className="px-8 py-6 border-b border-slate-100">
-                            <CardTitle className="text-xl font-semibold text-slate-950 flex items-center gap-3">
-                                <BoxesIcon className="h-5 w-5 text-amber-600" /> Emballages
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-0">
+                <div className="grid items-start gap-4 lg:grid-cols-3">
+                    {/* Contenu principal */}
+                    <div className="space-y-4 lg:col-span-2">
+                        <Panel title="Produits" description={`${sale.items.length} ligne${sale.items.length > 1 ? 's' : ''}`}>
                             <Table>
-                                <TableHeader className="bg-slate-50/50">
-                                    <TableRow className="border-none">
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Emballage</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Sortie</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right">Retour</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right pr-8">Consigne</TableHead>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="pl-5">Produit</TableHead>
+                                        <TableHead className="text-right">Qté</TableHead>
+                                        <TableHead className="text-right">Prix unitaire</TableHead>
+                                        <TableHead className="pr-5 text-right">Total</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {sale.packagingItems.map((pkg) => (
-                                        <TableRow key={pkg.id} className="border-b border-slate-50">
-                                            <TableCell className="py-5 pl-8 font-semibold text-slate-950">{pkg.packaging_name}</TableCell>
-                                            <TableCell className="py-5 text-right font-bold text-rose-600">{pkg.quantity_out}</TableCell>
-                                            <TableCell className="py-5 text-right font-bold text-emerald-600">{pkg.quantity_in}</TableCell>
-                                            <TableCell className="py-5 text-right font-semibold text-slate-950 pr-8">
-                                                {formatCurrency((Number(pkg.quantity_out) - Number(pkg.quantity_in)) * Number(pkg.unit_price))}
+                                    {sale.items.map((item) => (
+                                        <TableRow key={item.id}>
+                                            <TableCell className="pl-5">
+                                                <p className="font-medium text-foreground">{item.product_name}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {[item.brand, item.packaging_name || 'Standard'].filter(Boolean).join(' · ')}
+                                                </p>
                                             </TableCell>
+                                            <TableCell className="tabular text-right text-foreground">{formatNumber(item.quantity)}</TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatMoney(Number(item.unit_price))}</TableCell>
+                                            <TableCell className="tabular pr-5 text-right font-medium text-foreground">{formatMoney(Number(item.total_price))}</TableCell>
                                         </TableRow>
                                     ))}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Payments */}
-                <Card className="rounded-[2rem] border-slate-200/60 shadow-sm overflow-hidden">
-                    <CardHeader className="px-8 py-6 border-b border-slate-100">
-                        <CardTitle className="text-xl font-semibold text-slate-950 flex items-center gap-3">
-                            <CreditCard className="h-5 w-5 text-emerald-600" /> Paiements
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        {sale.payments.length === 0 ? (
-                            <div className="text-center py-12 text-slate-400 font-medium">Aucun paiement enregistré</div>
-                        ) : (
-                            <Table>
-                                <TableHeader className="bg-slate-50/50">
-                                    <TableRow className="border-none">
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Date</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Méthode</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Référence</TableHead>
-                                        <TableHead className="py-4 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-right pr-8">Montant</TableHead>
+                                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                                        <TableCell colSpan={3} className="pl-5 text-right text-sm text-muted-foreground">Sous-total produits</TableCell>
+                                        <TableCell className="tabular pr-5 text-right font-semibold text-foreground">{formatMoney(Number(sale.subtotal))}</TableCell>
                                     </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {sale.payments.map((p) => (
-                                        <TableRow key={p.id} className="border-b border-slate-50">
-                                            <TableCell className="py-5 pl-8 font-bold text-slate-600">
-                                                {new Date(p.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                            </TableCell>
-                                            <TableCell className="py-5">
-                                                <Badge className="rounded-lg bg-slate-100 text-slate-600 border-none font-bold text-[10px] uppercase">
-                                                    {p.payment_method}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-sm font-mono text-slate-500">{p.reference || '—'}</TableCell>
-                                            <TableCell className="py-5 text-right font-semibold text-emerald-600 pr-8">{formatCurrency(Number(p.amount))}</TableCell>
-                                        </TableRow>
-                                    ))}
                                 </TableBody>
                             </Table>
+                        </Panel>
+
+                        {sale.packagingItems && sale.packagingItems.length > 0 && (
+                            <Panel title="Emballages" description="Casiers et bouteilles consignés">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Emballage</TableHead>
+                                            <TableHead className="text-right">Sortis</TableHead>
+                                            <TableHead className="text-right">Rendus</TableHead>
+                                            <TableHead className="pr-5 text-right">Consigne</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {sale.packagingItems.map((pkg) => (
+                                            <TableRow key={pkg.id}>
+                                                <TableCell className="pl-5 font-medium text-foreground">{pkg.packaging_name}</TableCell>
+                                                <TableCell className="tabular text-right text-foreground">{formatNumber(pkg.quantity_out)}</TableCell>
+                                                <TableCell className="tabular text-right text-foreground">{formatNumber(pkg.quantity_in)}</TableCell>
+                                                <TableCell className="tabular pr-5 text-right font-medium text-foreground">
+                                                    {formatMoney((Number(pkg.quantity_out) - Number(pkg.quantity_in)) * Number(pkg.unit_price))}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </Panel>
                         )}
-                    </CardContent>
-                </Card>
 
-                {/* Notes */}
-                {sale.notes && (
-                    <Card className="rounded-[2rem] border-slate-200/60 shadow-sm">
-                        <CardHeader className="px-8 py-6 border-b border-slate-100">
-                            <CardTitle className="text-xl font-semibold text-slate-950">Notes</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-8">
-                            <p className="text-slate-600 font-medium leading-relaxed">{sale.notes}</p>
-                        </CardContent>
-                    </Card>
-                )}
-            </main>
+                        <Panel
+                            title="Paiements"
+                            description={`Mode : ${paymentLabel}`}
+                            action={<StatusBadge label={paymentStatus.label} tone={paymentStatus.tone} />}
+                        >
+                            {sale.payments.length === 0 ? (
+                                <p className="px-5 py-10 text-center text-sm text-muted-foreground">Aucun paiement enregistré</p>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Date</TableHead>
+                                            <TableHead>Moyen</TableHead>
+                                            <TableHead>Référence</TableHead>
+                                            <TableHead className="pr-5 text-right">Montant</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {sale.payments.map((p) => (
+                                            <TableRow key={p.id}>
+                                                <TableCell className="tabular pl-5 text-muted-foreground">{formatDateShort(p.created_at)}</TableCell>
+                                                <TableCell className="text-foreground">{paymentMethodLabels[p.payment_method] || p.payment_method}</TableCell>
+                                                <TableCell className="font-mono text-xs text-muted-foreground">{p.reference || '—'}</TableCell>
+                                                <TableCell className="tabular pr-5 text-right font-medium text-foreground">{formatMoney(Number(p.amount))}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </Panel>
+
+                        {sale.notes && (
+                            <Panel title="Notes" bodyClassName="px-5 py-4">
+                                <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{sale.notes}</p>
+                            </Panel>
+                        )}
+                    </div>
+
+                    {/* Résumé */}
+                    <div className="space-y-4 lg:sticky lg:top-20">
+                        <Panel title="Résumé" bodyClassName="px-5 py-4">
+                            <dl className="space-y-2.5 text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-muted-foreground">Produits</dt>
+                                    <dd className="tabular text-foreground">{formatMoney(Number(sale.subtotal))}</dd>
+                                </div>
+                                {Number(sale.packaging_total) > 0 && (
+                                    <div className="flex items-center justify-between gap-3">
+                                        <dt className="text-muted-foreground">Emballages</dt>
+                                        <dd className="tabular text-foreground">{formatMoney(Number(sale.packaging_total))}</dd>
+                                    </div>
+                                )}
+                                <div className="flex items-center justify-between gap-3 border-t border-border pt-2.5">
+                                    <dt className="font-medium text-foreground">Total</dt>
+                                    <dd className="tabular text-lg font-semibold text-foreground">{formatMoney(Number(sale.total_amount))}</dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-muted-foreground">Encaissé</dt>
+                                    <dd className="tabular text-foreground">{formatMoney(Number(sale.paid_amount))}</dd>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                    <dt className="text-muted-foreground">Reste à payer</dt>
+                                    <dd className={`tabular font-semibold ${remaining > 0 ? 'text-destructive' : 'text-success'}`}>
+                                        {remaining > 0 ? formatMoney(remaining) : 'Soldé'}
+                                    </dd>
+                                </div>
+                            </dl>
+
+                            {remaining > 0 && (
+                                <div className="mt-4 space-y-1.5 rounded-lg bg-warning-soft px-3 py-2.5 text-xs">
+                                    <p className="font-medium text-warning-foreground">Détail des impayés</p>
+                                    <div className="flex justify-between gap-3 text-warning-foreground/90">
+                                        <span>Produits</span>
+                                        <span className="tabular">{remainingProducts > 0 ? formatMoney(remainingProducts) : 'Soldé'}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-3 text-warning-foreground/90">
+                                        <span>Emballages</span>
+                                        <span className="tabular">{remainingPackaging > 0 ? formatMoney(remainingPackaging) : 'Soldé'}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </Panel>
+
+                        <Panel title="Client" bodyClassName="px-5 py-4">
+                            <dl className="space-y-2.5 text-sm">
+                                <div className="flex justify-between gap-3">
+                                    <dt className="text-muted-foreground">Nom</dt>
+                                    <dd className="text-right font-medium text-foreground">{sale.client_name || 'Client passager'}</dd>
+                                </div>
+                                {sale.client_phone && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Téléphone</dt>
+                                        <dd className="tabular text-right text-foreground">{sale.client_phone}</dd>
+                                    </div>
+                                )}
+                                {sale.client_address && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Adresse</dt>
+                                        <dd className="text-right text-foreground">{sale.client_address}</dd>
+                                    </div>
+                                )}
+                                {sale.depot_name && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Dépôt</dt>
+                                        <dd className="text-right text-foreground">{sale.depot_name}</dd>
+                                    </div>
+                                )}
+                                {sale.created_by_name && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">Vendeur</dt>
+                                        <dd className="text-right text-foreground">{sale.created_by_name}</dd>
+                                    </div>
+                                )}
+                            </dl>
+                        </Panel>
+                    </div>
+                </div>
+            </PageShell>
         </div>
     )
 }

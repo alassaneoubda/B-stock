@@ -1,126 +1,139 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requirePermission } from '@/lib/api-auth'
-import { sql } from '@/lib/db'
+import { sql, withTransaction } from '@/lib/db'
+import { AppError, handleRouteError, notFound } from '@/lib/errors'
+import { isUuid } from '@/lib/tenant'
 
 const depotUpdateSchema = z.object({
-    name: z.string().min(1).optional(),
-    address: z.string().optional(),
-    phone: z.string().optional(),
-    isMain: z.boolean().optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  address: z.string().max(500).optional(),
+  phone: z.string().max(50).optional(),
+  isMain: z.boolean().optional(),
 })
 
 // GET /api/depots/[id]
 export async function GET(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-    try {
-        const authz = await requirePermission('stock.read')
-        if (!authz.ok) return authz.response
-        const { session } = authz
-        const { id } = await params
+  try {
+    const authz = await requirePermission('stock.read')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Dépôt')
 
-        const depots = await sql`
+    const depots = await sql`
       SELECT * FROM depots
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
+      WHERE id = ${id} AND company_id = ${companyId}
     `
-        if (depots.length === 0) {
-            return NextResponse.json({ error: 'Dépôt introuvable' }, { status: 404 })
-        }
+    if (depots.length === 0) throw notFound('Dépôt')
 
-        return NextResponse.json({ success: true, data: depots[0] })
-    } catch (error) {
-        console.error('Error fetching depot:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
-    }
+    return NextResponse.json({ success: true, data: depots[0] })
+  } catch (error) {
+    return handleRouteError(error, 'depots.detail')
+  }
 }
 
 // PATCH /api/depots/[id]
 export async function PATCH(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-    try {
-        const authz = await requirePermission('stock.write')
-        if (!authz.ok) return authz.response
-        const { session } = authz
-        const { id } = await params
-        const body = await request.json()
-        const data = depotUpdateSchema.parse(body)
+  try {
+    const authz = await requirePermission('stock.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Dépôt')
 
-        const existing = await sql`
-      SELECT id FROM depots
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-    `
-        if (existing.length === 0) {
-            return NextResponse.json({ error: 'Dépôt introuvable' }, { status: 404 })
-        }
+    const data = depotUpdateSchema.parse(await request.json())
 
-        // Un seul dépôt principal par entreprise.
-        if (data.isMain === true) {
-            await sql`
-        UPDATE depots SET is_main = false
-        WHERE company_id = ${session.user.companyId} AND id <> ${id}
+    const depot = await withTransaction(async (tx) => {
+      const [existing] = await tx.sql`
+        SELECT id FROM depots WHERE id = ${id} AND company_id = ${companyId} FOR UPDATE
       `
-        }
+      if (!existing) throw notFound('Dépôt')
 
-        const depots = await sql`
-      UPDATE depots SET
-        name = COALESCE(${data.name ?? null}, name),
-        address = COALESCE(${data.address ?? null}, address),
-        phone = COALESCE(${data.phone ?? null}, phone),
-        is_main = COALESCE(${data.isMain ?? null}, is_main)
-      WHERE id = ${id}
-      RETURNING *
-    `
+      // Un seul dépôt principal par entreprise.
+      if (data.isMain === true) {
+        await tx.sql`
+          UPDATE depots SET is_main = false
+          WHERE company_id = ${companyId} AND id <> ${id} AND is_main = true
+        `
+      }
 
-        return NextResponse.json({ success: true, data: depots[0] })
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return NextResponse.json({ error: 'Données invalides', details: error.errors }, { status: 400 })
-        }
-        console.error('Error updating depot:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
-    }
+      const [updated] = await tx.sql`
+        UPDATE depots SET
+          name = COALESCE(${data.name ?? null}, name),
+          address = COALESCE(${data.address ?? null}, address),
+          phone = COALESCE(${data.phone ?? null}, phone),
+          is_main = COALESCE(${data.isMain ?? null}, is_main)
+        WHERE id = ${id} AND company_id = ${companyId}
+        RETURNING *
+      `
+      return updated
+    })
+
+    return NextResponse.json({ success: true, data: depot })
+  } catch (error) {
+    return handleRouteError(error, 'depots.update')
+  }
 }
 
 // DELETE /api/depots/[id]
 export async function DELETE(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> },
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
 ) {
-    try {
-        const authz = await requirePermission('stock.write')
-        if (!authz.ok) return authz.response
-        const { session } = authz
-        const { id } = await params
+  try {
+    const authz = await requirePermission('stock.write')
+    if (!authz.ok) return authz.response
+    const { companyId } = authz
+    const { id } = await params
+    if (!isUuid(id)) throw notFound('Dépôt')
 
-        const existing = await sql`
-      SELECT id, is_main FROM depots
-      WHERE id = ${id} AND company_id = ${session.user.companyId}
-    `
-        if (existing.length === 0) {
-            return NextResponse.json({ error: 'Dépôt introuvable' }, { status: 404 })
-        }
-        if (existing[0].is_main) {
-            return NextResponse.json(
-                { error: 'Impossible de supprimer le dépôt principal.' },
-                { status: 400 },
-            )
-        }
+    await withTransaction(async (tx) => {
+      const [existing] = await tx.sql<{ id: string; is_main: boolean | null }>`
+        SELECT id, is_main FROM depots
+        WHERE id = ${id} AND company_id = ${companyId}
+        FOR UPDATE
+      `
+      if (!existing) throw notFound('Dépôt')
+      if (existing.is_main) {
+        throw new AppError(400, 'Impossible de supprimer le dépôt principal.', 'MAIN_DEPOT')
+      }
 
-        try {
-            await sql`DELETE FROM depots WHERE id = ${id}`
-        } catch {
-            return NextResponse.json(
-                { error: 'Impossible de supprimer : ce dépôt est utilisé (stock, ventes, etc.).' },
-                { status: 400 },
-            )
+      // stock / packaging_stock sont supprimés en cascade : on refuse s'il reste de la marchandise.
+      const [remaining] = await tx.sql<{ has_stock: boolean }>`
+        SELECT EXISTS (SELECT 1 FROM stock WHERE depot_id = ${id} AND quantity > 0)
+            OR EXISTS (SELECT 1 FROM packaging_stock WHERE depot_id = ${id} AND quantity > 0) AS has_stock
+      `
+      if (remaining?.has_stock) {
+        throw new AppError(
+          400,
+          'Impossible de supprimer : ce dépôt contient encore du stock.',
+          'DEPOT_NOT_EMPTY'
+        )
+      }
+
+      try {
+        await tx.sql`DELETE FROM depots WHERE id = ${id} AND company_id = ${companyId}`
+      } catch (error) {
+        if ((error as { code?: string })?.code === '23503') {
+          throw new AppError(
+            400,
+            'Impossible de supprimer : ce dépôt est utilisé (stock, ventes, etc.).',
+            'DEPOT_IN_USE'
+          )
         }
-        return NextResponse.json({ success: true, message: 'Dépôt supprimé' })
-    } catch (error) {
-        console.error('Error deleting depot:', error)
-        return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
-    }
+        throw error
+      }
+    })
+
+    return NextResponse.json({ success: true, message: 'Dépôt supprimé' })
+  } catch (error) {
+    return handleRouteError(error, 'depots.delete')
+  }
 }

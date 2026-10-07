@@ -1,13 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Loader2, Phone, Mail, MapPin, Users, TrendingUp } from 'lucide-react'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
+import { ArrowLeft, Phone, Mail, MapPin, Users, TrendingUp, UserX } from 'lucide-react'
 import Link from 'next/link'
+import { apiFetch, ApiError } from '@/lib/api-client'
+import { formatMoney, formatNumber } from '@/lib/format'
+import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 
 interface Agent {
     id: string
@@ -36,162 +39,243 @@ interface AgentDetail {
     performance: PerfRow[]
 }
 
-const formatCurrency = (n: number) =>
-    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', maximumFractionDigits: 0 }).format(n || 0)
+const formatCurrency = formatMoney
 
 export default function AgentDetailPage() {
     const params = useParams()
+    const router = useRouter()
     const agentId = params.id as string
     const [data, setData] = useState<AgentDetail | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [notFound, setNotFound] = useState(false)
 
-    useEffect(() => {
-        fetch(`/api/agents/${agentId}`)
-            .then((r) => r.json())
-            .then((result) => {
-                if (!result.data) {
-                    setError('Commercial introuvable')
-                    return
-                }
-                setData(result.data)
-            })
-            .catch(() => setError('Erreur lors du chargement'))
-            .finally(() => setLoading(false))
+    const load = useCallback(async () => {
+        setLoading(true)
+        setError(null)
+        setNotFound(false)
+        try {
+            const result = await apiFetch(`/api/agents/${agentId}`)
+            if (!result?.data) setNotFound(true)
+            else setData(result.data)
+        } catch (e) {
+            if (e instanceof ApiError && e.status === 404) setNotFound(true)
+            else setError(e instanceof Error ? e.message : 'Erreur lors du chargement')
+        } finally {
+            setLoading(false)
+        }
     }, [agentId])
 
+    useEffect(() => { load() }, [load])
+
+    const backLink = (
+        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground hover:text-foreground" asChild>
+            <Link href="/dashboard/agents">
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Agents
+            </Link>
+        </Button>
+    )
+
     if (loading) {
+        return <PageSkeleton />
+    }
+
+    if (error) {
         return (
-            <div className="flex flex-col min-h-screen">
-                <DashboardHeader title="Commercial" description="Chargement..." />
-                <main className="flex-1 flex items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </main>
+            <div className="flex min-h-screen flex-col">
+                <DashboardHeader title="Commercial" />
+                <PageShell>
+                    {backLink}
+                    <ErrorState title="Impossible de charger le commercial" description={error} onRetry={load} />
+                </PageShell>
             </div>
         )
     }
 
-    if (error || !data) {
+    if (notFound || !data) {
         return (
-            <div className="flex flex-col min-h-screen">
+            <div className="flex min-h-screen flex-col">
                 <DashboardHeader title="Commercial" description="Introuvable" />
-                <main className="flex-1 p-4 lg:p-6">
-                    <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-                        {error || 'Commercial introuvable'}
-                    </div>
-                    <div className="mt-4">
-                        <Button variant="outline" asChild>
-                            <Link href="/dashboard/agents">
-                                <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-                            </Link>
-                        </Button>
-                    </div>
-                </main>
+                <PageShell>
+                    {backLink}
+                    <EmptyState
+                        icon={UserX}
+                        title="Commercial introuvable"
+                        description="Ce commercial n'existe pas ou a été supprimé."
+                        action={{ label: 'Retour aux commerciaux', href: '/dashboard/agents' }}
+                    />
+                </PageShell>
             </div>
         )
     }
 
     const { agent, clients, performance } = data
+    const totalSales = performance.reduce((s, p) => s + Number(p.total_sales), 0)
+    const totalOrders = performance.reduce((s, p) => s + Number(p.orders_count), 0)
 
     return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader title={agent.full_name} description="Détail du commercial" />
-            <main className="flex-1 p-4 lg:p-6 space-y-6">
-                <Button variant="ghost" size="sm" asChild>
-                    <Link href="/dashboard/agents">
-                        <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-                    </Link>
-                </Button>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            {agent.full_name}
-                            <Badge variant={agent.is_active ? 'secondary' : 'outline'}>
-                                {agent.is_active ? 'Actif' : 'Inactif'}
-                            </Badge>
-                            {agent.commission_rate != null && (
-                                <Badge variant="outline">Commission {agent.commission_rate}%</Badge>
-                            )}
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
-                        {agent.phone && (
-                            <div className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4" /> {agent.phone}</div>
-                        )}
-                        {agent.email && (
-                            <div className="flex items-center gap-2 text-muted-foreground"><Mail className="h-4 w-4" /> {agent.email}</div>
-                        )}
-                        {agent.zone && (
-                            <div className="flex items-center gap-2 text-muted-foreground"><MapPin className="h-4 w-4" /> {agent.zone}</div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <div className="grid gap-6 lg:grid-cols-2">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-base">
-                                <TrendingUp className="h-4 w-4 text-muted-foreground" /> Performance (6 mois)
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {performance.length > 0 ? (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead className="text-left text-muted-foreground">
-                                            <tr><th className="p-2">Mois</th><th className="p-2 text-center">Commandes</th><th className="p-2 text-right">Ventes</th></tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {performance.map((p, i) => (
-                                                <tr key={i}>
-                                                    <td className="p-2">{p.month}</td>
-                                                    <td className="p-2 text-center">{p.orders_count}</td>
-                                                    <td className="p-2 text-right font-medium">{formatCurrency(Number(p.total_sales))}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <p className="text-sm text-muted-foreground">Aucune donnée de performance.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-base">
-                                <Users className="h-4 w-4 text-muted-foreground" /> Clients assignés ({clients.length})
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {clients.length > 0 ? (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead className="text-left text-muted-foreground">
-                                            <tr><th className="p-2">Client</th><th className="p-2">Zone</th><th className="p-2 text-right">Ventes</th></tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {clients.map((c) => (
-                                                <tr key={c.id}>
-                                                    <td className="p-2">
-                                                        <Link href={`/dashboard/clients/${c.id}`} className="font-medium hover:underline">{c.name}</Link>
-                                                    </td>
-                                                    <td className="p-2 text-muted-foreground">{c.zone || '—'}</td>
-                                                    <td className="p-2 text-right font-medium">{formatCurrency(Number(c.total_sales))}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <p className="text-sm text-muted-foreground">Aucun client assigné.</p>
-                            )}
-                        </CardContent>
-                    </Card>
+            <PageShell>
+                <div className="space-y-3">
+                    {backLink}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <h2 className="text-2xl font-semibold tracking-tight text-foreground">{agent.full_name}</h2>
+                        <StatusBadge label={agent.is_active ? 'Actif' : 'Inactif'} tone={agent.is_active ? 'success' : 'default'} />
+                    </div>
+                    {agent.zone && <p className="text-sm text-muted-foreground">Zone : {agent.zone}</p>}
                 </div>
-            </main>
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                    <div className="space-y-4 lg:col-span-2">
+                        <Panel title="Performance" description="Six derniers mois">
+                            {performance.length > 0 ? (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="pl-5">Mois</TableHead>
+                                            <TableHead className="text-right">Commandes</TableHead>
+                                            <TableHead className="pr-5 text-right">Ventes</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {performance.map((p, i) => (
+                                            <TableRow key={i}>
+                                                <TableCell className="pl-5 text-sm">{p.month}</TableCell>
+                                                <TableCell className="tabular text-right text-sm">{formatNumber(p.orders_count)}</TableCell>
+                                                <TableCell className="tabular pr-5 text-right text-sm font-semibold">{formatCurrency(Number(p.total_sales))}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            ) : (
+                                <EmptyState
+                                    icon={TrendingUp}
+                                    className="m-4"
+                                    title="Aucune donnée de performance"
+                                    description="Les ventes de ce commercial apparaîtront ici mois par mois."
+                                />
+                            )}
+                        </Panel>
+
+                        <Panel title="Clients assignés" description={`${formatNumber(clients.length)} client(s)`}>
+                            {clients.length > 0 ? (
+                                <>
+                                    <div className="hidden md:block">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead className="pl-5">Client</TableHead>
+                                                    <TableHead>Zone</TableHead>
+                                                    <TableHead className="pr-5 text-right">Ventes</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {clients.map((c) => (
+                                                    <TableRow
+                                                        key={c.id}
+                                                        className="cursor-pointer"
+                                                        onClick={() => router.push(`/dashboard/clients/${c.id}`)}
+                                                    >
+                                                        <TableCell className="pl-5">
+                                                            <Link
+                                                                href={`/dashboard/clients/${c.id}`}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="rounded-sm text-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                            >
+                                                                {c.name}
+                                                            </Link>
+                                                            {c.phone && <p className="tabular text-xs text-muted-foreground">{c.phone}</p>}
+                                                        </TableCell>
+                                                        <TableCell className="text-sm text-muted-foreground">{c.zone || '—'}</TableCell>
+                                                        <TableCell className="tabular pr-5 text-right text-sm font-semibold">{formatCurrency(Number(c.total_sales))}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                    <ul className="divide-y divide-border md:hidden">
+                                        {clients.map((c) => (
+                                            <li key={c.id}>
+                                                <Link
+                                                    href={`/dashboard/clients/${c.id}`}
+                                                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-sm font-medium text-foreground">{c.name}</p>
+                                                        <p className="truncate text-xs text-muted-foreground">
+                                                            {[c.zone, c.phone].filter(Boolean).join(' · ') || '—'}
+                                                        </p>
+                                                    </div>
+                                                    <span className="tabular shrink-0 text-sm font-semibold text-foreground">{formatCurrency(Number(c.total_sales))}</span>
+                                                </Link>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </>
+                            ) : (
+                                <EmptyState
+                                    icon={Users}
+                                    className="m-4"
+                                    title="Aucun client assigné"
+                                    description="Assignez des clients à ce commercial depuis leur fiche."
+                                    action={{ label: 'Voir les clients', href: '/dashboard/clients' }}
+                                />
+                            )}
+                        </Panel>
+                    </div>
+
+                    <Panel title="Résumé" className="h-fit" bodyClassName="divide-y divide-border">
+                        <dl className="space-y-3 px-5 py-4 text-sm">
+                            <div className="flex items-center justify-between gap-4">
+                                <dt className="text-muted-foreground">Ventes (6 mois)</dt>
+                                <dd className="tabular font-semibold text-foreground">{formatCurrency(totalSales)}</dd>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                                <dt className="text-muted-foreground">Commandes (6 mois)</dt>
+                                <dd className="tabular font-medium text-foreground">{formatNumber(totalOrders)}</dd>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                                <dt className="text-muted-foreground">Clients assignés</dt>
+                                <dd className="tabular font-medium text-foreground">{formatNumber(clients.length)}</dd>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                                <dt className="text-muted-foreground">Taux de commission</dt>
+                                <dd className="tabular font-medium text-foreground">
+                                    {agent.commission_rate != null ? `${formatNumber(agent.commission_rate)} %` : '—'}
+                                </dd>
+                            </div>
+                        </dl>
+                        <div className="space-y-2.5 px-5 py-4 text-sm">
+                            <p className="text-xs font-medium text-muted-foreground">Contact</p>
+                            {agent.phone || agent.email || agent.zone ? (
+                                <>
+                                    {agent.phone && (
+                                        <a href={`tel:${agent.phone}`} className="flex items-center gap-2 text-foreground transition-colors hover:text-brand-strong">
+                                            <Phone className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                                            <span className="tabular">{agent.phone}</span>
+                                        </a>
+                                    )}
+                                    {agent.email && (
+                                        <a href={`mailto:${agent.email}`} className="flex items-center gap-2 break-all text-foreground transition-colors hover:text-brand-strong">
+                                            <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                                            {agent.email}
+                                        </a>
+                                    )}
+                                    {agent.zone && (
+                                        <p className="flex items-center gap-2 text-foreground">
+                                            <MapPin className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                                            {agent.zone}
+                                        </p>
+                                    )}
+                                </>
+                            ) : (
+                                <p className="text-muted-foreground">Aucune coordonnée renseignée.</p>
+                            )}
+                        </div>
+                    </Panel>
+                </div>
+            </PageShell>
         </div>
     )
 }

@@ -1,19 +1,21 @@
 import { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { requireSuperAdmin, logAdminAction } from '@/lib/admin-auth'
+import { requireAdmin, logAdminAction } from '@/lib/admin-auth'
 import { sql } from '@/lib/db'
+import { handleRouteError } from '@/lib/errors'
+// Toutes les cellules passent par toCSV -> escapeCell (RFC 4180 + neutralisation des formules)
 import { toCSV, csvResponse } from '@/lib/csv'
 
 // GET /api/admin/reports/export?type=companies|users|payments|revenue
 export async function GET(request: NextRequest) {
-  const authz = await requireSuperAdmin()
-  if (!authz.ok) return authz.response
-
-  const { searchParams } = new URL(request.url)
-  const type = searchParams.get('type') || 'companies'
-  const stamp = new Date().toISOString().slice(0, 10)
-
   try {
+    const authz = await requireAdmin('reports.read')
+    if (!authz.ok) return authz.response
+
+    const { searchParams } = new URL(request.url)
+    const type = searchParams.get('type') || 'companies'
+    const stamp = new Date().toISOString().slice(0, 10)
+
     let csv = ''
     let filename = ''
 
@@ -77,7 +79,8 @@ export async function GET(request: NextRequest) {
       ])
       filename = `paiements-${stamp}.csv`
     } else if (type === 'revenue') {
-      const months = Math.min(36, Math.max(1, parseInt(searchParams.get('months') || '12', 10)))
+      const parsedMonths = Number.parseInt(searchParams.get('months') || '12', 10)
+      const months = Number.isFinite(parsedMonths) ? Math.min(36, Math.max(1, parsedMonths)) : 12
       const rows = await sql`
         SELECT to_char(m, 'YYYY-MM') AS month,
           COALESCE(SUM(p.amount), 0)::float AS revenue,
@@ -104,8 +107,7 @@ export async function GET(request: NextRequest) {
 
     await logAdminAction(authz.adminId, authz.adminEmail, 'report.export', 'report', null, { type })
     return csvResponse(filename, csv)
-  } catch (e) {
-    console.error('admin reports export error:', e)
-    return NextResponse.json({ error: 'Erreur' }, { status: 500 })
+  } catch (error) {
+    return handleRouteError(error, 'admin.reports.export')
   }
 }

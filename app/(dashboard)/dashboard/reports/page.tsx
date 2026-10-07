@@ -1,16 +1,19 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { BarChart3, TrendingUp, Users, Package, CreditCard, ShoppingCart, ArrowUpRight, ArrowDownRight, PieChart, Wallet, Boxes, Truck } from 'lucide-react'
+import { PageIntro, PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ArrowDownRight, ArrowUpRight, BarChart3, Boxes, CreditCard, Package, Scale, ShoppingCart, Truck, Users, Wallet } from 'lucide-react'
+import { formatMoney, formatNumber, formatDate } from '@/lib/format'
 
+// Pas de try/catch : une panne SQL remonte à error.tsx au lieu d'afficher des zéros.
 async function getReportData(companyId: string) {
-    try {
+    {
         // Sales by month (last 6 months)
         const salesByMonth = await sql`
       SELECT
-        TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as month,
-        DATE_TRUNC('month', created_at) as month_date,
+        TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
+        TO_CHAR(DATE_TRUNC('month', NOW()), 'YYYY-MM') as current_month,
         COALESCE(SUM(total_amount), 0) as total,
         COUNT(*) as count
       FROM sales_orders
@@ -18,7 +21,7 @@ async function getReportData(companyId: string) {
         AND status != 'cancelled'
         AND created_at >= NOW() - INTERVAL '6 months'
       GROUP BY DATE_TRUNC('month', created_at)
-      ORDER BY month_date DESC
+      ORDER BY month DESC
     `
 
         // Top clients by sales
@@ -31,6 +34,7 @@ async function getReportData(companyId: string) {
       LEFT JOIN sales_orders so ON so.client_id = c.id AND so.company_id = ${companyId} AND so.status != 'cancelled'
       WHERE c.company_id = ${companyId}
       GROUP BY c.id, c.name
+      HAVING COUNT(so.id) > 0
       ORDER BY total_sales DESC
       LIMIT 5
     `
@@ -115,7 +119,7 @@ async function getReportData(companyId: string) {
     `
 
         return {
-            salesByMonth: salesByMonth as Array<{ month: string; total: number; count: number }>,
+            salesByMonth: salesByMonth as Array<{ month: string; current_month: string; total: number; count: number }>,
             topClients: topClients as Array<{ name: string; total_sales: number; orders_count: number }>,
             productDebt: Number(creditStats[0]?.product_debt || 0),
             packagingDebt: Number(creditStats[0]?.packaging_debt || 0),
@@ -127,29 +131,28 @@ async function getReportData(companyId: string) {
             procurementCount: Number(procurementSpend[0]?.count || 0),
             dailySales: dailySales as Array<{ day: string; total: number; count: number }>,
         }
-    } catch {
-        return {
-            salesByMonth: [],
-            topClients: [],
-            productDebt: 0,
-            packagingDebt: 0,
-            stockValue: 0,
-            stockUnits: 0,
-            paymentMethods: [],
-            topProducts: [],
-            procurementTotal: 0,
-            procurementCount: 0,
-            dailySales: [],
-        }
     }
 }
 
-function formatCurrency(amount: number) {
-    return new Intl.NumberFormat('fr-FR', {
-        style: 'currency',
-        currency: 'XOF',
-        minimumFractionDigits: 0,
-    }).format(amount)
+/** « 2026-10 » → « octobre 2026 » */
+function monthLabel(month: string) {
+    const [year, m] = month.split('-').map(Number)
+    if (!year || !m) return month
+    return new Date(year, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+}
+
+/** « 2026-10 » → « oct. » (axe du graphique) */
+function monthShort(month: string) {
+    const [year, m] = month.split('-').map(Number)
+    if (!year || !m) return month
+    return new Date(year, m - 1, 1).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')
+}
+
+/** « 2026-10-06 » (ou Date) → jour du mois, sans décalage de fuseau. */
+function dayOfMonth(day: unknown) {
+    if (day instanceof Date) return day.getDate()
+    const n = Number(String(day).slice(8, 10))
+    return Number.isFinite(n) && n > 0 ? n : '—'
 }
 
 const paymentLabels: Record<string, string> = {
@@ -159,291 +162,354 @@ const paymentLabels: Record<string, string> = {
     mixed: 'Mixte',
 }
 
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** Montant compact pour les étiquettes de graphique (« 125 k »). */
+function compact(n: number) {
+    if (n <= 0) return '—'
+    if (n >= 1_000_000) return `${formatNumber(Math.round(n / 100_000) / 10)} M`
+    return `${formatNumber(Math.round(n / 1000))} k`
+}
+
+function ChartEmpty({ icon: Icon, text }: { icon: typeof BarChart3; text: string }) {
+    return (
+        <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <Icon className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <p className="text-sm text-muted-foreground">{text}</p>
+        </div>
+    )
+}
+
 export default async function ReportsPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const data = await getReportData(companyId)
 
-    const currentMonthSales = data.salesByMonth[0]
+    // salesByMonth[0] n'est le mois en cours que s'il y a eu des ventes ce mois-ci
+    const currentMonthSales = data.salesByMonth.find((m) => m.month === m.current_month)
+    const salesMinusPurchases = Number(currentMonthSales?.total || 0) - data.procurementTotal
+    const currentMonthTotal = Number(currentMonthSales?.total || 0)
 
-    const kpiData = [
-        {
-            title: "Ventes ce Mois",
-            value: formatCurrency(Number(currentMonthSales?.total || 0)),
-            description: `${currentMonthSales?.count || 0} commandes validées`,
-            icon: ShoppingCart,
-            color: "bg-blue-500/10 text-blue-600",
-        },
-        {
-            title: "Achats ce Mois",
-            value: formatCurrency(data.procurementTotal),
-            description: `${data.procurementCount} commande(s) fournisseur`,
-            icon: Truck,
-            color: "bg-indigo-500/10 text-indigo-600",
-        },
-        {
-            title: "Créances Produits",
-            value: formatCurrency(data.productDebt),
-            description: "Encours de paiement",
-            icon: CreditCard,
-            color: "bg-rose-500/10 text-rose-600",
-        },
-        {
-            title: "Dettes Emballages",
-            value: formatCurrency(data.packagingDebt),
-            description: "Casiers à récupérer",
-            icon: Package,
-            color: "bg-amber-500/10 text-amber-600",
-        },
-        {
-            title: "Valeur du Stock",
-            value: formatCurrency(data.stockValue),
-            description: `${data.stockUnits} unités en réserve`,
-            icon: TrendingUp,
-            color: "bg-emerald-500/10 text-emerald-600",
-        },
-        {
-            title: "Marge Brute Est.",
-            value: formatCurrency(Number(currentMonthSales?.total || 0) - data.procurementTotal),
-            description: "Ventes - Achats ce mois",
-            icon: Boxes,
-            color: Number(currentMonthSales?.total || 0) - data.procurementTotal >= 0 ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600",
-        },
-    ]
+    // Graphique mensuel : du plus ancien au plus récent
+    const months = [...data.salesByMonth].reverse()
+    const maxMonth = Math.max(...months.map((m) => Number(m.total)), 1)
+    const sixMonthsTotal = months.reduce((sum, m) => sum + Number(m.total), 0)
+
+    const maxDay = Math.max(...data.dailySales.map((d) => Number(d.total)), 1)
+    const todayOfMonth = new Date().getDate()
+
+    const maxClient = Number(data.topClients[0]?.total_sales || 0)
+    const maxProduct = Math.max(...data.topProducts.map((p) => Number(p.revenue)), 0)
+    const paymentsTotal = data.paymentMethods.reduce((sum, pm) => sum + Number(pm.total), 0)
+    const currentMonthName = capitalize(new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))
 
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
-            <DashboardHeader
-                title="Intelligence & Rapports"
-                description="Suivez la performance et la santé financière de B-Stock"
-            />
+        <div className="flex min-h-screen flex-col">
+            <DashboardHeader title="Rapports" description="Performance commerciale et santé financière" />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                {/* KPI Grid */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {kpiData.map((stat) => (
-                        <div
-                            key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
-                        >
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <stat.icon className="h-7 w-7" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-2xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <p className="text-sm font-bold text-slate-400">{stat.description}</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
-                        </div>
-                    ))}
+            <PageShell>
+                <PageIntro eyebrow="Période en cours" title={currentMonthName} />
+
+                {/* Indicateurs du mois */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <StatCard
+                        emphasis
+                        label="Ventes du mois"
+                        value={formatMoney(currentMonthTotal)}
+                        hint={`${formatNumber(currentMonthSales?.count || 0)} commande(s) non annulée(s)`}
+                        icon={ShoppingCart}
+                    />
+                    <StatCard
+                        label="Achats du mois"
+                        value={formatMoney(data.procurementTotal)}
+                        hint={`${formatNumber(data.procurementCount)} commande(s) fournisseur`}
+                        icon={Truck}
+                    />
+                    <StatCard
+                        label="Ventes − achats"
+                        value={formatMoney(salesMinusPurchases)}
+                        hint="Écart du mois (ce n’est pas une marge comptable)"
+                        icon={Scale}
+                        tone={salesMinusPurchases >= 0 ? 'success' : 'danger'}
+                    />
+                    <StatCard
+                        label="Valeur du stock"
+                        value={formatMoney(data.stockValue)}
+                        hint={`${formatNumber(data.stockUnits)} unités au prix de revient`}
+                        icon={Boxes}
+                    />
                 </div>
 
-                <div className="grid gap-10 lg:grid-cols-2">
-                    {/* Monthly Sales Chart-style Breakdown */}
-                    <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden p-8">
-                        <div className="flex items-center justify-between mb-8">
-                            <div>
-                                <h3 className="text-xl font-semibold text-slate-950 tracking-tight flex items-center gap-3">
-                                    <BarChart3 className="h-6 w-6 text-blue-600" />
-                                    Ventes par Mois
-                                </h3>
-                                <p className="text-sm font-medium text-slate-400 mt-1">Évolution des 6 derniers mois</p>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            {data.salesByMonth.length === 0 ? (
-                                <div className="text-center py-12 flex flex-col items-center">
-                                    <div className="h-16 w-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
-                                        <BarChart3 className="h-8 w-8 text-slate-200" />
-                                    </div>
-                                    <p className="text-slate-400 font-bold text-sm">Données insuffisantes</p>
-                                </div>
-                            ) : (
-                                data.salesByMonth.map((month) => {
-                                    const maxSales = Math.max(...data.salesByMonth.map(m => Number(m.total)))
-                                    const pct = maxSales > 0 ? (Number(month.total) / maxSales) * 100 : 0
+                <div className="grid gap-4 lg:grid-cols-3">
+                    {/* Ventes par mois */}
+                    <Panel
+                        title="Ventes par mois"
+                        description={`${formatMoney(sixMonthsTotal)} sur les 6 derniers mois`}
+                        className="lg:col-span-2"
+                        bodyClassName="px-5 pb-5 pt-6"
+                    >
+                        {months.length === 0 ? (
+                            <ChartEmpty icon={BarChart3} text="Aucune vente sur les 6 derniers mois." />
+                        ) : (
+                            <div
+                                className="flex h-52 items-end gap-3 sm:gap-5"
+                                role="img"
+                                aria-label={`Ventes par mois sur les 6 derniers mois, total ${formatMoney(sixMonthsTotal)}`}
+                            >
+                                {months.map((month) => {
+                                    const isCurrent = month.month === month.current_month
+                                    const total = Number(month.total)
+                                    const height = total > 0 ? Math.max(6, (total / maxMonth) * 100) : 2
                                     return (
-                                        <div key={month.month} className="group/item">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{month.month}</span>
-                                                <span className="text-sm font-semibold text-slate-950">{formatCurrency(Number(month.total))}</span>
-                                            </div>
-                                            <div className="relative h-4 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100/50">
-                                                <div
-                                                    className="absolute inset-y-0 left-0 bg-blue-600 rounded-full transition-all duration-1000 group-hover/item:bg-blue-500"
-                                                    style={{ width: `${pct}%` }}
-                                                />
-                                            </div>
-                                            <div className="flex items-center justify-between mt-1">
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{month.count} commandes</span>
-                                                <div className="flex items-center gap-1">
-                                                    <ArrowUpRight className="h-3 w-3 text-emerald-500" />
-                                                    <span className="text-[10px] font-semibold text-emerald-500">+{Math.round(pct / 10)}%</span>
-                                                </div>
-                                            </div>
+                                        <div key={month.month} className="group flex h-full flex-1 flex-col items-center justify-end gap-2">
+                                            <span className="tabular text-[11px] font-medium text-muted-foreground">{compact(total)}</span>
+                                            <div
+                                                className={isCurrent ? 'w-full max-w-16 rounded-md bg-brand' : 'w-full max-w-16 rounded-md bg-primary/80 transition-colors group-hover:bg-primary'}
+                                                style={{ height: `${height}%` }}
+                                                title={`${monthLabel(month.month)} : ${formatMoney(total)} · ${formatNumber(month.count)} commande(s)`}
+                                            />
+                                            <span className={isCurrent ? 'text-xs font-semibold capitalize text-foreground' : 'text-xs capitalize text-muted-foreground'}>
+                                                {monthShort(month.month)}
+                                            </span>
                                         </div>
                                     )
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Top Clients Breakdown */}
-                    <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden p-8">
-                        <div className="flex items-center justify-between mb-8">
-                            <div>
-                                <h3 className="text-xl font-semibold text-slate-950 tracking-tight flex items-center gap-3">
-                                    <PieChart className="h-6 w-6 text-emerald-600" />
-                                    Top Clients
-                                </h3>
-                                <p className="text-sm font-medium text-slate-400 mt-1">Par contribution au Chiffre d'Affaires</p>
+                                })}
                             </div>
-                        </div>
+                        )}
+                    </Panel>
 
-                        <div className="space-y-4">
-                            {data.topClients.length === 0 ? (
-                                <div className="text-center py-12 flex flex-col items-center">
-                                    <div className="h-16 w-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
-                                        <Users className="h-8 w-8 text-slate-200" />
-                                    </div>
-                                    <p className="text-slate-400 font-bold text-sm">Aucun historique client</p>
+                    {/* Encours */}
+                    <Panel title="Encours clients" description="Montants restant à recouvrer">
+                        <ul className="divide-y divide-border">
+                            <li className="flex items-start gap-3 px-5 py-4">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                                    <CreditCard className="h-4 w-4" aria-hidden="true" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-foreground">Créances produits</p>
+                                    <p className="text-xs text-muted-foreground">Ventes non encore payées</p>
                                 </div>
-                            ) : (
-                                data.topClients.map((client, i) => (
-                                    <div key={client.name} className="flex items-center gap-4 p-4 rounded-lg hover:bg-slate-50/80 transition-all border border-transparent hover:border-slate-100 group/client">
-                                        <div className="h-12 w-12 rounded-md bg-slate-100 font-semibold text-slate-400 flex items-center justify-center shrink-0 group-hover/client:bg-blue-600 group-hover/client:text-white transition-colors">
-                                            {i + 1}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="text-sm font-semibold text-slate-950 truncate">{client.name}</span>
-                                                <span className="text-sm font-semibold text-slate-950">{formatCurrency(Number(client.total_sales))}</span>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{client.orders_count} transactions</span>
-                                                <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-blue-600/30 w-[60%]" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
+                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(data.productDebt)}</span>
+                            </li>
+                            <li className="flex items-start gap-3 px-5 py-4">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-warning-soft text-warning-foreground">
+                                    <Package className="h-4 w-4" aria-hidden="true" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-foreground">Dettes emballages</p>
+                                    <p className="text-xs text-muted-foreground">Casiers et bouteilles à récupérer</p>
+                                </div>
+                                <span className="tabular text-right text-sm font-semibold text-foreground">{formatMoney(data.packagingDebt)}</span>
+                            </li>
+                        </ul>
+                    </Panel>
                 </div>
 
-                <div className="grid gap-10 lg:grid-cols-2">
-                    {/* Top Products */}
-                    <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden p-8">
-                        <div className="mb-8">
-                            <h3 className="text-xl font-semibold text-slate-950 tracking-tight flex items-center gap-3">
-                                <Package className="h-6 w-6 text-indigo-600" />
-                                Top Produits du Mois
-                            </h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Par chiffre d&apos;affaires</p>
-                        </div>
-                        <div className="space-y-3">
-                            {data.topProducts.length === 0 ? (
-                                <div className="text-center py-12 text-slate-400 font-bold text-sm">Aucune vente ce mois</div>
-                            ) : (
-                                data.topProducts.map((prod, i) => {
-                                    const maxRev = Math.max(...data.topProducts.map(p => Number(p.revenue)))
-                                    const pct = maxRev > 0 ? (Number(prod.revenue) / maxRev) * 100 : 0
+                {/* Détail mensuel */}
+                {data.salesByMonth.length > 0 && (
+                    <Panel title="Détail mensuel" description="Variation par rapport au mois précédent">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="hover:bg-transparent">
+                                    <TableHead className="pl-5">Mois</TableHead>
+                                    <TableHead className="text-right">Commandes</TableHead>
+                                    <TableHead className="text-right">Montant</TableHead>
+                                    <TableHead className="pr-5 text-right">Variation</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {data.salesByMonth.map((month, index) => {
+                                    // Variation réelle par rapport au mois précédent (liste triée du plus récent au plus ancien)
+                                    const previous = data.salesByMonth[index + 1]
+                                    const previousTotal = Number(previous?.total || 0)
+                                    const variation = previous && previousTotal > 0
+                                        ? Math.round(((Number(month.total) - previousTotal) / previousTotal) * 100)
+                                        : null
                                     return (
-                                        <div key={`${prod.product_name}-${prod.packaging_name}`} className="flex items-center gap-4 p-3 rounded-md hover:bg-slate-50 transition-colors">
-                                            <span className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-400 shrink-0">{i + 1}</span>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-sm font-semibold text-slate-950 truncate">{prod.product_name}</span>
-                                                    <span className="text-sm font-semibold text-slate-950 ml-2">{formatCurrency(Number(prod.revenue))}</span>
-                                                </div>
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-[10px] font-bold text-slate-400">{prod.packaging_name} — {prod.units_sold} vendus</span>
-                                                    <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                        <div className="h-full bg-indigo-500/40 rounded-full" style={{ width: `${pct}%` }} />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <TableRow key={month.month}>
+                                            <TableCell className="pl-5 font-medium capitalize text-foreground">
+                                                {monthLabel(month.month)}
+                                                {month.month === month.current_month && (
+                                                    <span className="ml-2 align-middle">
+                                                        <StatusBadge label="En cours" tone="brand" />
+                                                    </span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(month.count)}</TableCell>
+                                            <TableCell className="tabular text-right font-semibold text-foreground">{formatMoney(Number(month.total))}</TableCell>
+                                            <TableCell className="pr-5 text-right">
+                                                {variation === null ? (
+                                                    <span className="text-muted-foreground">—</span>
+                                                ) : (
+                                                    <span
+                                                        className={`tabular inline-flex items-center gap-1 text-xs font-semibold ${variation >= 0 ? 'text-success' : 'text-destructive'}`}
+                                                    >
+                                                        {variation >= 0 ? (
+                                                            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                                                        ) : (
+                                                            <ArrowDownRight className="h-3.5 w-3.5" aria-hidden="true" />
+                                                        )}
+                                                        {variation >= 0 ? '+' : '−'}{Math.abs(variation)} %
+                                                    </span>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
                                     )
-                                })
-                            )}
-                        </div>
-                    </div>
+                                })}
+                            </TableBody>
+                        </Table>
+                    </Panel>
+                )}
 
-                    {/* Payment Methods */}
-                    <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden p-8">
-                        <div className="mb-8">
-                            <h3 className="text-xl font-semibold text-slate-950 tracking-tight flex items-center gap-3">
-                                <Wallet className="h-6 w-6 text-indigo-600" />
-                                Répartition des Paiements
-                            </h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Canaux de règlement ce mois</p>
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            {data.paymentMethods.length === 0 ? (
-                                <div className="col-span-full text-center py-12 text-slate-400 font-bold">Données indisponibles</div>
-                            ) : (
-                                data.paymentMethods.map((pm) => (
-                                    <div key={pm.payment_method} className="p-6 rounded-[2rem] bg-slate-50 border border-slate-100 hover:bg-white hover:shadow-md hover:shadow-blue-500/5 transition-all">
-                                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                                            {paymentLabels[pm.payment_method] || pm.payment_method}
-                                        </p>
-                                        <p className="text-xl font-semibold text-slate-950 leading-none mb-2">{formatCurrency(Number(pm.total))}</p>
-                                        <div className="flex items-center gap-2">
-                                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{pm.count} transactions</span>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Daily Sales Bar Chart */}
-                <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden p-8">
-                    <div className="mb-8">
-                        <h3 className="text-xl font-semibold text-slate-950 tracking-tight flex items-center gap-3">
-                            <BarChart3 className="h-6 w-6 text-emerald-600" />
-                            Ventes Journalières
-                        </h3>
-                        <p className="text-sm font-medium text-slate-400 mt-1">Évolution quotidienne du mois en cours</p>
-                    </div>
+                {/* Ventes journalières */}
+                <Panel
+                    title="Ventes journalières"
+                    description="Jours avec ventes du mois en cours"
+                    bodyClassName="px-5 pb-5 pt-6"
+                >
                     {data.dailySales.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400 font-bold text-sm">Aucune donnée ce mois</div>
+                        <ChartEmpty icon={BarChart3} text="Aucune vente ce mois-ci." />
                     ) : (
-                        <div className="flex items-end gap-1 h-48 overflow-x-auto pb-2">
-                            {data.dailySales.map((day) => {
-                                const maxDay = Math.max(...data.dailySales.map(d => Number(d.total)))
-                                const hPct = maxDay > 0 ? (Number(day.total) / maxDay) * 100 : 0
-                                return (
-                                    <div key={day.day} className="flex flex-col items-center gap-1 flex-1 min-w-[24px] group/bar">
-                                        <span className="text-[9px] font-semibold text-slate-400 opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
-                                            {formatCurrency(Number(day.total))}
-                                        </span>
-                                        <div
-                                            className="w-full rounded-t-lg bg-emerald-500 hover:bg-emerald-400 transition-all cursor-pointer min-h-[4px]"
-                                            style={{ height: `${Math.max(hPct, 3)}%` }}
-                                            title={`${new Date(day.day).toLocaleDateString('fr-FR')}: ${formatCurrency(Number(day.total))} (${day.count} cmd)`}
-                                        />
-                                        <span className="text-[8px] font-bold text-slate-300 leading-none">
-                                            {new Date(day.day).getDate()}
-                                        </span>
-                                    </div>
-                                )
-                            })}
+                        <div className="overflow-x-auto">
+                            <div
+                                className="flex h-48 min-w-max items-end gap-1.5 sm:min-w-0"
+                                role="img"
+                                aria-label={`Ventes journalières du mois en cours, ${data.dailySales.length} jour(s) avec ventes`}
+                            >
+                                {data.dailySales.map((day) => {
+                                    const total = Number(day.total)
+                                    const isToday = dayOfMonth(day.day) === todayOfMonth
+                                    const hPct = total > 0 ? Math.max(4, (total / maxDay) * 100) : 2
+                                    return (
+                                        <div key={String(day.day)} className="group flex h-full min-w-6 flex-1 flex-col items-center justify-end gap-2">
+                                            <span className="tabular whitespace-nowrap text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                                                {compact(total)}
+                                            </span>
+                                            <div
+                                                className={isToday ? 'w-full rounded-md bg-brand' : 'w-full rounded-md bg-primary/80 transition-colors group-hover:bg-primary'}
+                                                style={{ height: `${hPct}%` }}
+                                                title={`${formatDate(day.day)} : ${formatMoney(day.total)} (${formatNumber(day.count)} cmd)`}
+                                            />
+                                            <span className={isToday ? 'tabular text-[11px] font-semibold text-foreground' : 'tabular text-[11px] text-muted-foreground'}>
+                                                {dayOfMonth(day.day)}
+                                            </span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
                         </div>
                     )}
+                </Panel>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                    {/* Meilleurs clients */}
+                    <Panel title="Meilleurs clients" description="Par chiffre d’affaires, toutes périodes">
+                        {data.topClients.length === 0 ? (
+                            <ChartEmpty icon={Users} text="Aucun historique client pour l’instant." />
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="w-10 pl-5">#</TableHead>
+                                        <TableHead>Client</TableHead>
+                                        <TableHead className="text-right">Commandes</TableHead>
+                                        <TableHead className="pr-5 text-right">Montant</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {data.topClients.map((client, i) => (
+                                        <TableRow key={`${client.name}-${i}`}>
+                                            <TableCell className="tabular pl-5 text-muted-foreground">{i + 1}</TableCell>
+                                            <TableCell className="max-w-0 w-full">
+                                                <span className="block truncate font-medium text-foreground">{client.name}</span>
+                                                <span className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                                                    <span
+                                                        className="block h-full rounded-full bg-primary/70"
+                                                        style={{ width: `${maxClient > 0 ? (Number(client.total_sales) / maxClient) * 100 : 0}%` }}
+                                                    />
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(client.orders_count)}</TableCell>
+                                            <TableCell className="tabular pr-5 text-right font-semibold text-foreground">
+                                                {formatMoney(Number(client.total_sales))}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </Panel>
+
+                    {/* Produits du mois */}
+                    <Panel title="Produits les plus vendus" description="Par chiffre d’affaires, mois en cours">
+                        {data.topProducts.length === 0 ? (
+                            <ChartEmpty icon={Package} text="Aucune vente ce mois-ci." />
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="w-10 pl-5">#</TableHead>
+                                        <TableHead>Produit</TableHead>
+                                        <TableHead className="text-right">Vendus</TableHead>
+                                        <TableHead className="pr-5 text-right">Montant</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {data.topProducts.map((prod, i) => (
+                                        <TableRow key={`${prod.product_name}-${prod.packaging_name}`}>
+                                            <TableCell className="tabular pl-5 text-muted-foreground">{i + 1}</TableCell>
+                                            <TableCell className="max-w-0 w-full">
+                                                <span className="block truncate font-medium text-foreground">{prod.product_name}</span>
+                                                <span className="block truncate text-xs text-muted-foreground">{prod.packaging_name}</span>
+                                                <span className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                                                    <span
+                                                        className="block h-full rounded-full bg-primary/70"
+                                                        style={{ width: `${maxProduct > 0 ? (Number(prod.revenue) / maxProduct) * 100 : 0}%` }}
+                                                    />
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="tabular text-right text-muted-foreground">{formatNumber(prod.units_sold)}</TableCell>
+                                            <TableCell className="tabular pr-5 text-right font-semibold text-foreground">
+                                                {formatMoney(Number(prod.revenue))}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </Panel>
                 </div>
-            </main>
+
+                {/* Moyens de paiement */}
+                <Panel title="Moyens de paiement" description="Répartition des ventes du mois en cours">
+                    {data.paymentMethods.length === 0 ? (
+                        <ChartEmpty icon={Wallet} text="Aucune vente ce mois-ci." />
+                    ) : (
+                        <ul className="grid divide-y divide-border sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4">
+                            {data.paymentMethods.map((pm) => {
+                                const share = paymentsTotal > 0 ? Math.round((Number(pm.total) / paymentsTotal) * 100) : 0
+                                return (
+                                    <li key={pm.payment_method ?? 'unknown'} className="space-y-2 px-5 py-4">
+                                        <div className="flex items-baseline justify-between gap-2">
+                                            <span className="text-sm font-medium text-foreground">
+                                                {paymentLabels[pm.payment_method] || pm.payment_method || 'Non renseigné'}
+                                            </span>
+                                            <span className="tabular text-xs text-muted-foreground">{share} %</span>
+                                        </div>
+                                        <p className="tabular text-lg font-semibold tracking-tight text-foreground">{formatMoney(Number(pm.total))}</p>
+                                        <div className="h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                                            <div className="h-full rounded-full bg-primary/70" style={{ width: `${share}%` }} />
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">{formatNumber(pm.count)} transaction(s)</p>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    )}
+                </Panel>
+            </PageShell>
         </div>
     )
 }

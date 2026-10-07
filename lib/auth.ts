@@ -1,4 +1,4 @@
-import NextAuth from 'next-auth'
+import NextAuth, { CredentialsSignin } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import Google from 'next-auth/providers/google'
 import { compare } from 'bcryptjs'
@@ -7,8 +7,24 @@ import { sql, sqlRaw, transaction } from './db'
 import { ensureCompaniesSchema } from './ensure-companies-schema'
 import { ensureUsersFullNameColumn } from './ensure-users-schema'
 import { verifyImpersonationToken } from './impersonation'
+import { verifyTotp } from './totp'
+import { clientIp, isRateLimited } from './rate-limit'
 import { getSettings } from './settings'
 import type { UserRole } from './types'
+
+/**
+ * Erreurs de connexion typées : NextAuth ne transmet au client que le `code`
+ * (jamais le message). Les codes sont traduits par components/auth/auth-errors.ts.
+ */
+class LoginError extends CredentialsSignin {
+  constructor(code: 'invalid_credentials' | 'rate_limited' | 'suspended' | 'disabled' | 'invalid_token' | 'otp_required' | 'otp_invalid') {
+    super()
+    this.code = code
+  }
+}
+
+/** Durée maximale d'une session d'assistance (impersonation). */
+const IMPERSONATION_MAX_AGE_MS = 60 * 60 * 1000
 
 type NormalizedUser = {
   id: string
@@ -20,8 +36,10 @@ type NormalizedUser = {
   companyName: string
   companySlug: string
   onboardingCompleted: boolean
+  sessionVersion: number
   isPlatformAdmin?: boolean
   impersonatedBy?: string | null
+  impersonationExpiresAt?: number | null
 }
 
 function normalizePermissions(p: string[] | string | undefined | null): string[] {
@@ -36,49 +54,76 @@ function normalizePermissions(p: string[] | string | undefined | null): string[]
   return []
 }
 
+function toNormalizedUser(u: any): NormalizedUser {
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.full_name,
+    role: u.role,
+    permissions: normalizePermissions(u.permissions),
+    companyId: u.company_id,
+    companyName: u.company_name,
+    companySlug: u.company_slug,
+    onboardingCompleted: u.onboarding_completed !== false,
+    sessionVersion: Number(u.session_version ?? 0),
+  }
+}
+
+async function findTenantUserByEmail(email: string) {
+  const rows = await sql`
+    SELECT u.*, c.name as company_name, c.slug as company_slug,
+           c.onboarding_completed, c.is_suspended
+    FROM users u
+    JOIN companies c ON u.company_id = c.id
+    WHERE lower(u.email) = ${email}
+  `
+  return rows[0] as any | undefined
+}
+
+/**
+ * Décide si une connexion Google est autorisée (appelé par le callback signIn).
+ * Renvoie true, ou une URL de redirection portant le motif du refus.
+ */
+async function checkGoogleSignIn(email: string): Promise<true | string> {
+  const settings = await getSettings()
+  if (!settings.google_oauth_enabled) return '/login?error=GoogleDisabled'
+
+  const existing = await findTenantUserByEmail(email)
+  if (existing) {
+    if (!existing.is_active) return '/login?error=AccountDisabled'
+    if (existing.is_suspended) return '/login?error=CompanySuspended'
+    return true
+  }
+
+  // Les admins plateforme n'utilisent pas Google
+  const admins = await sql`SELECT 1 FROM platform_admins WHERE lower(email) = ${email} LIMIT 1`
+  if (admins.length > 0) return '/login?error=UseAdminLogin'
+
+  if (!settings.registrations_open) return '/login?error=RegistrationsClosed'
+  return true
+}
+
 /**
  * Map an OAuth (Google) account to a B-Stock user.
  * - Existing email -> returns that user (account linking by verified email).
- * - New email      -> provisions a company + owner user + main depot (30-day trial),
+ * - New email      -> provisions a company + owner user + main depot (trial),
  *                     exactly like the email/password sign-up, so the multi-tenant
  *                     model stays consistent. The user can rename the company later.
+ * Les règles d'accès (désactivé, suspendu, inscriptions fermées) sont déjà
+ * appliquées par checkGoogleSignIn.
  */
 async function getOrCreateOAuthUser(
   email: string,
   name?: string | null,
   image?: string | null
 ): Promise<NormalizedUser | null> {
-  // Respect the global toggle for Google sign-in
+  const existing = await findTenantUserByEmail(email)
+  if (existing) {
+    await sql`UPDATE users SET last_login_at = NOW() WHERE id = ${existing.id}`
+    return toNormalizedUser(existing)
+  }
+
   const settings = await getSettings()
-  if (!settings.google_oauth_enabled) {
-    return null
-  }
-
-  const existing = await sql`
-    SELECT u.*, c.name as company_name, c.slug as company_slug,
-           c.onboarding_completed
-    FROM users u
-    JOIN companies c ON u.company_id = c.id
-    WHERE u.email = ${email} AND u.is_active = true
-  `
-
-  if (existing[0]) {
-    const u = existing[0] as any
-    await sql`UPDATE users SET last_login_at = NOW() WHERE id = ${u.id}`
-    return {
-      id: u.id,
-      email: u.email,
-      name: u.full_name,
-      role: u.role,
-      permissions: normalizePermissions(u.permissions),
-      companyId: u.company_id,
-      companyName: u.company_name,
-      companySlug: u.company_slug,
-      onboardingCompleted: u.onboarding_completed !== false,
-    }
-  }
-
-  // First-time Google user -> provision a fresh tenant
   await ensureCompaniesSchema()
   await ensureUsersFullNameColumn()
 
@@ -105,30 +150,12 @@ async function getOrCreateOAuthUser(
     `,
     sqlRaw`
       INSERT INTO depots (company_id, name, is_main)
-      VALUES (${companyId}, 'Depot Principal', true)
+      VALUES (${companyId}, 'Dépôt principal', true)
     `,
   ])
 
-  const created = await sql`
-    SELECT u.*, c.name as company_name, c.slug as company_slug,
-           c.onboarding_completed
-    FROM users u
-    JOIN companies c ON u.company_id = c.id
-    WHERE u.company_id = ${companyId} AND u.email = ${email}
-  `
-  const u = created[0] as any
-  if (!u) return null
-  return {
-    id: u.id,
-    email: u.email,
-    name: u.full_name,
-    role: u.role,
-    permissions: normalizePermissions(u.permissions),
-    companyId: u.company_id,
-    companyName: u.company_name,
-    companySlug: u.company_slug,
-    onboardingCompleted: u.onboarding_completed !== false,
-  }
+  const created = await findTenantUserByEmail(email)
+  return created ? toNormalizedUser(created) : null
 }
 
 declare module 'next-auth/jwt' {
@@ -140,8 +167,10 @@ declare module 'next-auth/jwt' {
     companyName?: string
     companySlug?: string
     onboardingCompleted?: boolean
+    sessionVersion?: number
     isPlatformAdmin?: boolean
     impersonatedBy?: string | null
+    impersonationExpiresAt?: number | null
   }
 }
 
@@ -157,8 +186,10 @@ declare module 'next-auth' {
       companyName: string
       companySlug: string
       onboardingCompleted: boolean
+      sessionVersion: number
       isPlatformAdmin: boolean
       impersonatedBy: string | null
+      impersonationExpiresAt: number | null
     }
   }
 
@@ -172,14 +203,16 @@ declare module 'next-auth' {
     companyName: string
     companySlug: string
     onboardingCompleted: boolean
+    sessionVersion?: number
     isPlatformAdmin?: boolean
     impersonatedBy?: string | null
+    impersonationExpiresAt?: number | null
   }
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
-  debug: process.env.NODE_ENV !== 'production',
+  debug: process.env.AUTH_DEBUG === 'true',
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -190,27 +223,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        otp: { label: 'Code de vérification', type: 'text' },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('Email et mot de passe requis')
+          throw new LoginError('invalid_credentials')
         }
 
-        const email = (credentials.email as string).toLowerCase()
+        const email = String(credentials.email).trim().toLowerCase()
+        const password = String(credentials.password)
+
+        // Anti brute-force : par compte et par adresse IP (fenêtre de 15 min)
+        const ip = request?.headers ? clientIp(request.headers) : 'unknown'
+        if (
+          (await isRateLimited('login-email', email, { limit: 10, windowSeconds: 900 })) ||
+          (await isRateLimited('login-ip', ip, { limit: 50, windowSeconds: 900 }))
+        ) {
+          throw new LoginError('rate_limited')
+        }
 
         // 1) Platform admin (back office /admin) — decoupled from tenants
         const admins = await sql`
-          SELECT id, email, full_name, password_hash, role
+          SELECT id, email, full_name, password_hash, role, totp_enabled, totp_secret, session_version
           FROM platform_admins
-          WHERE email = ${email} AND is_active = true
+          WHERE lower(email) = ${email} AND is_active = true
         `
         const admin = admins[0] as
-          | { id: string; email: string; full_name: string; password_hash: string; role: string }
+          | { id: string; email: string; full_name: string; password_hash: string; role: string; totp_enabled: boolean; totp_secret: string | null; session_version: number }
           | undefined
 
         if (admin) {
-          const ok = await compare(credentials.password as string, admin.password_hash)
-          if (!ok) throw new Error('Email ou mot de passe incorrect')
+          const ok = await compare(password, admin.password_hash)
+          if (!ok) throw new LoginError('invalid_credentials')
+          // Double authentification : code de l'application d'authentification
+          if (admin.totp_enabled && admin.totp_secret) {
+            const otp = typeof credentials.otp === 'string' ? credentials.otp : ''
+            if (!otp) throw new LoginError('otp_required')
+            if (!verifyTotp(admin.totp_secret, otp)) throw new LoginError('otp_invalid')
+          }
           await sql`UPDATE platform_admins SET last_login_at = NOW() WHERE id = ${admin.id}`
           return {
             id: admin.id,
@@ -222,80 +272,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             companyName: 'Plateforme',
             companySlug: '',
             onboardingCompleted: true,
+            sessionVersion: Number(admin.session_version ?? 0),
             isPlatformAdmin: true,
             impersonatedBy: null,
           }
         }
 
         // 2) Tenant user
-        const users = await sql`
-          SELECT u.*, c.name as company_name, c.slug as company_slug,
-                 c.subscription_status, c.onboarding_completed, c.is_suspended
-          FROM users u
-          JOIN companies c ON u.company_id = c.id
-          WHERE u.email = ${email}
-          AND u.is_active = true
-        `
+        const user = await findTenantUserByEmail(email)
 
-        const user = users[0] as
-          | {
-            id: string
-            email: string
-            full_name: string
-            password_hash: string
-            role: UserRole
-            permissions?: string[] | string // Handle if returned as string from some DB drivers
-            company_id: string
-            company_name: string
-            company_slug: string
-            subscription_status: string
-            onboarding_completed?: boolean
-            is_suspended?: boolean
-          }
-          | undefined
-
-        if (!user) {
-          throw new Error('Email ou mot de passe incorrect')
+        // Comptes Google sans mot de passe local : même message générique
+        if (!user || !user.is_active || !user.password_hash) {
+          throw new LoginError('invalid_credentials')
         }
 
-        if (user.is_suspended) {
-          throw new Error('Compte entreprise suspendu. Contactez le support.')
-        }
-
-        const isValid = await compare(credentials.password as string, user.password_hash)
-
+        const isValid = await compare(password, user.password_hash)
         if (!isValid) {
-          throw new Error('Email ou mot de passe incorrect')
+          throw new LoginError('invalid_credentials')
         }
 
-        // Update last login
+        // Vérifié APRÈS le mot de passe : ne révèle rien à un inconnu
+        if (user.is_suspended) {
+          throw new LoginError('suspended')
+        }
+
         await sql`UPDATE users SET last_login_at = NOW() WHERE id = ${user.id}`
 
-        // Normalize permissions
-        let permissions: string[] = []
-        if (Array.isArray(user.permissions)) {
-          permissions = user.permissions
-        } else if (typeof user.permissions === 'string') {
-          try {
-            permissions = JSON.parse(user.permissions)
-          } catch {
-            permissions = []
-          }
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.full_name,
-          role: user.role,
-          permissions,
-          companyId: user.company_id,
-          companyName: user.company_name,
-          companySlug: user.company_slug,
-          onboardingCompleted: user.onboarding_completed !== false,
-          isPlatformAdmin: false,
-          impersonatedBy: null,
-        }
+        return { ...toNormalizedUser(user), isPlatformAdmin: false, impersonatedBy: null }
       },
     }),
     Credentials({
@@ -309,50 +312,60 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!token) return null
 
         const payload = verifyImpersonationToken(token)
-        if (!payload) throw new Error("Jeton d'impersonation invalide ou expiré")
+        if (!payload) throw new LoginError('invalid_token')
+
+        // Usage unique : la 2e tentative avec le même jeton échoue
+        const used = await sql`
+          INSERT INTO impersonation_token_uses (jti, admin_id, target_user_id)
+          VALUES (${payload.jti}, ${payload.adminId}, ${payload.uid})
+          ON CONFLICT (jti) DO NOTHING
+          RETURNING jti
+        `
+        if (used.length === 0) throw new LoginError('invalid_token')
 
         const rows = await sql`
           SELECT u.*, c.name as company_name, c.slug as company_slug,
                  c.onboarding_completed, c.is_suspended
           FROM users u
           JOIN companies c ON u.company_id = c.id
-          WHERE u.id = ${payload.uid}
+          WHERE u.id = ${payload.uid} AND u.is_active = true
         `
         const u = rows[0] as any
-        if (!u) throw new Error('Utilisateur cible introuvable')
+        if (!u) throw new LoginError('disabled')
 
         return {
-          id: u.id,
-          email: u.email,
-          name: u.full_name,
-          role: u.role,
-          permissions: normalizePermissions(u.permissions),
-          companyId: u.company_id,
-          companyName: u.company_name,
-          companySlug: u.company_slug,
-          onboardingCompleted: u.onboarding_completed !== false,
+          ...toNormalizedUser(u),
           isPlatformAdmin: false,
           impersonatedBy: payload.adminId,
+          impersonationExpiresAt: Date.now() + IMPERSONATION_MAX_AGE_MS,
         }
       },
     }),
   ],
   callbacks: {
     async signIn({ account, profile }) {
-      // Only allow Google sign-in with a verified email address
       if (account?.provider === 'google') {
-        return Boolean(profile?.email) && profile?.email_verified === true
+        // Only allow Google sign-in with a verified email address
+        if (!profile?.email || profile.email_verified !== true) return false
+        return checkGoogleSignIn(profile.email.toLowerCase())
       }
       return true
     },
-    async jwt({ token, user, account, trigger, session }) {
-      // Client-side session.update() — e.g. after completing onboarding
-      if (trigger === 'update' && session) {
-        if (typeof session.companyName === 'string') {
-          token.companyName = session.companyName
-        }
-        if (typeof session.onboardingCompleted === 'boolean') {
-          token.onboardingCompleted = session.onboardingCompleted
+    async jwt({ token, user, account, trigger }) {
+      // session.update() côté client (ex. fin d'onboarding) : on ne fait PAS
+      // confiance aux valeurs envoyées, on relit la base.
+      if (trigger === 'update') {
+        if (token.companyId && token.id) {
+          const rows = await sql`
+            SELECT c.name, c.onboarding_completed
+            FROM companies c
+            JOIN users u ON u.company_id = c.id
+            WHERE c.id = ${token.companyId} AND u.id = ${token.id}
+          `
+          if (rows[0]) {
+            token.companyName = rows[0].name
+            token.onboardingCompleted = rows[0].onboarding_completed !== false
+          }
         }
         return token
       }
@@ -360,7 +373,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // Google: enrich (or provision) the token from our DB on first sign-in
       if (account?.provider === 'google' && user?.email) {
         const dbUser = await getOrCreateOAuthUser(
-          user.email,
+          user.email.toLowerCase(),
           user.name,
           (user as { image?: string | null }).image
         )
@@ -374,27 +387,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           token.companyName = dbUser.companyName
           token.companySlug = dbUser.companySlug
           token.onboardingCompleted = dbUser.onboardingCompleted
+          token.sessionVersion = dbUser.sessionVersion
           token.isPlatformAdmin = false
           token.impersonatedBy = null
+          token.impersonationExpiresAt = null
         }
         return token
       }
 
       // Credentials / impersonate: the user object already carries the fields
       if (user) {
-        const u = user as {
-          id: string
-          email?: string | null
-          name?: string | null
-          role: UserRole
-          permissions: string[]
-          companyId: string
-          companyName: string
-          companySlug: string
-          onboardingCompleted: boolean
-          isPlatformAdmin?: boolean
-          impersonatedBy?: string | null
-        }
+        const u = user as NormalizedUser & { email?: string | null; name?: string | null }
         token.id = u.id
         token.email = u.email
         token.name = u.name
@@ -404,8 +407,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.companyName = u.companyName
         token.companySlug = u.companySlug
         token.onboardingCompleted = u.onboardingCompleted
+        token.sessionVersion = u.sessionVersion ?? 0
         token.isPlatformAdmin = u.isPlatformAdmin === true
         token.impersonatedBy = u.impersonatedBy ?? null
+        token.impersonationExpiresAt = u.impersonationExpiresAt ?? null
       }
       return token
     },
@@ -422,8 +427,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // Existing tokens (issued before this field existed) default to true
         // so only newly-provisioned Google accounts are forced into onboarding.
         session.user.onboardingCompleted = token.onboardingCompleted !== false
+        session.user.sessionVersion = token.sessionVersion ?? 0
         session.user.isPlatformAdmin = token.isPlatformAdmin === true
         session.user.impersonatedBy = (token.impersonatedBy as string | null) ?? null
+        session.user.impersonationExpiresAt = token.impersonationExpiresAt ?? null
       }
       return session
     },
@@ -437,89 +444,3 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
 })
-
-// ===== Permission helpers =====
-
-/**
- * Check if a role has a specific permission.
- * Permissions are stored as strings like 'products.read', 'sales.write' etc.
- */
-export async function hasPermission(
-  role: UserRole,
-  permission: string
-): Promise<boolean> {
-  const result = await sql`
-    SELECT 1 FROM role_permissions
-    WHERE role = ${role} AND permission = ${permission}
-    LIMIT 1
-  `
-  return result.length > 0
-}
-
-/**
- * Get all permissions for a role
- */
-export async function getRolePermissions(role: UserRole): Promise<string[]> {
-  const permissions = await sql`
-    SELECT permission FROM role_permissions
-    WHERE role = ${role}
-    ORDER BY permission
-  `
-  return permissions.map((p: any) => p.permission)
-}
-
-/**
- * Check if session user has the required permission.
- * Returns the error response or null if authorized.
- */
-export async function requirePermission(
-  role: UserRole,
-  permission: string
-): Promise<boolean> {
-  // Owner always has access
-  if (role === 'owner') return true
-  return hasPermission(role, permission)
-}
-
-// ===== Company helpers =====
-
-export async function getCompany(companyId: string) {
-  const companies = await sql`
-    SELECT * FROM companies WHERE id = ${companyId}
-  `
-  return companies[0] ?? null
-}
-
-export async function checkSubscription(companyId: string): Promise<{
-  isActive: boolean
-  status: string
-  trialEndsAt?: string
-  daysRemaining?: number
-}> {
-  const company = await getCompany(companyId)
-
-  if (!company) {
-    return { isActive: false, status: 'not_found' }
-  }
-
-  const now = new Date()
-
-  if (company.subscription_status === 'trialing' && company.trial_ends_at) {
-    const trialEnds = new Date(company.trial_ends_at)
-    const daysRemaining = Math.ceil(
-      (trialEnds.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-    )
-
-    return {
-      isActive: daysRemaining > 0,
-      status: 'trialing',
-      trialEndsAt: trialEnds.toISOString(),
-      daysRemaining: Math.max(0, daysRemaining),
-    }
-  }
-
-  return {
-    isActive: company.subscription_status === 'active',
-    status: company.subscription_status,
-  }
-}

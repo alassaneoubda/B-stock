@@ -1,0 +1,29 @@
+# B-Stock — base PostgreSQL locale pour le développement.
+# Isolée de la production : n'écoute que sur 127.0.0.1:5433.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   npm run db:migrate
+#
+# DATABASE_URL correspondant (dans .env.development.local) :
+#   postgresql://bstock:bstock_dev@localhost:5433/bstock
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: bstock-dev-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bstock
+      POSTGRES_PASSWORD: bstock_dev
+      POSTGRES_DB: bstock
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - bstock-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bstock -d bstock']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  bstock-dev-data:

@@ -39,11 +39,11 @@ export default async function SupportPage() {
   return (
     <div>
       {/* Hero */}
-      <header className="relative overflow-hidden border-b border-zinc-200/60 bg-gradient-to-b from-zinc-50 to-white">
+      <header className="relative overflow-hidden border-b border-border bg-gradient-to-b from-zinc-50 to-white">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_-20%,rgba(59,130,246,0.08),transparent)]" />
         <div className="relative mx-auto max-w-4xl px-6 py-14 sm:py-20 text-center">
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-950">Comment pouvons-nous aider ?</h1>
-          <p className="mt-3 text-lg text-zinc-500 max-w-2xl mx-auto leading-relaxed">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">Comment pouvons-nous aider ?</h1>
+          <p className="mt-3 text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Une question, un blocage ? Notre équipe est là pour vous accompagner.
           </p>
         </div>
@@ -54,57 +54,57 @@ export default async function SupportPage() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-14">
           <a
             href={`mailto:${email}`}
-            className="group rounded-xl border border-zinc-200 p-5 hover:border-zinc-300 hover:shadow-sm transition-all"
+            className="group rounded-xl border border-border p-5 hover:border-border hover:shadow-sm transition-all"
           >
-            <div className="h-10 w-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
+            <div className="h-10 w-10 rounded-lg bg-brand-soft text-brand-strong flex items-center justify-center mb-3">
               <Mail className="h-5 w-5" />
             </div>
-            <h3 className="text-base font-semibold text-zinc-950">E-mail</h3>
-            <p className="text-sm text-zinc-500 mt-1 break-all">{email}</p>
+            <h3 className="text-base font-semibold text-foreground">E-mail</h3>
+            <p className="text-sm text-muted-foreground mt-1 break-all">{email}</p>
           </a>
 
           {phone ? (
             <a
               href={`tel:${phone.replace(/\s/g, '')}`}
-              className="group rounded-xl border border-zinc-200 p-5 hover:border-zinc-300 hover:shadow-sm transition-all"
+              className="group rounded-xl border border-border p-5 hover:border-border hover:shadow-sm transition-all"
             >
-              <div className="h-10 w-10 rounded-lg bg-green-50 text-green-600 flex items-center justify-center mb-3">
+              <div className="h-10 w-10 rounded-lg bg-success-soft text-success flex items-center justify-center mb-3">
                 <Phone className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-semibold text-zinc-950">Téléphone</h3>
-              <p className="text-sm text-zinc-500 mt-1">{phone}</p>
+              <h3 className="text-base font-semibold text-foreground">Téléphone</h3>
+              <p className="text-sm text-muted-foreground mt-1">{phone}</p>
             </a>
           ) : (
             <Link
               href="/contact"
-              className="group rounded-xl border border-zinc-200 p-5 hover:border-zinc-300 hover:shadow-sm transition-all"
+              className="group rounded-xl border border-border p-5 hover:border-border hover:shadow-sm transition-all"
             >
-              <div className="h-10 w-10 rounded-lg bg-green-50 text-green-600 flex items-center justify-center mb-3">
+              <div className="h-10 w-10 rounded-lg bg-success-soft text-success flex items-center justify-center mb-3">
                 <MessageCircle className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-semibold text-zinc-950">Nous écrire</h3>
-              <p className="text-sm text-zinc-500 mt-1">Via le formulaire de contact</p>
+              <h3 className="text-base font-semibold text-foreground">Nous écrire</h3>
+              <p className="text-sm text-muted-foreground mt-1">Via le formulaire de contact</p>
             </Link>
           )}
 
           <Link
             href="/guide"
-            className="group rounded-xl border border-zinc-200 p-5 hover:border-zinc-300 hover:shadow-sm transition-all"
+            className="group rounded-xl border border-border p-5 hover:border-border hover:shadow-sm transition-all"
           >
-            <div className="h-10 w-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center mb-3">
+            <div className="h-10 w-10 rounded-lg bg-warning-soft text-warning-foreground flex items-center justify-center mb-3">
               <BookOpen className="h-5 w-5" />
             </div>
-            <h3 className="text-base font-semibold text-zinc-950">Guide d&apos;utilisation</h3>
-            <p className="text-sm text-zinc-500 mt-1">Prise en main pas à pas</p>
+            <h3 className="text-base font-semibold text-foreground">Guide d&apos;utilisation</h3>
+            <p className="text-sm text-muted-foreground mt-1">Prise en main pas à pas</p>
           </Link>
         </div>
 
         {/* Hours */}
-        <div className="flex items-start gap-3 rounded-xl bg-zinc-50 border border-zinc-200/70 p-5 mb-14">
-          <Clock className="h-5 w-5 text-zinc-500 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-3 rounded-xl bg-muted/50 border border-border p-5 mb-14">
+          <Clock className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-zinc-900">Horaires du support</p>
-            <p className="text-sm text-zinc-500 mt-0.5">
+            <p className="text-sm font-semibold text-foreground">Horaires du support</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
               Du lundi au vendredi, 8h–18h (GMT, Abidjan). Les clients des formules supérieures
               bénéficient d&apos;un support prioritaire.
             </p>
@@ -112,15 +112,15 @@ export default async function SupportPage() {
         </div>
 
         {/* FAQ */}
-        <h2 className="text-xl font-bold text-zinc-950 mb-5">Questions fréquentes</h2>
+        <h2 className="text-xl font-bold text-foreground mb-5">Questions fréquentes</h2>
         <div className="space-y-3">
           {faqs.map((f) => (
-            <details key={f.q} className="group rounded-xl border border-zinc-200 p-5 [&_summary]:cursor-pointer">
-              <summary className="flex items-center justify-between text-sm font-semibold text-zinc-900 list-none">
+            <details key={f.q} className="group rounded-xl border border-border p-5 [&_summary]:cursor-pointer">
+              <summary className="flex items-center justify-between text-sm font-semibold text-foreground list-none">
                 {f.q}
-                <span className="text-zinc-400 group-open:rotate-180 transition-transform">⌄</span>
+                <span className="text-muted-foreground/70 group-open:rotate-180 transition-transform">⌄</span>
               </summary>
-              <p className="mt-3 text-sm text-zinc-600 leading-relaxed">{f.a}</p>
+              <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{f.a}</p>
             </details>
           ))}
         </div>

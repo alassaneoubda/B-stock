@@ -1,8 +1,9 @@
-import { auth } from '@/lib/auth'
+import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
+import { EmptyState } from '@/components/states'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
     Table,
     TableBody,
@@ -17,20 +18,8 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-    Plus,
-    MoreHorizontal,
-    Truck,
-    Eye,
-    PlayCircle,
-    CheckCircle2,
-    Clock,
-    MapPin,
-    Calendar,
-    Navigation,
-    User,
-    ArrowRight
-} from 'lucide-react'
+import { Plus, MoreHorizontal, Truck, Eye, PlayCircle, CheckCircle2, Clock } from 'lucide-react'
+import { formatNumber } from '@/lib/format'
 import Link from 'next/link'
 
 interface DeliveryTour {
@@ -45,33 +34,25 @@ interface DeliveryTour {
     created_at: string
 }
 
+// Pas de try/catch : une panne SQL doit remonter à error.tsx plutôt que
+// d'afficher des compteurs à zéro et une liste vide trompeuse.
 async function getDeliveryStats(companyId: string) {
-    try {
-        const planned = await sql`
-      SELECT COUNT(*) as count FROM delivery_tours
-      WHERE company_id = ${companyId} AND status = 'planned'
+    const [row] = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'planned') AS planned,
+        COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
+        COUNT(*) FILTER (WHERE status = 'completed' AND DATE(completed_at) = CURRENT_DATE) AS completed_today
+      FROM delivery_tours
+      WHERE company_id = ${companyId}
     `
-        const inProgress = await sql`
-      SELECT COUNT(*) as count FROM delivery_tours
-      WHERE company_id = ${companyId} AND status = 'in_progress'
-    `
-        const completedToday = await sql`
-      SELECT COUNT(*) as count FROM delivery_tours
-      WHERE company_id = ${companyId} AND status = 'completed'
-        AND DATE(completed_at) = CURRENT_DATE
-    `
-        return {
-            planned: Number(planned[0]?.count || 0),
-            inProgress: Number(inProgress[0]?.count || 0),
-            completedToday: Number(completedToday[0]?.count || 0),
-        }
-    } catch {
-        return { planned: 0, inProgress: 0, completedToday: 0 }
+    return {
+        planned: Number(row?.planned || 0),
+        inProgress: Number(row?.in_progress || 0),
+        completedToday: Number(row?.completed_today || 0),
     }
 }
 
 async function getDeliveryTours(companyId: string): Promise<DeliveryTour[]> {
-    try {
         const tours = await sql`
       SELECT
         dt.id,
@@ -84,7 +65,7 @@ async function getDeliveryTours(companyId: string): Promise<DeliveryTour[]> {
         COUNT(ts.id) as stops_count,
         COUNT(ts.id) FILTER (WHERE ts.status = 'delivered') as delivered_count
       FROM delivery_tours dt
-      LEFT JOIN vehicles v ON dt.vehicle_id = v.id
+      LEFT JOIN vehicles v ON dt.vehicle_id = v.id AND v.company_id = dt.company_id
       LEFT JOIN tour_stops ts ON ts.delivery_tour_id = dt.id
       WHERE dt.company_id = ${companyId}
       GROUP BY dt.id, v.name, v.plate_number
@@ -92,242 +73,225 @@ async function getDeliveryTours(companyId: string): Promise<DeliveryTour[]> {
       LIMIT 50
     `
         return tours as DeliveryTour[]
-    } catch {
-        return []
-    }
 }
 
-const statusConfig: Record<string, { label: string; bg: string; text: string; icon: any }> = {
-    planned: { label: 'Planifiée', bg: 'bg-slate-50', text: 'text-slate-500', icon: Clock },
-    loading: { label: 'Chargement', bg: 'bg-amber-50', text: 'text-amber-600', icon: PlayCircle },
-    in_progress: { label: 'En route', bg: 'bg-blue-50', text: 'text-blue-600', icon: Navigation },
-    completed: { label: 'Terminée', bg: 'bg-emerald-50', text: 'text-emerald-600', icon: CheckCircle2 },
+type Tone = 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
+
+const statusConfig: Record<string, { label: string; tone: Tone }> = {
+    planned: { label: 'Planifiée', tone: 'default' },
+    loading: { label: 'Chargement', tone: 'warning' },
+    in_progress: { label: 'En route', tone: 'brand' },
+    completed: { label: 'Terminée', tone: 'success' },
+    cancelled: { label: 'Annulée', tone: 'danger' },
+}
+
+function getStatus(status: string) {
+    return statusConfig[status] || { label: status, tone: 'default' as Tone }
+}
+
+function formatTourDate(value: string) {
+    return new Date(value).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' })
+}
+
+function formatCreatedTime(value: string) {
+    return new Date(value).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function TourProgress({ delivered, total }: { delivered: number; total: number }) {
+    const progress = total > 0 ? Math.round((delivered / total) * 100) : 0
+    return (
+        <div className="flex min-w-[140px] flex-col gap-1.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="tabular">
+                    {formatNumber(delivered)} / {formatNumber(total)} arrêts
+                </span>
+                <span className={`tabular font-medium ${progress === 100 ? 'text-success' : 'text-foreground'}`}>{progress}%</span>
+            </div>
+            <div
+                className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuenow={progress}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Progression des livraisons"
+            >
+                <div
+                    className={`h-full rounded-full ${progress === 100 ? 'bg-success' : 'bg-brand'}`}
+                    style={{ width: `${progress}%` }}
+                />
+            </div>
+        </div>
+    )
 }
 
 export default async function DeliveriesPage() {
-    const session = await auth()
+    const session = await requirePageSession()
     const companyId = session?.user?.companyId || ''
     const [stats, tours] = await Promise.all([
         getDeliveryStats(companyId),
         getDeliveryTours(companyId),
     ])
 
-    const statsCards = [
-        {
-            title: "Planifiées",
-            value: stats.planned,
-            description: "Tournées à venir",
-            icon: Clock,
-            color: "text-slate-500",
-            bg: "bg-slate-500/10"
-        },
-        {
-            title: "En cours",
-            value: stats.inProgress,
-            description: "Actuellement en route",
-            icon: Truck,
-            color: "text-blue-600",
-            bg: "bg-blue-600/10"
-        },
-        {
-            title: "Terminées",
-            value: stats.completedToday,
-            description: "Livraisons aujourd'hui",
-            icon: CheckCircle2,
-            color: "text-emerald-600",
-            bg: "bg-emerald-600/10"
-        }
-    ]
-
     return (
-        <div className="flex flex-col min-h-screen bg-zinc-50/50">
+        <div className="flex min-h-screen flex-col">
             <DashboardHeader
-                title="Logistique & Livraisons"
-                description="Suivi en temps réel des tournées de distribution"
+                title="Livraisons"
+                description="Suivi des tournées de distribution"
                 actions={
-                    <Button asChild className="rounded-md h-11 px-6 bg-blue-600 hover:bg-blue-700 transition-all active:scale-95 font-bold">
+                    <Button asChild variant="brand" size="sm" className="h-9">
                         <Link href="/dashboard/deliveries/new">
-                            <Plus className="h-5 w-5 mr-2" />
-                            Nouvelle tournée
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                            <span className="hidden sm:inline">Nouvelle tournée</span>
+                            <span className="sm:hidden">Tournée</span>
                         </Link>
                     </Button>
                 }
             />
 
-            <main className="flex-1 p-4 lg:p-6 space-y-6 ">
-                {/* Stats Grid */}
-                <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {statsCards.map((stat) => (
-                        <div
-                            key={stat.title}
-                            className="group relative overflow-hidden rounded-lg bg-white p-8 shadow-sm border border-slate-200/60 hover:shadow-md hover:shadow-blue-500/5 hover:-translate-y-1 transition-all duration-500"
-                        >
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-md ${stat.bg} ${stat.color} transition-transform group-hover:scale-110 duration-500`}>
-                                    <stat.icon className="h-7 w-7" />
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{stat.title}</p>
-                                    <div className="text-3xl font-semibold text-slate-950 tracking-tight">{stat.value}</div>
-                                    <p className="text-sm font-bold text-slate-400 mt-2">{stat.description}</p>
-                                </div>
-                            </div>
-                            <div className="absolute -right-4 -bottom-4 h-32 w-32 bg-slate-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700" />
-                        </div>
-                    ))}
+            <PageShell>
+                <div className="grid gap-4 sm:grid-cols-3">
+                    <StatCard label="Planifiées" value={formatNumber(stats.planned)} hint="Tournées à venir" icon={Clock} />
+                    <StatCard
+                        label="En cours"
+                        value={formatNumber(stats.inProgress)}
+                        hint="Actuellement en route"
+                        icon={Truck}
+                        tone="brand"
+                    />
+                    <StatCard
+                        label="Terminées aujourd'hui"
+                        value={formatNumber(stats.completedToday)}
+                        hint="Tournées clôturées ce jour"
+                        icon={CheckCircle2}
+                        tone="success"
+                    />
                 </div>
 
-                {/* Tours Listing */}
-                <div className="rounded-lg bg-white border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="px-8 py-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div>
-                            <h3 className="text-2xl font-semibold text-slate-950 tracking-tight">Registre des Tournées</h3>
-                            <p className="text-sm font-medium text-slate-400 mt-1">Suivi détaillé des opérations logistiques</p>
+                <Panel
+                    title="Tournées"
+                    description="Les 50 tournées les plus récentes"
+                    action={{ label: 'Gérer les véhicules', href: '/dashboard/vehicles' }}
+                >
+                    {tours.length === 0 ? (
+                        <div className="p-5">
+                            <EmptyState
+                                icon={Truck}
+                                title="Aucune tournée planifiée"
+                                description="Planifiez une tournée en assignant un véhicule et un chauffeur."
+                                action={{ label: 'Planifier une tournée', href: '/dashboard/deliveries/new' }}
+                            />
                         </div>
-                        <Button variant="ghost" className="rounded-md h-11 px-6 font-bold text-blue-600 hover:bg-blue-50 transition-all self-start" asChild>
-                            <Link href="/dashboard/vehicles" className="flex items-center gap-2">
-                                Gérer les véhicules
-                                <ArrowRight className="h-4 w-4" />
-                            </Link>
-                        </Button>
-                    </div>
+                    ) : (
+                        <>
+                            {/* Mobile : liste de cartes */}
+                            <ul className="divide-y divide-border md:hidden">
+                                {tours.map((tour) => {
+                                    const statusInfo = getStatus(tour.status)
+                                    return (
+                                        <li key={tour.id}>
+                                            <Link
+                                                href={`/dashboard/deliveries/${tour.id}`}
+                                                className="flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-medium capitalize text-foreground">
+                                                            {formatTourDate(tour.tour_date)}
+                                                        </p>
+                                                        <p className="truncate text-xs text-muted-foreground">
+                                                            {tour.vehicle_name
+                                                                ? `${tour.vehicle_name}${tour.vehicle_plate ? ` · ${tour.vehicle_plate.toUpperCase()}` : ''}`
+                                                                : 'Véhicule non assigné'}
+                                                            {' · '}
+                                                            {tour.driver_name || 'Chauffeur à définir'}
+                                                        </p>
+                                                    </div>
+                                                    <StatusBadge label={statusInfo.label} tone={statusInfo.tone} />
+                                                </div>
+                                                <TourProgress delivered={Number(tour.delivered_count)} total={Number(tour.stops_count)} />
+                                            </Link>
+                                        </li>
+                                    )
+                                })}
+                            </ul>
 
-                    <div className="p-2">
-                        {tours.length === 0 ? (
-                            <div className="text-center py-24 flex flex-col items-center">
-                                <div className="h-24 w-24 rounded-full bg-slate-50 flex items-center justify-center mb-6">
-                                    <Truck className="h-10 w-10 text-slate-300" />
-                                </div>
-                                <h3 className="text-xl font-semibold text-slate-950">Aucune livraison prévue</h3>
-                                <p className="mt-2 text-slate-400 font-medium max-w-xs mx-auto">
-                                    Commencez par planifier une nouvelle tournée en assignant un véhicule et un chauffeur.
-                                </p>
-                                <Button className="mt-8 rounded-md h-12 px-8 bg-blue-600 hover:bg-blue-700 transition-all font-bold" asChild>
-                                    <Link href="/dashboard/deliveries/new">
-                                        <Plus className="h-5 w-5 mr-2" />
-                                        Planifier maintenant
-                                    </Link>
-                                </Button>
-                            </div>
-                        ) : (
-                            <div className="overflow-x-auto">
+                            {/* Bureau : tableau */}
+                            <div className="hidden overflow-x-auto md:block">
                                 <Table>
-                                    <TableHeader className="bg-slate-50/50">
-                                        <TableRow className="border-none hover:bg-transparent">
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 pl-8">Planning</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Véhicule</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Personnel</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400 text-center">Progression</TableHead>
-                                            <TableHead className="py-5 font-semibold uppercase text-[10px] tracking-wider text-slate-400">Statut</TableHead>
-                                            <TableHead className="py-5 pr-8"></TableHead>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="pl-5">Date</TableHead>
+                                            <TableHead>Véhicule</TableHead>
+                                            <TableHead>Chauffeur</TableHead>
+                                            <TableHead>Progression</TableHead>
+                                            <TableHead>Statut</TableHead>
+                                            <TableHead className="w-12 pr-5">
+                                                <span className="sr-only">Actions</span>
+                                            </TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {tours.map((tour) => {
-                                            const statusInfo = statusConfig[tour.status] || {
-                                                label: tour.status,
-                                                bg: 'bg-slate-50',
-                                                text: 'text-slate-400',
-                                                icon: Truck
-                                            }
-                                            const progress = Number(tour.stops_count) > 0
-                                                ? Math.round((Number(tour.delivered_count) / Number(tour.stops_count)) * 100)
-                                                : 0
-
+                                            const statusInfo = getStatus(tour.status)
                                             return (
-                                                <TableRow key={tour.id} className="group border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                    <TableCell className="py-6 pl-8">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="h-12 w-12 rounded-md bg-white flex flex-col items-center justify-center border border-slate-100 shadow-sm transition-transform group-hover:scale-105">
-                                                                <Calendar className="h-4 w-4 text-blue-600 mb-0.5" />
-                                                                <span className="text-[10px] font-semibold text-slate-950 uppercase leading-none">
-                                                                    {new Date(tour.tour_date).toLocaleDateString('fr-FR', { day: '2-digit' })}
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-base font-semibold text-slate-950 tracking-tight leading-tight">
-                                                                    {new Date(tour.tour_date).toLocaleDateString('fr-FR', { weekday: 'long', month: 'short' })}
-                                                                </span>
-                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1 italic">
-                                                                    {new Date(tour.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                                                                </span>
-                                                            </div>
-                                                        </div>
+                                                <TableRow key={tour.id} className="transition-colors hover:bg-muted/40">
+                                                    <TableCell className="pl-5">
+                                                        <Link
+                                                            href={`/dashboard/deliveries/${tour.id}`}
+                                                            className="flex flex-col rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                        >
+                                                            <span className="text-sm font-medium capitalize text-foreground hover:underline">
+                                                                {formatTourDate(tour.tour_date)}
+                                                            </span>
+                                                            <span className="tabular text-xs text-muted-foreground">
+                                                                Créée à {formatCreatedTime(tour.created_at)}
+                                                            </span>
+                                                        </Link>
                                                     </TableCell>
-                                                    <TableCell className="py-6">
+                                                    <TableCell>
                                                         {tour.vehicle_name ? (
                                                             <div className="flex flex-col">
-                                                                <span className="font-semibold text-slate-700 text-sm leading-tight flex items-center gap-2">
-                                                                    <Truck className="h-3.5 w-3.5 text-slate-400" />
-                                                                    {tour.vehicle_name}
-                                                                </span>
-                                                                <code className="text-[10px] font-semibold bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 mt-1 w-fit tracking-wider">
-                                                                    {tour.vehicle_plate?.toUpperCase()}
-                                                                </code>
+                                                                <span className="text-sm text-foreground">{tour.vehicle_name}</span>
+                                                                {tour.vehicle_plate && (
+                                                                    <span className="font-mono text-xs text-muted-foreground">
+                                                                        {tour.vehicle_plate.toUpperCase()}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         ) : (
-                                                            <span className="text-slate-300 font-bold italic text-xs">Non assigné</span>
+                                                            <span className="text-sm text-muted-foreground">Non assigné</span>
                                                         )}
                                                     </TableCell>
-                                                    <TableCell className="py-6">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center">
-                                                                <User className="h-4 w-4 text-slate-500" />
-                                                            </div>
-                                                            <span className="font-bold text-slate-600 text-sm">
-                                                                {tour.driver_name || 'À définir'}
-                                                            </span>
-                                                        </div>
+                                                    <TableCell>
+                                                        <span className={`text-sm ${tour.driver_name ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                                            {tour.driver_name || 'À définir'}
+                                                        </span>
                                                     </TableCell>
-                                                    <TableCell className="py-6 min-w-[180px]">
-                                                        <div className="flex flex-col gap-2">
-                                                            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <MapPin className="h-3 w-3" />
-                                                                    {tour.delivered_count} / {tour.stops_count}
-                                                                </span>
-                                                                <span className={progress === 100 ? 'text-emerald-600' : 'text-slate-950'}>
-                                                                    {progress}%
-                                                                </span>
-                                                            </div>
-                                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden relative">
-                                                                <div
-                                                                    className={`h-full transition-all duration-1000 ease-out rounded-full ${progress === 100 ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-blue-600'
-                                                                        }`}
-                                                                    style={{ width: `${progress}%` }}
-                                                                />
-                                                            </div>
-                                                        </div>
+                                                    <TableCell>
+                                                        <TourProgress delivered={Number(tour.delivered_count)} total={Number(tour.stops_count)} />
                                                     </TableCell>
-                                                    <TableCell className="py-6">
-                                                        <Badge className={`rounded-full px-4 py-1 font-semibold uppercase text-[9px] tracking-wider border-none shadow-none flex items-center gap-2 w-fit ${statusInfo.bg} ${statusInfo.text}`}>
-                                                            <statusInfo.icon className="h-3 w-3" />
-                                                            {statusInfo.label}
-                                                        </Badge>
+                                                    <TableCell>
+                                                        <StatusBadge label={statusInfo.label} tone={statusInfo.tone} />
                                                     </TableCell>
-                                                    <TableCell className="py-6 pr-8 text-right">
+                                                    <TableCell className="pr-5 text-right">
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 transition-all">
-                                                                    <MoreHorizontal className="h-5 w-5 text-slate-400 group-hover:text-slate-950" />
+                                                                <Button variant="ghost" size="icon-sm" aria-label="Actions de la tournée">
+                                                                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                                                                 </Button>
                                                             </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="w-60 p-2 rounded-md border-slate-100 shadow-lg">
-                                                                <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-slate-50 transition-colors">
-                                                                    <Link href={`/dashboard/deliveries/${tour.id}`} className="flex items-center gap-3">
-                                                                        <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-                                                                            <Eye className="h-4 w-4" />
-                                                                        </div>
-                                                                        <span className="font-bold text-sm">Détails Tournée</span>
+                                                            <DropdownMenuContent align="end" className="w-52">
+                                                                <DropdownMenuItem asChild>
+                                                                    <Link href={`/dashboard/deliveries/${tour.id}`}>
+                                                                        <Eye aria-hidden="true" />
+                                                                        Voir la tournée
                                                                     </Link>
                                                                 </DropdownMenuItem>
                                                                 {tour.status === 'planned' && (
-                                                                    <DropdownMenuItem asChild className="rounded-xl cursor-pointer py-3 hover:bg-blue-50 focus:bg-blue-50 transition-colors">
-                                                                        <Link href={`/dashboard/deliveries/${tour.id}/load`} className="flex items-center gap-3">
-                                                                            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
-                                                                                <PlayCircle className="h-4 w-4" />
-                                                                            </div>
-                                                                            <span className="font-bold text-sm text-blue-700">Démarrer Chargement</span>
+                                                                    <DropdownMenuItem asChild>
+                                                                        <Link href={`/dashboard/deliveries/${tour.id}/load`}>
+                                                                            <PlayCircle aria-hidden="true" />
+                                                                            Démarrer le chargement
                                                                         </Link>
                                                                     </DropdownMenuItem>
                                                                 )}
@@ -340,10 +304,10 @@ export default async function DeliveriesPage() {
                                     </TableBody>
                                 </Table>
                             </div>
-                        )}
-                    </div>
-                </div>
-            </main>
+                        </>
+                    )}
+                </Panel>
+            </PageShell>
         </div>
     )
 }
