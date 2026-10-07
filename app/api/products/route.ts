@@ -12,6 +12,8 @@ const productSchema = z.object({
   brand: z.string().max(100).optional(),
   description: z.string().max(5000).optional(),
   baseUnit: z.string().min(1).max(50).default('casier'),
+  // Unités par conditionnement (ex. 12 bouteilles par casier) — propre au produit
+  unitsPerPack: z.number().int().min(1).max(100).optional(),
   purchasePrice: z.number().min(0).default(0),
   sellingPrice: z.number().min(0).default(0),
   imageUrl: z.string().max(2000).optional(),
@@ -55,6 +57,7 @@ export async function POST(request: NextRequest) {
       brand: data.brand,
       description: data.description,
       baseUnit: data.baseUnit,
+      unitsPerPack: data.unitsPerPack,
       purchasePrice: data.purchasePrice,
       sellingPrice: data.sellingPrice,
       imageUrl: data.imageUrl,

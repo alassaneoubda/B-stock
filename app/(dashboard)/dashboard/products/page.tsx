@@ -19,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { AlertTriangle, Boxes, CheckCircle2, Edit, Eye, MoreHorizontal, Package, Plus, Search } from 'lucide-react'
+import { AlertTriangle, Boxes, CheckCircle2, Edit, Eye, MoreHorizontal, Package, PackagePlus, Plus, Search } from 'lucide-react'
 import { formatMoney, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
@@ -116,6 +116,16 @@ export default async function ProductsPage({
         description="Catalogue, prix et niveaux de stock"
         actions={
           // Catalogue vide : l'action phare est « Charger vos produits » (assistant ci-dessous)
+          <div className="flex items-center gap-2">
+          {products.length > 0 && (
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/dashboard/products/catalog">
+                <PackagePlus aria-hidden="true" />
+                <span className="hidden sm:inline">Depuis le catalogue</span>
+                <span className="sm:hidden">Catalogue</span>
+              </Link>
+            </Button>
+          )}
           <Button size="sm" variant={products.length === 0 ? 'outline' : 'brand'} asChild>
             <Link href="/dashboard/products/new">
               <Plus aria-hidden="true" />
@@ -123,6 +133,7 @@ export default async function ProductsPage({
               <span className="sm:hidden">Produit</span>
             </Link>
           </Button>
+          </div>
         }
       />
 
