@@ -13,6 +13,8 @@ const supplierUpdateSchema = z.object({
   email: z.string().email().optional().or(z.literal('')),
   address: z.string().max(500).optional(),
   notes: z.string().max(2000).optional(),
+  // Conditions de paiement (jours après réception) ; 0 = comptant
+  paymentTermsDays: z.coerce.number().int().min(0).max(365).optional(),
 })
 
 // GET /api/suppliers/[id]
@@ -72,7 +74,8 @@ export async function PATCH(
         phone = COALESCE(${data.phone ?? null}, phone),
         email = COALESCE(${data.email ?? null}, email),
         address = COALESCE(${data.address ?? null}, address),
-        notes = COALESCE(${data.notes ?? null}, notes)
+        notes = COALESCE(${data.notes ?? null}, notes),
+        payment_terms_days = COALESCE(${data.paymentTermsDays ?? null}::int, payment_terms_days)
       WHERE id = ${id} AND company_id = ${companyId}
       RETURNING *
     `

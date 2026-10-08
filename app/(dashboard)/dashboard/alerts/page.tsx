@@ -2,7 +2,7 @@ import { requirePageSession } from '@/lib/page-auth'
 import { sql } from '@/lib/db'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
-import { Bell, CheckCircle, Package, CreditCard, ArchiveRestore, ShieldAlert, History, type LucideIcon } from 'lucide-react'
+import { Bell, CheckCircle, Package, CreditCard, ArchiveRestore, ShieldAlert, History, Snowflake, Wallet, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import { GenerateAlertsButton, MarkAllReadButton, MarkAlertReadButton } from '@/components/dashboard/alerts-actions'
 import { PageShell, Panel, StatCard, StatusBadge } from '@/components/app/blocks'
@@ -41,7 +41,9 @@ async function getAlerts(companyId: string): Promise<Alert[]> {
 /**
  * Lien vers l'entité liée, selon reference_type écrit par lib/domain/alerts.ts :
  * 'stock' (ligne de stock : low_stock, expiry), 'client' (credit_limit,
- * packaging_debt), 'sales_order' (payment_overdue). Type inconnu : pas de lien.
+ * packaging_debt), 'sales_order' (payment_overdue), 'purchase_order'
+ * (supplier_overdue), 'product_variant' (dormant_stock), 'user' (cash_variance).
+ * Type inconnu : pas de lien.
  */
 function alertEntityHref(alert: Alert): string | null {
     switch (alert.reference_type) {
@@ -53,6 +55,12 @@ function alertEntityHref(alert: Alert): string | null {
             return alert.reference_id ? `/dashboard/sales/${alert.reference_id}` : null
         case 'credit_note':
             return '/dashboard/credits'
+        case 'purchase_order':
+            return alert.reference_id ? `/dashboard/procurement/${alert.reference_id}` : null
+        case 'product_variant':
+            return '/dashboard/stock'
+        case 'user':
+            return '/dashboard/cash'
         default:
             return null
     }
@@ -66,7 +74,10 @@ const alertTypeConfig: Record<string, { label: string; icon: LucideIcon }> = {
     credit_limit: { label: 'Limite de crédit', icon: CreditCard },
     packaging_debt: { label: 'Dette d’emballages', icon: ArchiveRestore },
     payment_overdue: { label: 'Retard de paiement', icon: CreditCard },
+    supplier_overdue: { label: 'Facture fournisseur en retard', icon: CreditCard },
     low_packaging: { label: 'Emballages', icon: Package },
+    dormant_stock: { label: 'Produit dormant', icon: Snowflake },
+    cash_variance: { label: 'Écarts de caisse', icon: Wallet },
 }
 
 const severityConfig: Record<string, { label: string; tone: Tone; icon: string }> = {
@@ -89,7 +100,7 @@ export default async function AlertsPage() {
         <div className="flex min-h-screen flex-col">
             <DashboardHeader
                 title="Alertes"
-                description="Points de vigilance : stock, crédits, emballages et paiements"
+                description="Points de vigilance : stock, péremption, produits dormants, crédits, emballages, paiements et caisse"
                 actions={<GenerateAlertsButton />}
             />
 

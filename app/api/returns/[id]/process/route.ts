@@ -7,6 +7,41 @@ import { isUuid } from '@/lib/tenant'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { addStock, adjustPackagingStock, removeStock } from '@/lib/domain/stock'
 import { applyCreditToOrderNotes, money, type AccountType } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
+import { saleUnitCost } from '@/lib/domain/sales'
+import { effectiveRate, loadVariantRates, loadVatSettings, splitTtc } from '@/lib/vat'
+import type { Tx } from '@/lib/db'
+
+/**
+ * Taux de TVA des lignes produits d'un retour client : celui figé sur la vente
+ * d'origine (aucune TVA si la vente n'en portait pas) ; sans vente d'origine,
+ * le taux actuel du produit si l'entreprise est assujettie. null = pas de TVA.
+ */
+async function returnVatRates(
+  tx: Tx,
+  companyId: string,
+  salesOrderId: string | null,
+  items: Array<Record<string, any>>
+): Promise<Map<string, number | null>> {
+  const variantIds = [...new Set(items.map((i) => i.product_variant_id as string | null).filter((v): v is string => !!v))]
+  const result = new Map<string, number | null>()
+  if (variantIds.length === 0) return result
+  if (salesOrderId) {
+    const rows = await tx.sql`
+      SELECT product_variant_id, MAX((to_jsonb(soi) ->> 'vat_rate')::numeric) AS vat_rate
+      FROM sales_order_items soi
+      WHERE soi.sales_order_id = ${salesOrderId} AND soi.product_variant_id = ANY(${variantIds}::uuid[])
+      GROUP BY product_variant_id
+    `
+    for (const r of rows) result.set(r.product_variant_id, r.vat_rate == null ? null : Number(r.vat_rate))
+    return result
+  }
+  const vat = await loadVatSettings(tx.sql, companyId)
+  if (!vat.enabled) return result
+  const rates = await loadVariantRates(tx.sql, variantIds)
+  for (const id of variantIds) result.set(id, effectiveRate(vat, rates.get(id)))
+  return result
+}
 
 const processSchema = z.object({
   action: z.enum(['approve', 'reject']).optional().default('approve'),
@@ -54,6 +89,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return 'Retour rejeté'
       }
 
+      // L'avoir (AV-…) est daté d'aujourd'hui : refusé si le mois est clôturé
+      if (ret.return_type === 'client' && ret.refund_method === 'credit_note') {
+        await assertPeriodOpen(tx.sql, companyId)
+      }
+
       const items = await tx.sql`
         SELECT ri.*, p.name AS product_name, pt.name AS packaging_name
         FROM return_items ri
@@ -68,6 +108,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       const isClient = ret.return_type === 'client'
       const credits: Record<AccountType, number> = { product: 0, packaging: 0 }
+      // TVA contenue dans l'avoir (produits uniquement ; les consignes n'en portent pas)
+      let creditVat = 0
+      const vatRateOf = isClient ? await returnVatRates(tx, companyId, ret.sales_order_id, items) : new Map()
       const note = `Retour ${ret.return_number ?? ''}`.trim()
 
       for (const item of items) {
@@ -108,12 +151,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (!item.product_variant_id) continue
         if (isClient) {
           credits.product += lineTotal
+          const rate = vatRateOf.get(item.product_variant_id)
+          if (rate != null) {
+            // Décomposition figée sur la ligne du retour (même taux que la vente d'origine)
+            const split = splitTtc(lineTotal, rate)
+            creditVat = money(creditVat + split.vat)
+            await tx.sql`
+              UPDATE return_items SET vat_rate = ${split.rate}, amount_ht = ${split.ht}, vat_amount = ${split.vat}
+              WHERE id = ${item.id}
+            `
+          }
           if (item.condition === 'good') {
+            // Réintégré au coût de la vente d'origine si elle est connue, sinon au CMP du dépôt
             await addStock(tx, {
               companyId,
               depotId: ret.depot_id,
               variantId: item.product_variant_id,
               quantity,
+              unitCost: ret.sales_order_id ? await saleUnitCost(tx, ret.sales_order_id, item.product_variant_id) : null,
               movementType: 'return',
               referenceType: 'return',
               referenceId: returnId,
@@ -157,7 +212,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           const amount = money(credits[accountType])
           if (amount <= 0) continue
           const creditNumber = await nextDocumentNumber(tx, companyId, 'credit_note')
-          await tx.sql`
+          const [avoir] = await tx.sql`
             INSERT INTO credit_notes (
               company_id, client_id, sales_order_id, credit_number, account_type,
               total_amount, paid_amount, status, notes, created_by
@@ -166,7 +221,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               ${companyId}, ${ret.client_id}, ${ret.sales_order_id}, ${creditNumber}, ${accountType},
               ${-amount}, 0, 'paid', ${'Avoir suite retour ' + (ret.return_number ?? '')}, ${userId}
             )
+            RETURNING id
           `
+          if (accountType === 'product' && creditVat !== 0) {
+            // Même signe que total_amount (avoir négatif)
+            await tx.sql`UPDATE credit_notes SET vat_amount = ${-creditVat} WHERE id = ${avoir.id}`
+          }
           // La dette restante de la vente d'origine diminue d'autant
           if (ret.sales_order_id) {
             await applyCreditToOrderNotes(tx, { companyId, orderId: ret.sales_order_id, accountType, amount })

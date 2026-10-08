@@ -255,12 +255,14 @@ export async function GET(request: NextRequest) {
             p.name AS product_name, p.category, p.brand,
             pt.name AS packaging_name,
             pv.price, pv.cost_price,
+            COALESCE(sc.avg_cost, pv.cost_price, 0) AS avg_cost,
             d.name AS depot_name
           FROM stock s
           JOIN product_variants pv ON s.product_variant_id = pv.id
           JOIN products p ON pv.product_id = p.id AND p.company_id = ${companyId}
           LEFT JOIN packaging_types pt ON pv.packaging_type_id = pt.id
           JOIN depots d ON s.depot_id = d.id
+          LEFT JOIN stock_costs sc ON sc.depot_id = s.depot_id AND sc.product_variant_id = pv.id
           WHERE d.company_id = ${companyId}
             AND (${depotId}::uuid IS NULL OR s.depot_id = ${depotId}::uuid)
           ORDER BY d.name, p.name
@@ -270,12 +272,13 @@ export async function GET(request: NextRequest) {
         html += `<table><thead><tr><th>Dépôt</th><th>Produit</th><th>Format</th><th>Marque</th><th class="text-center">Quantité</th><th class="text-center">Seuil alerte</th><th class="text-right">Valeur</th></tr></thead><tbody>`
         let totalValue = 0
         for (const item of stockItems) {
-          const value = Number(item.quantity) * Number(item.cost_price || item.price)
+          // Valeur au coût moyen pondéré du dépôt (repli : prix d'achat catalogue)
+          const value = Number(item.quantity) * Number(item.avg_cost || 0)
           totalValue += value
           const isLow = Number(item.quantity) <= Number(item.min_stock_alert)
           html += `<tr><td>${h(item.depot_name)}</td><td>${h(item.product_name)}</td><td>${h(item.packaging_name || '-')}</td><td>${h(item.brand || '-')}</td><td class="text-center" ${isLow ? 'style="color:#991b1b;font-weight:bold;"' : ''}>${h(item.quantity)}</td><td class="text-center">${h(item.min_stock_alert)}</td><td class="text-right">${h(formatCurrency(value))}</td></tr>`
         }
-        html += `<tr class="total-row"><td colspan="6">Valeur totale du stock</td><td class="text-right">${h(formatCurrency(totalValue))}</td></tr></tbody></table>`
+        html += `<tr class="total-row"><td colspan="6">Valeur totale du stock (coût moyen pondéré)</td><td class="text-right">${h(formatCurrency(totalValue))}</td></tr></tbody></table>`
         break
       }
 

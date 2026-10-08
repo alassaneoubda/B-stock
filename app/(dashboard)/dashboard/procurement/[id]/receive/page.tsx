@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, use } from 'react'
+import { useState, useEffect, useCallback, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
@@ -31,9 +31,15 @@ import { toast } from 'sonner'
 import { ApiError, apiFetch, toastError, toastWarnings } from '@/lib/api-client'
 import { formatNumber } from '@/lib/format'
 import { ErrorState, PageSkeleton } from '@/components/states'
+import { cn } from '@/lib/utils'
+import { ScanButton, type ScanOutcome } from '@/components/scan/barcode-scanner'
+import { useScannerInput } from '@/components/scan/use-scanner-input'
+import { matchLabel, useBarcodeLookup, type BarcodeMatch } from '@/components/scan/use-barcode-lookup'
+import { scanFeedback } from '@/components/scan/feedback'
 
 interface POItem {
     id: string
+    product_variant_id?: string | null
     product_name: string
     quantity_ordered: number
     quantity_received: number | null
@@ -51,6 +57,7 @@ interface PurchaseOrderDetail {
 
 interface ReceiveLine {
     itemId: string
+    variantId: string | null
     productName: string
     packagingName: string
     quantityOrdered: number
@@ -102,7 +109,7 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
     const [formError, setFormError] = useState<string | null>(null)
     const [pendingSubmit, setPendingSubmit] = useState<ReceiveLine[] | null>(null)
 
-    const { register, handleSubmit, control, reset, watch } = useForm<{ items: ReceiveLine[] }>({
+    const { register, handleSubmit, control, reset, watch, setValue, getValues } = useForm<{ items: ReceiveLine[] }>({
         defaultValues: {
             items: []
         }
@@ -114,6 +121,65 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
     })
 
     const watchedItems = watch('items')
+
+    // ----- Pointage par scan : 1er scan d'une ligne = 1 reçu, puis +1 à chaque scan -----
+    const scannedLinesRef = useRef(new Set<string>())
+    const [highlightLine, setHighlightLine] = useState<string | null>(null)
+
+    function receiveScanned(match: BarcodeMatch): Exclude<ScanOutcome, void> {
+        const label = matchLabel(match)
+        const lines = getValues('items') ?? []
+        const index = lines.findIndex((l) => l.variantId === match.variant_id && l.remaining > 0)
+        if (index < 0) {
+            const closed = lines.some((l) => l.variantId === match.variant_id)
+            return { ok: false, message: closed ? `${label} : ligne déjà entièrement réceptionnée` : `${label} : absent de cette commande` }
+        }
+        const line = lines[index]
+        const first = !scannedLinesRef.current.has(line.itemId)
+        scannedLinesRef.current.add(line.itemId)
+        const next = (first ? 0 : parseQuantity(line.quantityReceived) ?? 0) + 1
+        setValue(`items.${index}.quantityReceived`, next, { shouldDirty: true })
+        setHighlightLine(line.itemId)
+        requestAnimationFrame(() => {
+            document.querySelector(`[data-receive-line="${line.itemId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        })
+        if (next > line.remaining) {
+            return { ok: false, message: `${label} : ${formatNumber(next)} reçus, plus que le reste à réceptionner (${formatNumber(line.remaining)})` }
+        }
+        return { ok: true, message: `${label} : ${formatNumber(next)} / ${formatNumber(line.remaining)} reçu(s)` }
+    }
+
+    const { lookup: lookupBarcode, dialog: barcodeDialog } = useBarcodeLookup({
+        onAssigned: (match) => {
+            const outcome = receiveScanned(match)
+            scanFeedback(outcome.ok)
+            if (outcome.ok) toast.success(outcome.message)
+            else toast.error(outcome.message)
+        },
+    })
+
+    async function handleScan(code: string): Promise<Exclude<ScanOutcome, void>> {
+        const result = await lookupBarcode(code)
+        if (result.status === 'unknown') return { ok: false, message: 'Code-barres inconnu', close: true }
+        if (result.status === 'error') return { ok: false, message: result.message }
+        return receiveScanned(result.match)
+    }
+
+    useScannerInput(
+        async (code) => {
+            const outcome = await handleScan(code)
+            scanFeedback(outcome.ok)
+            if (outcome.ok) toast.success(outcome.message, { duration: 1500 })
+            else if (!outcome.close) toast.error(outcome.message)
+        },
+        { enabled: Boolean(order && RECEIVABLE_STATUSES.includes(order.status)) && pendingSubmit === null }
+    )
+
+    useEffect(() => {
+        if (!highlightLine) return
+        const t = setTimeout(() => setHighlightLine(null), 2500)
+        return () => clearTimeout(t)
+    }, [highlightLine])
 
     const fetchOrder = useCallback(async () => {
         setIsFetching(true)
@@ -130,6 +196,7 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                 const remaining = Math.max(0, ordered - alreadyReceived - alreadyDamaged)
                 return {
                     itemId: item.id,
+                    variantId: item.product_variant_id ?? null,
                     productName: item.product_name,
                     packagingName: item.packaging_name || '',
                     quantityOrdered: ordered,
@@ -259,11 +326,21 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                             <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Commande {order.order_number}
                         </Link>
                     </Button>
-                    <div className="space-y-1">
-                        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Réceptionner la commande</h2>
-                        <p className="text-sm text-muted-foreground">
-                            Pointez les quantités reçues en bon état et la casse. Le stock sera ajouté à {depotLabel}.
-                        </p>
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div className="space-y-1">
+                            <h2 className="text-2xl font-semibold tracking-tight text-foreground">Réceptionner la commande</h2>
+                            <p className="text-sm text-muted-foreground">
+                                Pointez les quantités reçues en bon état et la casse. Le stock sera ajouté à {depotLabel}.
+                            </p>
+                        </div>
+                        {isReceivable && (
+                            <ScanButton
+                                continuous
+                                title="Pointer en scannant"
+                                description="Premier scan d’une ligne : 1 reçu, puis +1 à chaque scan."
+                                onDetected={handleScan}
+                            />
+                        )}
                     </div>
                 </div>
 
@@ -290,7 +367,11 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                             const error = lineError(current)
                             const isClosed = field.remaining === 0
                             return (
-                                <Card key={field.id}>
+                                <Card
+                                    key={field.id}
+                                    data-receive-line={field.itemId}
+                                    className={cn('transition-colors', highlightLine === field.itemId && 'ring-2 ring-brand')}
+                                >
                                     <CardHeader>
                                         <CardTitle>{field.productName}</CardTitle>
                                         {field.packagingName && <CardDescription>{field.packagingName}</CardDescription>}
@@ -408,6 +489,8 @@ export default function ReceiveProcurementPage({ params }: { params: Promise<{ i
                     </div>
                 </form>
             </PageShell>
+
+            {barcodeDialog}
 
             <AlertDialog
                 open={pendingSubmit !== null}

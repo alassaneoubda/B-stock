@@ -6,6 +6,7 @@ import { AppError, badRequest, handleRouteError, notFound } from '@/lib/errors'
 import { assertOwned } from '@/lib/tenant'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { addStock } from '@/lib/domain/stock'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -36,6 +37,8 @@ const purchaseOrderSchema = z.object({
         productVariantId: z.string().uuid(),
         quantityOrdered: z.number().int().positive(),
         unitPrice: z.number().nonnegative(),
+        /** TVA récupérable (%) sur ce prix d'achat HT ; absent = achat sans TVA. */
+        vatRate: z.number().min(0).max(100).nullable().optional(),
         lotNumber: optionalText(100),
         expiryDate: optionalDate,
       })
@@ -65,6 +68,7 @@ type PoItemRow = {
   id: string
   product_variant_id: string
   quantity_ordered: number
+  unit_price: string | null
   quantity_received: number
   quantity_damaged: number
   lot_number: string | null
@@ -87,6 +91,8 @@ async function receivePurchaseOrder(
   }
 
   return withTransaction(async (tx) => {
+    // Mois clôturé (export comptable transmis) : opération refusée
+    await assertPeriodOpen(tx.sql, companyId)
     // Verrou sur le bon de commande : deux réceptions simultanées sont sérialisées.
     const [po] = await tx.sql<{ id: string; depot_id: string; status: string; order_number: string }>`
       SELECT id, depot_id, status, order_number FROM purchase_orders
@@ -105,7 +111,7 @@ async function receivePurchaseOrder(
     }
 
     const poItems = await tx.sql<PoItemRow>`
-      SELECT id, product_variant_id, quantity_ordered,
+      SELECT id, product_variant_id, quantity_ordered, unit_price,
         COALESCE(quantity_received, 0)::int AS quantity_received,
         COALESCE(quantity_damaged, 0)::int AS quantity_damaged,
         lot_number, expiry_date::text AS expiry_date
@@ -146,12 +152,14 @@ async function receivePurchaseOrder(
       `
 
       // Seules les unités en bon état entrent en stock ; la casse est juste tracée sur la ligne.
+      // Entrée valorisée au prix d'achat de la ligne : recalcule le CMP du dépôt.
       if (item.quantityReceived > 0) {
         await addStock(tx, {
           companyId,
           depotId: po.depot_id,
           variantId: poItem.product_variant_id,
           quantity: item.quantityReceived,
+          unitCost: poItem.unit_price == null ? null : Number(poItem.unit_price),
           lotNumber,
           expiryDate,
           movementType: 'purchase',
@@ -214,7 +222,7 @@ async function createPurchaseOrder(body: unknown, companyId: string, userId: str
     `
 
     for (const item of data.items) {
-      await tx.sql`
+      const [poi] = await tx.sql`
         INSERT INTO purchase_order_items (
           purchase_order_id, product_variant_id, quantity_ordered,
           unit_price, lot_number, expiry_date
@@ -222,7 +230,11 @@ async function createPurchaseOrder(body: unknown, companyId: string, userId: str
           ${order.id}, ${item.productVariantId}, ${item.quantityOrdered},
           ${item.unitPrice}, ${item.lotNumber}, ${item.expiryDate}
         )
+        RETURNING id
       `
+      if (item.vatRate != null && item.vatRate > 0) {
+        await tx.sql`UPDATE purchase_order_items SET vat_rate = ${item.vatRate} WHERE id = ${poi.id}`
+      }
     }
 
     return order

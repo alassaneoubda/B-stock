@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import {
     BookOpen,
     Building2,
+    Calculator,
     UserCog,
     CreditCard,
     Bell,
@@ -13,10 +14,12 @@ import {
     ChevronRight,
     MapPin,
     Layers,
+    Smartphone,
 } from 'lucide-react'
 import Link from 'next/link'
 import { canAccessPath } from '@/lib/route-permissions'
 import { formatNumber } from '@/lib/format'
+import { BusinessSettings } from '@/components/settings/business-settings'
 
 // Pas de try/catch : une panne SQL affiche error.tsx plutôt qu'une page vide.
 async function getCompanyInfo(companyId: string) {
@@ -66,6 +69,18 @@ const settingsSections = [
         description: 'Offre en cours et historique des paiements',
     },
     {
+        href: '/dashboard/settings/accounting',
+        icon: Calculator,
+        title: 'Comptabilité',
+        description: 'Plan de comptes SYSCOHADA et journaux de l’export comptable',
+    },
+    {
+        href: '/dashboard/settings/payments',
+        icon: Smartphone,
+        title: 'Paiements Mobile Money',
+        description: 'Encaisser vos clients par Wave, Orange Money, MTN MoMo et Moov',
+    },
+    {
         href: '/dashboard/settings/notifications',
         icon: Bell,
         title: 'Notifications',
@@ -88,6 +103,10 @@ export default async function SettingsPage() {
     const visibleSections = settingsSections.filter((section) =>
         canAccessPath(section.href, session.access.permissions)
     )
+
+    const permissions = session.access.permissions
+    const isOwner = session.access.role === 'owner'
+    const canManagePos = permissions.includes('*') || permissions.includes('pos.manage')
 
     const counters = company
         ? [
@@ -142,6 +161,22 @@ export default async function SettingsPage() {
                             ))}
                         </dl>
                     </section>
+                )}
+
+                {/* TVA, alertes et point de vente */}
+                {company && (isOwner || canManagePos) && (
+                    <BusinessSettings
+                        isOwner={isOwner}
+                        canManagePos={canManagePos}
+                        initial={{
+                            vatEnabled: company.vat_enabled === true,
+                            vatRate: Number(company.vat_rate ?? 18),
+                            pricesIncludeTax: company.vat_prices_include_tax !== false,
+                            taxId: company.tax_id ?? null,
+                            alertExpiryDays: Number(company.alert_expiry_days ?? 30),
+                            posAutoUnpack: company.pos_auto_unpack === true,
+                        }}
+                    />
                 )}
 
                 {/* Rubriques */}

@@ -24,11 +24,17 @@ import { formatDateShort, formatNumber, formatSignedMoney } from '@/lib/format'
 import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
 import { PageShell, Panel, StatusBadge } from '@/components/app/blocks'
 import { cn } from '@/lib/utils'
+import { ScanButton, type ScanOutcome } from '@/components/scan/barcode-scanner'
+import { useScannerInput } from '@/components/scan/use-scanner-input'
+import { matchLabel, useBarcodeLookup, type BarcodeMatch } from '@/components/scan/use-barcode-lookup'
+import { scanFeedback } from '@/components/scan/feedback'
 
 interface InventorySession {
   id: string; session_number: string; inventory_type: string; depot_name: string
   status: string; total_items: number; items_with_variance: number
   total_variance_value: number; started_by_name: string; started_at: string
+  /** Périmètre d'un inventaire partiel (catégorie, marque, sélection, moins récemment comptés). */
+  scope?: { type: string; category?: string; brand?: string; limit?: number; variantIds?: string[] } | null
 }
 
 const STATUS: Record<string, { label: string; tone: 'brand' | 'success' | 'default' }> = {
@@ -39,6 +45,7 @@ const STATUS: Record<string, { label: string; tone: 'brand' | 'success' | 'defau
 
 interface InventoryItem {
   id: string; item_type: string; product_name: string; packaging_name: string
+  product_variant_id: string | null
   system_quantity: number; counted_quantity: number | null; variance: number
   unit_value: number; variance_value: number; notes: string | null
 }
@@ -56,6 +63,7 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
   const [openComplete, setOpenComplete] = useState(false)
   const [applyAdjustments, setApplyAdjustments] = useState(true)
   const [completionNotes, setCompletionNotes] = useState('')
+  const [highlightId, setHighlightId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoadError(null)
@@ -136,6 +144,57 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
     setDirty(true)
   }
 
+  // ----- Scan : chaque article scanné ajoute 1 à sa ligne comptée -----
+  function countScanned(match: BarcodeMatch): Exclude<ScanOutcome, void> {
+    const label = matchLabel(match)
+    if (session?.status !== 'in_progress') return { ok: false, message: 'Inventaire clôturé : comptage impossible' }
+    const item = items.find((i) => i.item_type === 'product' && i.product_variant_id === match.variant_id)
+    if (!item) return { ok: false, message: `${label} : absent de cet inventaire` }
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, counted_quantity: (Number(i.counted_quantity) || 0) + 1 } : i))
+    )
+    setDirty(true)
+    setHighlightId(item.id)
+    // Amène la ligne à l'écran (carte mobile ou ligne du tableau, selon l'affichage)
+    requestAnimationFrame(() => {
+      const el = [...document.querySelectorAll<HTMLElement>(`[data-inventory-item="${item.id}"]`)].find((n) => n.offsetParent !== null)
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+    return { ok: true, message: `${label} : +1` }
+  }
+
+  const { lookup: lookupBarcode, dialog: barcodeDialog } = useBarcodeLookup({
+    onAssigned: (match) => {
+      const outcome = countScanned(match)
+      scanFeedback(outcome.ok)
+      if (outcome.ok) toast.success(outcome.message)
+      else toast.error(outcome.message)
+    },
+  })
+
+  async function handleScan(code: string): Promise<Exclude<ScanOutcome, void>> {
+    const result = await lookupBarcode(code)
+    if (result.status === 'unknown') return { ok: false, message: 'Code-barres inconnu', close: true }
+    if (result.status === 'error') return { ok: false, message: result.message }
+    return countScanned(result.match)
+  }
+
+  useScannerInput(
+    async (code) => {
+      const outcome = await handleScan(code)
+      scanFeedback(outcome.ok)
+      if (outcome.ok) toast.success(outcome.message, { duration: 1500 })
+      else if (!outcome.close) toast.error(outcome.message)
+    },
+    { enabled: session?.status === 'in_progress' && !openComplete }
+  )
+
+  useEffect(() => {
+    if (!highlightId) return
+    const t = setTimeout(() => setHighlightId(null), 2500)
+    return () => clearTimeout(t)
+  }, [highlightId])
+
   const countedCount = items.filter(i => i.counted_quantity != null).length
   const itemsWithVariance = items.filter(i => i.counted_quantity != null && Number(i.counted_quantity) !== Number(i.system_quantity))
   const totalVarianceValue = itemsWithVariance.reduce(
@@ -179,7 +238,15 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
 
   const isOpen = session.status === 'in_progress'
   const st = STATUS[session.status] || STATUS.in_progress
-  const typeLabel = session.inventory_type === 'full' ? 'Complet' : session.inventory_type === 'partial' ? 'Partiel' : 'Contrôle ponctuel'
+  const baseTypeLabel = session.inventory_type === 'full' ? 'Complet' : session.inventory_type === 'partial' ? 'Partiel' : 'Contrôle ponctuel'
+  const scope = session.scope
+  const scopeLabel =
+    scope?.type === 'category' ? `catégorie « ${scope.category} »`
+    : scope?.type === 'brand' ? `marque « ${scope.brand} »`
+    : scope?.type === 'oldest' ? `${scope.limit} articles les moins récemment comptés`
+    : scope?.type === 'selection' ? 'inventaire tournant'
+    : null
+  const typeLabel = scopeLabel ? `${baseTypeLabel} — ${scopeLabel}` : baseTypeLabel
   const progress = items.length > 0 ? Math.round((countedCount / items.length) * 100) : 0
   const signTone = (n: number) => (n < 0 ? 'text-destructive' : n > 0 ? 'text-success' : 'text-foreground')
 
@@ -203,6 +270,12 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
             <div className="flex flex-wrap items-center gap-2">
               {isOpen && (
                 <>
+                  <ScanButton
+                    continuous
+                    title="Compter en scannant"
+                    description="Chaque article scanné ajoute 1 à sa quantité comptée."
+                    onDetected={handleScan}
+                  />
                   <Button variant="outline" onClick={handleSave} disabled={saving || completing}>
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
                     Sauvegarder
@@ -246,7 +319,11 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
                     const varianceValue = item.counted_quantity != null ? variance * Number(item.unit_value || 0) : 0
                     const name = item.product_name || item.packaging_name || '-'
                     return (
-                      <li key={item.id} className="space-y-3 px-5 py-4">
+                      <li
+                        key={item.id}
+                        data-inventory-item={item.id}
+                        className={cn('space-y-3 px-5 py-4 transition-colors', highlightId === item.id && 'bg-brand-soft')}
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-foreground">{name}</p>
@@ -320,7 +397,11 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
                         const varianceValue = item.counted_quantity != null ? variance * Number(item.unit_value || 0) : 0
                         const name = item.product_name || item.packaging_name || '-'
                         return (
-                          <TableRow key={item.id}>
+                          <TableRow
+                            key={item.id}
+                            data-inventory-item={item.id}
+                            className={cn('transition-colors', highlightId === item.id && 'bg-brand-soft')}
+                          >
                             <TableCell className="pl-5">
                               <p className="font-medium text-foreground">{name}</p>
                               <p className="text-xs text-muted-foreground">{item.item_type === 'product' ? 'Produit' : 'Emballage'}</p>
@@ -432,6 +513,8 @@ export default function InventoryDetailPage({ params }: { params: Promise<{ id: 
             </Panel>
           </div>
         </div>
+
+        {barcodeDialog}
 
         {/* Confirmation de finalisation */}
         <AlertDialog open={openComplete} onOpenChange={(o) => { if (!completing) setOpenComplete(o) }}>

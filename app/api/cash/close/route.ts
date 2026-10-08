@@ -5,6 +5,7 @@ import { withTransaction } from '@/lib/db'
 import { AppError, handleRouteError } from '@/lib/errors'
 import { computeSessionTotals } from '@/lib/cash-automation'
 import { money } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const closeSchema = z.object({
   closing_amount: z.coerce.number().nonnegative('Montant de clôture invalide').optional().default(0),
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest) {
     const closingAmt = money(data.closing_amount)
 
     const { session, warnings } = await withTransaction(async (tx) => {
+      // Mois clôturé (export comptable transmis) : opération refusée
+      await assertPeriodOpen(tx.sql, companyId)
       // Verrou exclusif : les écritures de mouvements (FOR SHARE sur la session)
       // attendent la clôture, ou se terminent avant que les totaux soient calculés.
       const [cs] = await tx.sql`

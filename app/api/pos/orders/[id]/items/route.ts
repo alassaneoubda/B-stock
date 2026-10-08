@@ -10,6 +10,8 @@ const addSchema = z.object({
     .array(z.object({ variantId: z.string().uuid(), quantity: z.number().int().positive().max(1000) }))
     .min(1)
     .max(100),
+  // Confirmation : ouvrir un casier si le stock à l'unité ne suffit pas
+  unpack: z.boolean().optional(),
 })
 
 // POST /api/pos/orders/[id]/items — ajoute des articles (prix catalogue)
@@ -19,8 +21,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!auth.ok) return auth.response
     const { id } = await params
     if (!isUuid(id)) throw notFound('Ticket')
-    const { items } = addSchema.parse(await request.json())
-    await addPosItems(auth.actor, id, items)
+    const { items, unpack } = addSchema.parse(await request.json())
+    await addPosItems(auth.actor, id, items, { unpack })
     return NextResponse.json({ success: true, data: await getPosOrder(auth.actor.companyId, id) })
   } catch (error) {
     return handleRouteError(error, 'pos.items.add')

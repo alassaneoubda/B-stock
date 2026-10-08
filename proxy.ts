@@ -32,6 +32,8 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith('/api/') &&
     !pathname.startsWith('/api/auth') &&
     !pathname.startsWith('/api/webhooks') &&
+    // Webhook Mobile Money des entreprises : authentifié par signature HMAC
+    !pathname.startsWith('/api/payments/mobile-money/webhook/') &&
     !pathname.startsWith('/api/cron') // authentifié par CRON_SECRET
 
   const isDashboardRoute = pathname.startsWith('/dashboard') || pathname === '/pos' || pathname.startsWith('/pos/')

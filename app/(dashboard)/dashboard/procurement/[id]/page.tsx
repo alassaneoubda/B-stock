@@ -32,6 +32,7 @@ import { notFound } from 'next/navigation'
 import { isUuid } from '@/lib/tenant'
 import { formatDate, formatDateShort, formatMoney, formatNumber } from '@/lib/format'
 import { PrintButton } from './print-button'
+import { PaymentsPanel } from './payments-panel'
 
 interface OrderDetail {
     id: string
@@ -368,6 +369,8 @@ export default async function ProcurementDetailPage({ params }: { params: Promis
                                 <span className="tabular text-base font-semibold text-foreground">{formatMoney(order.total_amount)}</span>
                             </div>
                         </Panel>
+
+                        <PaymentsPanel orderId={order.id} />
 
                         {order.notes && (
                             <Panel title="Notes et instructions" bodyClassName="p-5">

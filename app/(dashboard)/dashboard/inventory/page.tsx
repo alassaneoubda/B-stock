@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose,
 } from '@/components/ui/dialog'
-import { ClipboardList, Loader2, Plus, Eye, Download } from 'lucide-react'
+import { CalendarCheck, ClipboardList, Loader2, Plus, Eye, Download } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -39,7 +40,11 @@ export default function InventoryPage() {
   const [depots, setDepots] = useState<Depot[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [newDepotId, setNewDepotId] = useState('')
-  const [newType, setNewType] = useState('full')
+  // Périmètre : complet, ou partiel (catégorie, marque, N articles les moins récemment comptés)
+  const [newType, setNewType] = useState<'full' | 'category' | 'brand' | 'oldest'>('full')
+  const [scopeValue, setScopeValue] = useState('')
+  const [oldestCount, setOldestCount] = useState('20')
+  const [facets, setFacets] = useState<{ categories: string[]; brands: string[] }>({ categories: [], brands: [] })
   const [submitting, setSubmitting] = useState(false)
   const [openNew, setOpenNew] = useState(false)
   const [loadError, setLoadError] = useState(false)
@@ -63,13 +68,31 @@ export default function InventoryPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Catégories et marques proposées pour un inventaire partiel (chargées à l'ouverture du formulaire)
+  useEffect(() => {
+    if (!openNew) return
+    apiFetch<{ data: { categories: string[]; brands: string[] } }>('/api/inventory/due')
+      .then((res) => setFacets({ categories: res.data.categories ?? [], brands: res.data.brands ?? [] }))
+      .catch(() => {})
+  }, [openNew])
+
+  const scopeReady =
+    newType === 'full' ||
+    ((newType === 'category' || newType === 'brand') && Boolean(scopeValue)) ||
+    (newType === 'oldest' && Number(oldestCount) >= 1)
+
   async function handleCreate() {
-    if (!newDepotId || submitting) return
+    if (!newDepotId || submitting || !scopeReady) return
     setSubmitting(true)
     try {
+      const scope =
+        newType === 'category' ? { type: 'category', category: scopeValue }
+        : newType === 'brand' ? { type: 'brand', brand: scopeValue }
+        : newType === 'oldest' ? { type: 'oldest', limit: Math.min(500, Math.floor(Number(oldestCount))) }
+        : { type: 'full' }
       const json = await apiFetch<{ data: { id: string } }>('/api/inventory', {
         method: 'POST',
-        body: { depot_id: newDepotId, inventory_type: newType },
+        body: { depot_id: newDepotId, inventory_type: newType === 'full' ? 'full' : 'partial', scope },
       })
       toast.success('Inventaire démarré')
       setOpenNew(false)
@@ -110,20 +133,56 @@ export default function InventoryPage() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="inventory-type">Type</Label>
-            <Select value={newType} onValueChange={setNewType}>
+            <Select value={newType} onValueChange={(v) => { setNewType(v as typeof newType); setScopeValue('') }}>
               <SelectTrigger id="inventory-type" className="h-10 w-full" aria-label="Type d'inventaire"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="full">Complet</SelectItem>
-                <SelectItem value="partial">Partiel</SelectItem>
-                <SelectItem value="spot_check">Contrôle ponctuel</SelectItem>
+                <SelectItem value="category">Partiel — une catégorie</SelectItem>
+                <SelectItem value="brand">Partiel — une marque</SelectItem>
+                <SelectItem value="oldest">Partiel — les moins récemment comptés</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">Un inventaire complet couvre tous les articles du dépôt.</p>
+            <p className="text-xs text-muted-foreground">
+              {newType === 'full'
+                ? 'Un inventaire complet couvre tous les articles et emballages du dépôt.'
+                : 'Un inventaire partiel ne compte que les articles choisis : le reste du stock n’est pas modifié.'}
+            </p>
           </div>
+          {(newType === 'category' || newType === 'brand') && (
+            <div className="space-y-1.5">
+              <Label htmlFor="inventory-scope">{newType === 'category' ? 'Catégorie' : 'Marque'}</Label>
+              <Select value={scopeValue} onValueChange={setScopeValue}>
+                <SelectTrigger id="inventory-scope" className="h-10 w-full">
+                  <SelectValue placeholder="Choisir" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(newType === 'category' ? facets.categories : facets.brands).map((v) => (
+                    <SelectItem key={v} value={v}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {newType === 'oldest' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="inventory-oldest">Nombre d&apos;articles</Label>
+              <Input
+                id="inventory-oldest"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={500}
+                value={oldestCount}
+                onChange={(e) => setOldestCount(e.target.value)}
+                className="h-10"
+              />
+              <p className="text-xs text-muted-foreground">Les articles jamais comptés passent en premier.</p>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <DialogClose asChild><Button variant="outline" disabled={submitting}>Annuler</Button></DialogClose>
-          <Button onClick={handleCreate} disabled={submitting || !newDepotId}>
+          <Button onClick={handleCreate} disabled={submitting || !newDepotId || !scopeReady}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ClipboardList className="h-4 w-4" aria-hidden="true" />}
             Démarrer
           </Button>
@@ -136,7 +195,18 @@ export default function InventoryPage() {
     <DashboardHeader
       title="Inventaire"
       description="Comptages physiques et écarts de stock par dépôt"
-      actions={newDialog}
+      actions={
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-9" asChild>
+            <Link href="/dashboard/inventory/due">
+              <CalendarCheck className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden sm:inline">À compter cette semaine</span>
+              <span className="sm:hidden">Cette semaine</span>
+            </Link>
+          </Button>
+          {newDialog}
+        </div>
+      }
     />
   )
 

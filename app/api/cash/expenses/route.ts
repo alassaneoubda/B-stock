@@ -5,6 +5,7 @@ import { sql, withTransaction } from '@/lib/db'
 import { AppError, handleRouteError } from '@/lib/errors'
 import { createCashMovementFromExpense, findOpenCashSession } from '@/lib/cash-automation'
 import { money } from '@/lib/domain/payments'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const EXPENSE_CATEGORIES = [
   'fuel',
@@ -82,6 +83,8 @@ export async function POST(request: NextRequest) {
     const amount = money(data.amount)
 
     const expense = await withTransaction(async (tx) => {
+      // Dépense datée d'un mois clôturé (saisie antidatée comprise) : refusée
+      await assertPeriodOpen(tx.sql, companyId, data.expense_date || null)
       const session = await findOpenCashSession(tx.sql, companyId)
       if (!session) throw new AppError(409, 'Aucune caisse ouverte', 'NO_OPEN_CASH')
 

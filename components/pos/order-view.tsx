@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { formatMoney } from '@/lib/format'
+import { ScanButton, type ScanHandler } from '@/components/scan/barcode-scanner'
 import { orderTitle, variantLabel, type PosCatalogItem, type PosOrder, type PosOrderItem } from './types'
 
 const MULTIPLIERS = [1, 2, 3, 6, 12, 24]
@@ -35,6 +36,7 @@ export function PosOrderView({
   pendingVariantId,
   onBack,
   onAdd,
+  onScan,
   onReduce,
   onCheckout,
   onTransfer,
@@ -47,6 +49,8 @@ export function PosOrderView({
   pendingVariantId: string | null
   onBack: () => void
   onAdd: (variantId: string, quantity: number) => void
+  /** Scan caméra : ajoute l'article scanné au ticket. */
+  onScan?: ScanHandler
   onReduce: (item: PosOrderItem, newQuantity: number) => void
   onCheckout: () => void
   onTransfer: () => void
@@ -233,6 +237,18 @@ export function PosOrderView({
               aria-label="Rechercher un produit"
             />
           </div>
+          {onScan && (
+            <ScanButton
+              iconOnly
+              size="icon-lg"
+              className="h-11 w-11 shrink-0"
+              label="Scanner un article"
+              title="Scanner des articles"
+              description="Chaque article scanné est ajouté au ticket."
+              continuous
+              onDetected={onScan}
+            />
+          )}
           <div className="hidden items-center gap-1 rounded-lg border border-border bg-card p-1 sm:flex" role="radiogroup" aria-label="Quantité à ajouter">
             {MULTIPLIERS.map((m) => (
               <button
@@ -299,7 +315,9 @@ export function PosOrderView({
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {products.map((item) => {
-              const out = item.available <= 0
+              // Bouteilles épuisées mais casier disponible : vendable (ouverture du casier)
+              const fromPack = item.available <= 0 && item.openable > 0
+              const out = item.available <= 0 && !fromPack
               const qty = inTicket.get(item.variant_id) ?? 0
               const pending = pendingVariantId === item.variant_id
               return (
@@ -307,7 +325,7 @@ export function PosOrderView({
                   key={item.variant_id}
                   onClick={() => add(item)}
                   disabled={out || pending}
-                  aria-label={`${variantLabel(item)}, ${formatMoney(item.price)}, ${out ? 'rupture' : `${item.available} disponibles`}`}
+                  aria-label={`${variantLabel(item)}, ${formatMoney(item.price)}, ${out ? 'rupture' : fromPack ? 'casier à ouvrir' : `${item.available} disponibles`}`}
                   className={cn(
                     'relative flex min-h-28 flex-col justify-between rounded-xl border bg-card p-3.5 text-left transition-[transform,box-shadow,border-color] duration-150',
                     out
@@ -333,7 +351,7 @@ export function PosOrderView({
                           out ? 'text-destructive' : item.available <= 5 ? 'text-brand-strong' : 'text-muted-foreground'
                         )}
                       >
-                        {out ? 'Rupture' : `${item.available} dispo`}
+                        {out ? 'Rupture' : fromPack ? 'Casier à ouvrir' : `${item.available} dispo`}
                       </span>
                     )}
                   </span>

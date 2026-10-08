@@ -36,6 +36,7 @@ import {
 import { EmptyState, ErrorState, TableSkeleton } from '@/components/states'
 import { ApiError, apiFetch, errorMessage, toastError, toastWarnings } from '@/lib/api-client'
 import { formatDate, formatMoney } from '@/lib/format'
+import { SupplierAccount } from './supplier-account'
 
 interface PurchaseOrder {
     id: string
@@ -242,6 +243,8 @@ export default function SupplierDetailPage() {
                         </div>
                     </div>
                 </div>
+
+                <SupplierAccount supplierId={supplier.id} />
 
                 <div className="grid gap-6 lg:grid-cols-3">
                     <div className="lg:col-span-2">

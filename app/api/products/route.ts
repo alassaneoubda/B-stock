@@ -17,6 +17,8 @@ const productSchema = z.object({
   purchasePrice: z.number().min(0).default(0),
   sellingPrice: z.number().min(0).default(0),
   imageUrl: z.string().max(2000).optional(),
+  /** TVA propre au produit (%) ; null = taux standard de l'entreprise. */
+  vatRate: z.number().min(0).max(100).nullable().optional(),
   variants: z
     .array(
       z.object({
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest) {
       purchasePrice: data.purchasePrice,
       sellingPrice: data.sellingPrice,
       imageUrl: data.imageUrl,
+      vatRate: data.vatRate,
       variants: data.variants,
     })
 

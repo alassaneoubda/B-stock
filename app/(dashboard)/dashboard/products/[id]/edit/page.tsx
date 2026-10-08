@@ -30,6 +30,11 @@ const productSchema = z.object({
     purchasePrice: z.number().min(0, "Le prix d'achat doit être positif"),
     sellingPrice: z.number().min(0, 'Le prix de vente doit être positif'),
     isActive: z.boolean().default(true),
+    // TVA propre au produit (%) : vide = taux standard de l'entreprise
+    vatRate: z
+        .string()
+        .optional()
+        .refine((v) => !v || (Number(v.replace(',', '.')) >= 0 && Number(v.replace(',', '.')) <= 100), 'Taux entre 0 et 100'),
 })
 
 type ProductForm = z.infer<typeof productSchema>
@@ -100,6 +105,7 @@ export default function EditProductPage() {
                     purchasePrice: Number(p.purchase_price) || 0,
                     sellingPrice: Number(p.selling_price) || 0,
                     isActive: p.is_active !== false,
+                    vatRate: p.vat_rate == null ? '' : String(Number(p.vat_rate)),
                 })
             } catch (e) {
                 setLoadError(errorMessage(e))
@@ -117,7 +123,10 @@ export default function EditProductPage() {
         try {
             const result = await apiFetch<{ warnings?: unknown }>(`/api/products/${productId}`, {
                 method: 'PUT',
-                body: data,
+                body: {
+                    ...data,
+                    vatRate: data.vatRate && data.vatRate.trim() !== '' ? Number(data.vatRate.replace(',', '.')) : null,
+                },
             })
 
             toast.success('Produit mis à jour')
@@ -323,6 +332,23 @@ export default function EditProductPage() {
                                         disabled={isLoading}
                                     />
                                     {errors.sellingPrice && <p className="text-xs text-destructive">{errors.sellingPrice.message}</p>}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="vatRate">TVA propre au produit (%)</Label>
+                                    <Input
+                                        id="vatRate"
+                                        inputMode="decimal"
+                                        placeholder="Taux standard"
+                                        className="tabular"
+                                        aria-invalid={!!errors.vatRate}
+                                        {...register('vatRate')}
+                                        disabled={isLoading}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Laissez vide pour le taux standard de l’entreprise ; 0 pour un produit exonéré. Sans effet si l’entreprise n’est pas assujettie.
+                                    </p>
+                                    {errors.vatRate && <p className="text-xs text-destructive">{errors.vatRate.message}</p>}
                                 </div>
                             </CardContent>
                         </Card>

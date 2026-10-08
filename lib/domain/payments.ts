@@ -1,6 +1,7 @@
 import type { Tx } from '../db'
 import { AppError, notFound } from '../errors'
 import { createCashMovementFromPayment } from '../cash-automation'
+import { assertPeriodOpen } from '../accounting/period-lock'
 
 /**
  * Service UNIQUE d'encaissement des dettes client.
@@ -211,6 +212,9 @@ export async function applyClientPayment(
   }
   const amount = fromCents(amountCents)
   const warnings: string[] = []
+
+  // Encaissement daté d'aujourd'hui : refusé si le mois est clôturé (avant toute écriture)
+  await assertPeriodOpen(tx.sql, input.companyId)
 
   await lockClient(tx, input.companyId, input.clientId)
 

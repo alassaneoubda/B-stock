@@ -5,6 +5,7 @@ import { withTransaction } from '@/lib/db'
 import { AppError, badRequest, handleRouteError, notFound } from '@/lib/errors'
 import { isUuid } from '@/lib/tenant'
 import { removeStock } from '@/lib/domain/stock'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const returnSchema = z.object({
   items: z
@@ -45,6 +46,8 @@ export async function POST(
     }
 
     await withTransaction(async (tx) => {
+      // Mois clôturé (export comptable transmis) : opération refusée
+      await assertPeriodOpen(tx.sql, companyId)
       const [po] = await tx.sql<{ id: string; depot_id: string; status: string; order_number: string }>`
         SELECT id, depot_id, status, order_number FROM purchase_orders
         WHERE id = ${id} AND company_id = ${companyId}

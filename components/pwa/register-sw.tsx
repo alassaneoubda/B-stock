@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { OfflineDataGuard } from './offline-data-guard'
 
 /**
  * Enregistre le service worker en production uniquement.
@@ -43,5 +44,6 @@ export function RegisterSW() {
     }
   }, [])
 
-  return null
+  // Effacement des données de vente hors ligne à la déconnexion / au changement de compte
+  return <OfflineDataGuard />
 }

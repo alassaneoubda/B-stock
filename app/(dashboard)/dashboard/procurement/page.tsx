@@ -17,7 +17,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, MoreHorizontal, ArchiveRestore, Eye, CheckCircle2, Clock, Truck } from 'lucide-react'
+import { Plus, MoreHorizontal, ArchiveRestore, Eye, CheckCircle2, Clock, Truck, ShoppingCart, Wallet } from 'lucide-react'
 import Link from 'next/link'
 import { EmptyState } from '@/components/states'
 import { formatDate, formatDateShort, formatMoney, formatNumber } from '@/lib/format'
@@ -105,12 +105,26 @@ export default async function ProcurementPage() {
                 title="Approvisionnement"
                 description="Suivez vos stocks entrants et commandes fournisseurs"
                 actions={
-                    <Button asChild variant="brand">
-                        <Link href="/dashboard/procurement/new">
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                            Nouvelle commande
-                        </Link>
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button asChild variant="outline" className="hidden sm:inline-flex">
+                            <Link href="/dashboard/suppliers/payables">
+                                <Wallet className="h-4 w-4" aria-hidden="true" />
+                                Dettes fournisseurs
+                            </Link>
+                        </Button>
+                        <Button asChild variant="outline">
+                            <Link href="/dashboard/procurement/suggestions">
+                                <ShoppingCart className="h-4 w-4" aria-hidden="true" />
+                                À commander
+                            </Link>
+                        </Button>
+                        <Button asChild variant="brand">
+                            <Link href="/dashboard/procurement/new">
+                                <Plus className="h-4 w-4" aria-hidden="true" />
+                                Nouvelle commande
+                            </Link>
+                        </Button>
+                    </div>
                 }
             />
 

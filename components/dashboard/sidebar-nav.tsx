@@ -10,6 +10,7 @@ import {
   Bell,
   BoxesIcon,
   Building2,
+  Calculator,
   Car,
   ChevronDown,
   ChevronsUpDown,
@@ -22,6 +23,7 @@ import {
   LayoutDashboard,
   LogOut,
   MonitorSmartphone,
+  Smartphone,
   Package,
   PackageSearch,
   RotateCcw,
@@ -77,6 +79,7 @@ const SECTIONS: NavSection[] = [
       { title: 'Ventes', href: '/dashboard/sales', icon: ShoppingCart },
       { title: 'Clients', href: '/dashboard/clients', icon: Users },
       { title: 'Crédits clients', href: '/dashboard/credits', icon: CreditCard },
+      { title: 'Mobile Money', href: '/dashboard/mobile-money', icon: Smartphone },
       { title: 'Factures', href: '/dashboard/invoices', icon: FileText },
       { title: 'Retours', href: '/dashboard/returns', icon: RotateCcw },
     ],
@@ -107,7 +110,9 @@ const SECTIONS: NavSection[] = [
     title: 'Achats & logistique',
     items: [
       { title: 'Approvisionnement', href: '/dashboard/procurement', icon: ClipboardList },
+      { title: 'À commander', href: '/dashboard/procurement/suggestions', icon: ShoppingCart },
       { title: 'Fournisseurs', href: '/dashboard/suppliers', icon: PackageSearch },
+      { title: 'Dettes fournisseurs', href: '/dashboard/suppliers/payables', icon: Wallet },
       { title: 'Livraisons', href: '/dashboard/deliveries', icon: Truck },
       { title: 'Véhicules', href: '/dashboard/vehicles', icon: Car },
       { title: 'Dépôts', href: '/dashboard/depots', icon: Building2 },
@@ -118,6 +123,7 @@ const SECTIONS: NavSection[] = [
     title: 'Pilotage',
     items: [
       { title: 'Rapports', href: '/dashboard/reports', icon: BarChart3 },
+      { title: 'Comptabilité', href: '/dashboard/accounting', icon: Calculator },
       { title: 'Alertes', href: '/dashboard/alerts', icon: Bell },
       { title: 'Commerciaux', href: '/dashboard/agents', icon: TrendingUp },
       { title: 'Journal d’audit', href: '/dashboard/audit-logs', icon: FileSearch },
@@ -136,9 +142,14 @@ const SECTIONS: NavSection[] = [
 
 const COLLAPSE_KEY = 'bstock.nav.collapsed'
 
+const ALL_HREFS = SECTIONS.flatMap((s) => s.items.map((i) => i.href))
+
 function isActive(pathname: string, item: NavItem) {
   if (item.exact) return pathname === item.href
-  return pathname === item.href || pathname.startsWith(item.href + '/')
+  const matches = (href: string) => pathname === href || pathname.startsWith(href + '/')
+  if (!matches(item.href)) return false
+  // Un lien plus précis correspond (ex. /dashboard/procurement/suggestions) : c'est lui qui est actif
+  return !ALL_HREFS.some((h) => h.startsWith(item.href + '/') && matches(h))
 }
 
 function initials(name: string) {
