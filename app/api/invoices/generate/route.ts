@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
       const orderItems = await tx.sql`
         SELECT soi.product_variant_id, soi.quantity, soi.unit_price,
                COALESCE(soi.total_price, soi.quantity * soi.unit_price) AS line_total,
+               soi.vat_rate, soi.amount_ht, soi.vat_amount,
                p.name AS product_name, pt.name AS packaging_name
         FROM sales_order_items soi
         JOIN product_variants pv ON pv.id = soi.product_variant_id
@@ -83,6 +84,11 @@ export async function POST(request: NextRequest) {
           unitPrice: money(Number(i.unit_price || 0)),
           total: money(Number(i.line_total || 0)),
           itemType: 'product',
+          // TVA figée sur la ligne de vente (null : vente sans TVA)
+          vat:
+            i.vat_amount == null
+              ? null
+              : { rate: Number(i.vat_rate), ht: Number(i.amount_ht), vat: Number(i.vat_amount) },
         })),
         ...packagingItems.map((p) => ({
           productId: null as string | null,
@@ -91,8 +97,11 @@ export async function POST(request: NextRequest) {
           unitPrice: money(Number(p.unit_price)),
           total: money(Number(p.net_quantity) * Number(p.unit_price)),
           itemType: 'packaging',
+          vat: null as { rate: number; ht: number; vat: number } | null,
         })),
       ]
+      const hasVat = lines.some((l) => l.vat)
+      const totalVat = money(lines.reduce((s, l) => s + (l.vat?.vat ?? 0), 0))
 
       // Totaux recalculés à partir des lignes de la facture
       const totalAmount = money(lines.reduce((s, l) => s + l.total, 0))
@@ -114,8 +123,28 @@ export async function POST(request: NextRequest) {
         )
         RETURNING *
       `
+      if (hasVat) {
+        const [withVat] = await tx.sql`
+          UPDATE invoices SET total_ht = ${money(totalAmount - totalVat)}, total_vat = ${totalVat}
+          WHERE id = ${invoice.id} RETURNING *
+        `
+        Object.assign(invoice, withVat)
+      }
 
       for (const line of lines) {
+        if (line.vat) {
+          await tx.sql`
+            INSERT INTO invoice_items (
+              invoice_id, product_id, description,
+              quantity, unit_price, total_price, item_type, vat_rate, amount_ht, vat_amount
+            ) VALUES (
+              ${invoice.id}, ${line.productId}, ${line.description},
+              ${line.quantity}, ${line.unitPrice}, ${line.total}, ${line.itemType},
+              ${line.vat.rate}, ${line.vat.ht}, ${line.vat.vat}
+            )
+          `
+          continue
+        }
         await tx.sql`
           INSERT INTO invoice_items (
             invoice_id, product_id, description,

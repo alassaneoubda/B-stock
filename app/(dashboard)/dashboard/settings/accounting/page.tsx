@@ -41,7 +41,7 @@ import {
 
 type AuxEntity = { id: string; name: string; customCode: string | null; code: string }
 
-const GROUP_ORDER: AccountDefinition['group'][] = ['tiers', 'ventes', 'achats', 'tresorerie', 'consignes', 'charges', 'divers']
+const GROUP_ORDER: AccountDefinition['group'][] = ['tiers', 'ventes', 'achats', 'tresorerie', 'consignes', 'fiscal', 'charges', 'divers']
 
 export default function AccountingSettingsPage() {
     const { data: session } = useSession()

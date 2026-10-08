@@ -8,6 +8,7 @@ import {
   packagingLabel,
   unitsPerCase,
 } from './catalog/beverage-catalog'
+import { barcodeCandidates, normalizeBarcode } from '@/components/scan/barcode-format'
 
 export type CreateProductInput = {
   name: string
@@ -22,6 +23,8 @@ export type CreateProductInput = {
   purchasePrice: number
   sellingPrice: number
   imageUrl?: string | null
+  /** Taux de TVA propre au produit (%, 0 = exonéré) ; null/absent = taux standard de l'entreprise. */
+  vatRate?: number | null
   variants?: Array<{
     packagingTypeId: string
     barcode?: string
@@ -35,6 +38,55 @@ export class DuplicateSkuError extends AppError {
   constructor(public sku: string) {
     super(409, 'Un produit avec ce SKU existe déjà', 'DUPLICATE_SKU')
     this.name = 'DuplicateSkuError'
+  }
+}
+
+/**
+ * Codes-barres uniques dans l'entreprise : refuse (409 BARCODE_TAKEN) un code
+ * déjà porté par une variante de l'entreprise (y compris sous sa forme
+ * UPC-A / EAN-13 équivalente) ou répété dans la même saisie. Verrou
+ * consultatif identique à celui de POST /api/products/barcode/[code] : une
+ * association et une création simultanées du même code sont sérialisées.
+ * À appeler AVANT toute écriture.
+ */
+export async function assertBarcodesFree(
+  tx: Tx,
+  companyId: string,
+  barcodes: (string | null | undefined)[],
+  exceptVariantId: string | null = null
+): Promise<void> {
+  const codes = barcodes.map((b) => normalizeBarcode(b ?? '')).filter(Boolean)
+  if (codes.length === 0) return
+  const seen = new Set<string>()
+  for (const code of codes) {
+    for (const c of barcodeCandidates(code)) {
+      if (seen.has(c)) {
+        throw new AppError(409, `Le code-barres ${code} est saisi deux fois.`, 'BARCODE_TAKEN', { barcode: code })
+      }
+    }
+    seen.add(code)
+  }
+  for (const code of [...new Set(codes)].sort()) {
+    await tx.sql`SELECT pg_advisory_xact_lock(hashtext(${`${companyId}:barcode:${code}`}))`
+  }
+  const [taken] = await tx.sql`
+    SELECT pv.barcode, p.name, pt.name AS packaging_name
+    FROM product_variants pv
+    JOIN products p ON p.id = pv.product_id
+    LEFT JOIN packaging_types pt ON pt.id = pv.packaging_type_id
+    WHERE p.company_id = ${companyId}
+      AND pv.barcode = ANY(${codes.flatMap((c) => barcodeCandidates(c))}::text[])
+      AND (${exceptVariantId}::uuid IS NULL OR pv.id <> ${exceptVariantId}::uuid)
+    LIMIT 1
+  `
+  if (taken) {
+    const label = taken.packaging_name ? `${taken.name} (${taken.packaging_name})` : taken.name
+    throw new AppError(
+      409,
+      `Le code-barres ${taken.barcode} est déjà associé à « ${label} ».`,
+      'BARCODE_TAKEN',
+      { barcode: taken.barcode }
+    )
   }
 }
 
@@ -77,11 +129,12 @@ export async function createProductForCompany(
     }
   }
 
-  const variants = data.variants ?? []
+  const variants = (data.variants ?? []).map((v) => ({ ...v, barcode: normalizeBarcode(v.barcode ?? '') || undefined }))
   if (variants.length > 0) {
     await assertOwned(tx.sql, companyId, {
       packagingTypes: variants.map((v) => v.packagingTypeId),
     })
+    await assertBarcodesFree(tx, companyId, variants.map((v) => v.barcode))
   }
 
   const [product] = await tx.sql`
@@ -98,6 +151,10 @@ export async function createProductForCompany(
     RETURNING *
   `
   const productId = product.id as string
+  if (data.vatRate !== undefined && data.vatRate !== null) {
+    const [withRate] = await tx.sql`UPDATE products SET vat_rate = ${data.vatRate} WHERE id = ${productId} RETURNING vat_rate`
+    product.vat_rate = withRate.vat_rate
+  }
 
   // Contenu explicite (ex. casier de 12) : l'emballage porte ce libellé ; sinon ancien nommage
   const explicitUnits = data.unitsPerPack && data.unitsPerPack > 0 ? Math.floor(data.unitsPerPack) : null

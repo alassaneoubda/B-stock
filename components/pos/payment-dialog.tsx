@@ -35,6 +35,7 @@ export function PaymentDialog({
   hasClient,
   clientName,
   submitting,
+  allowedMethods,
   onOpenChange,
   onConfirm,
 }: {
@@ -43,6 +44,8 @@ export function PaymentDialog({
   hasClient: boolean
   clientName: string | null
   submitting: boolean
+  /** Modes proposés (hors ligne : espèces et Mobile Money uniquement). Par défaut : tous. */
+  allowedMethods?: PaymentMethod[]
   onOpenChange: (open: boolean) => void
   onConfirm: (input: { paymentMethod: PaymentMethod; paidAmount: number; cashAmount?: number; received: number }) => void
 }) {
@@ -94,7 +97,7 @@ export function PaymentDialog({
         </div>
 
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Mode de paiement">
-          {METHODS.map(({ id, label, icon: Icon, hint }) => {
+          {METHODS.filter((m) => !allowedMethods || allowedMethods.includes(m.id)).map(({ id, label, icon: Icon, hint }) => {
             const needsClient = (id === 'credit' || id === 'mixed') && !hasClient
             return (
               <button

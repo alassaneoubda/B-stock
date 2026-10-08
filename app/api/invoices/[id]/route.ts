@@ -32,7 +32,9 @@ export async function GET(
         comp.name as company_name,
         comp.phone as company_phone,
         comp.address as company_address,
-        comp.email as company_email
+        comp.email as company_email,
+        comp.tax_id as company_tax_id,
+        comp.vat_enabled as company_vat_enabled
       FROM invoices i
       LEFT JOIN clients c ON i.client_id = c.id
       LEFT JOIN suppliers s ON i.supplier_id = s.id

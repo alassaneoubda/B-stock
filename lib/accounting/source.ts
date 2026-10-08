@@ -24,6 +24,10 @@ import {
  *  - payments                     = tout encaissement client, au moment de la
  *    vente (même horodatage que la vente) ou ultérieur (règlement de créance),
  *    payment_type = 'product' | 'packaging' ;
+ *  - TVA (migration 035, entreprise assujettie) : sales_orders.total_vat,
+ *    credit_notes.vat_amount (avoirs), TVA des lignes de vente pour les retours
+ *    directs, invoice_items.vat_amount (factures manuelles),
+ *    purchase_order_items.vat_rate (achats, prix d'achat HT). NULL = pas de TVA.
  *  - credit_notes.total_amount > 0 = créance (CR-…), < 0 = avoir (AV-…). Les
  *    créances nées d'une vente ne génèrent pas d'écriture (la vente porte déjà
  *    le 411) ; seules les créances saisies à la main en génèrent une.
@@ -125,6 +129,7 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
   const saleRows = await sql`
     SELECT so.id, so.order_number, so.status, to_char(so.created_at, 'YYYY-MM-DD') AS date,
            COALESCE(so.subtotal, 0) AS subtotal, COALESCE(so.packaging_total, 0) AS packaging_total,
+           COALESCE(so.total_vat, 0) AS total_vat,
            so.client_id, COALESCE(c.name, 'Client') AS client_name,
            (SELECT i.invoice_number FROM invoices i
              WHERE i.order_id = so.id AND i.company_id = so.company_id
@@ -151,6 +156,7 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
       client: { id: s.client_id, name: s.client_name },
       subtotal: n(s.subtotal),
       packagingNet: n(s.packaging_total),
+      vat: n(s.total_vat),
     })
   }
 
@@ -202,6 +208,7 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
   // ---- Avoirs (credit_notes négatives) et créances saisies à la main ----
   const noteRows = await sql`
     SELECT cn.id, cn.credit_number, to_char(cn.created_at, 'YYYY-MM-DD') AS date, cn.total_amount,
+           COALESCE(cn.vat_amount, 0) AS vat_amount,
            COALESCE(cn.account_type, 'product') AS account_type, cn.client_id,
            COALESCE(c.name, 'Client') AS client_name,
            (so.id IS NOT NULL AND so.created_at = cn.created_at) AS from_sale
@@ -227,6 +234,7 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
         kind: 'avoir',
         productAmount: cn.account_type === 'packaging' ? 0 : -amount,
         packagingAmount: cn.account_type === 'packaging' ? -amount : 0,
+        productVat: cn.account_type === 'packaging' ? 0 : -n(cn.vat_amount),
       })
     } else if (amount > 0 && !cn.from_sale) {
       manualDebts.push({
@@ -249,7 +257,12 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
                FROM sales_order_items soi
                WHERE soi.sales_order_id = sm.reference_id AND soi.product_variant_id = sm.product_variant_id
              ), 0)) AS product_amount,
-             0::numeric AS packaging_amount
+             0::numeric AS packaging_amount,
+             SUM(sm.quantity * COALESCE((
+               SELECT SUM(COALESCE(soi.vat_amount, 0)) / NULLIF(SUM(soi.quantity), 0)
+               FROM sales_order_items soi
+               WHERE soi.sales_order_id = sm.reference_id AND soi.product_variant_id = sm.product_variant_id
+             ), 0)) AS product_vat
       FROM stock_movements sm
       WHERE sm.company_id = ${companyId} AND sm.movement_type = 'return'
         AND sm.reference_type = 'sales_order' AND sm.quantity > 0
@@ -258,7 +271,8 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
     ),
     packaging_returns AS (
       SELECT pt.sales_order_id AS order_id, pt.created_at,
-             0::numeric AS product_amount, SUM(COALESCE(pt.total_amount, pt.quantity * pt.unit_price, 0)) AS packaging_amount
+             0::numeric AS product_amount, SUM(COALESCE(pt.total_amount, pt.quantity * pt.unit_price, 0)) AS packaging_amount,
+             0::numeric AS product_vat
       FROM packaging_transactions pt
       JOIN sales_orders so0 ON so0.id = pt.sales_order_id
       WHERE pt.company_id = ${companyId} AND pt.transaction_type = 'returned'
@@ -267,13 +281,14 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
       GROUP BY pt.sales_order_id, pt.created_at
     ),
     all_returns AS (
-      SELECT order_id, created_at, SUM(product_amount) AS product_amount, SUM(packaging_amount) AS packaging_amount
+      SELECT order_id, created_at, SUM(product_amount) AS product_amount, SUM(packaging_amount) AS packaging_amount,
+             SUM(product_vat) AS product_vat
       FROM (SELECT * FROM product_returns UNION ALL SELECT * FROM packaging_returns) u
       GROUP BY order_id, created_at
     )
     SELECT r.order_id, to_char(r.created_at, 'YYYY-MM-DD') AS date,
            to_char(r.created_at, 'YYYYMMDDHH24MISSUS') AS ts,
-           r.product_amount, r.packaging_amount,
+           r.product_amount, r.packaging_amount, r.product_vat,
            so.order_number, so.status, so.client_id, COALESCE(c.name, 'Client') AS client_name
     FROM all_returns r
     JOIN sales_orders so ON so.id = r.order_id AND so.company_id = ${companyId}
@@ -290,6 +305,7 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
       kind: 'return',
       productAmount: Math.round(n(r.product_amount) * 100) / 100,
       packagingAmount: n(r.packaging_amount),
+      productVat: Math.round(n(r.product_vat)),
     })
   }
 
@@ -320,7 +336,8 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
            COALESCE(c.name, s.name, 'Tiers') AS party_name,
            COALESCE(SUM(ii.total_price) FILTER (WHERE COALESCE(ii.item_type, 'product') = 'product'), 0) AS product_amount,
            COALESCE(SUM(ii.total_price) FILTER (WHERE ii.item_type = 'packaging'), 0) AS packaging_amount,
-           COALESCE(SUM(ii.total_price) FILTER (WHERE ii.item_type = 'service'), 0) AS service_amount
+           COALESCE(SUM(ii.total_price) FILTER (WHERE ii.item_type = 'service'), 0) AS service_amount,
+           COALESCE(SUM(ii.vat_amount) FILTER (WHERE COALESCE(ii.item_type, 'product') <> 'packaging'), 0) AS vat_amount
     FROM invoices i
     LEFT JOIN clients c ON c.id = i.client_id
     LEFT JOIN suppliers s ON s.id = i.supplier_id
@@ -357,6 +374,7 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
       productAmount: n(i.product_amount),
       packagingAmount: n(i.packaging_amount),
       serviceAmount: n(i.service_amount),
+      vat: n(i.vat_amount),
     })
     if (n(i.amount_paid) > 0) {
       warnings.push(
@@ -411,7 +429,12 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
              SELECT SUM(poi.unit_price * poi.quantity_ordered) / NULLIF(SUM(poi.quantity_ordered), 0)
              FROM purchase_order_items poi
              WHERE poi.purchase_order_id = po.id AND poi.product_variant_id = sm.product_variant_id
-           ), 0)) AS amount
+           ), 0)) AS amount,
+           SUM(ABS(sm.quantity) * COALESCE((
+             SELECT SUM(poi.unit_price * poi.quantity_ordered * COALESCE(poi.vat_rate, 0) / 100) / NULLIF(SUM(poi.quantity_ordered), 0)
+             FROM purchase_order_items poi
+             WHERE poi.purchase_order_id = po.id AND poi.product_variant_id = sm.product_variant_id
+           ), 0)) AS vat
     FROM stock_movements sm
     JOIN purchase_orders po ON po.id = sm.reference_id AND po.company_id = sm.company_id
     LEFT JOIN suppliers s ON s.id = po.supplier_id
@@ -429,6 +452,7 @@ export async function loadAccountingSource(companyId: string, from: string, to: 
     supplier: { id: p.supplier_id, name: p.supplier_name },
     amount: Math.round(n(p.amount) * 100) / 100,
     kind: p.movement_type === 'purchase' ? 'reception' : 'return',
+    vat: Math.round(n(p.vat)),
   }))
 
   // ---- Paiements fournisseurs (si la table existe — migration 031) ----

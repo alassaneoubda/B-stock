@@ -5,6 +5,7 @@ import { sql, withTransaction } from '@/lib/db'
 import { AppError, badRequest, conflict, handleRouteError, notFound } from '@/lib/errors'
 import { isUuid } from '@/lib/tenant'
 import { barcodeCandidates, normalizeBarcode } from '@/components/scan/barcode-format'
+import { catalogPriceTtc, loadVatSettings } from '@/lib/vat'
 
 type Params = { params: Promise<{ code: string }> }
 
@@ -45,6 +46,7 @@ async function findByBarcode(companyId: string, code: string, depotId: string | 
     SELECT pv.id AS variant_id, p.id AS product_id, p.name AS product_name, p.brand, p.category,
            pv.barcode, pv.price::float AS price, pv.cost_price::float AS cost_price,
            pt.name AS packaging_name, pt.units_per_case, p.is_active,
+           to_jsonb(p) ->> 'vat_rate' AS vat_rate,
            CASE WHEN ${depotId}::uuid IS NULL THEN NULL ELSE (
              SELECT COALESCE(SUM(s.quantity), 0)::float
              FROM stock s JOIN depots d ON d.id = s.depot_id
@@ -58,6 +60,11 @@ async function findByBarcode(companyId: string, code: string, depotId: string | 
     ORDER BY p.is_active DESC, (pv.barcode = ${code}) DESC, p.name, pt.name
     LIMIT 10
   `
+  // Prix de vente TTC (converti si l'entreprise saisit ses prix HT)
+  const vat = await loadVatSettings(sql, companyId)
+  if (vat.enabled && !vat.pricesIncludeTax) {
+    for (const r of rows) r.price = catalogPriceTtc(vat, Number(r.price), r.vat_rate)
+  }
   return rows as BarcodeMatch[]
 }
 

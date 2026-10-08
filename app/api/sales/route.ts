@@ -36,6 +36,9 @@ const salesOrderSchema = z.object({
     )
     .max(100)
     .optional(),
+  // Vente hors ligne : clé d'idempotence générée sur l'appareil + heure de vente locale
+  clientRequestId: z.string().uuid().optional(),
+  offlineSoldAt: z.string().datetime({ offset: true }).optional(),
 })
 
 // POST /api/sales — Create a new sales order
@@ -46,15 +49,16 @@ export async function POST(request: NextRequest) {
 
     const data = salesOrderSchema.parse(await request.json())
 
-    const { order, warnings } = await createSale({
+    const { order, warnings, replayed } = await createSale({
       ...data,
       companyId: authz.companyId,
       userId: authz.userId,
     })
 
+    // Même clé déjà reçue : la vente existante est renvoyée (200), aucune seconde vente
     return NextResponse.json(
-      { success: true, data: order, warnings, message: 'Vente créée avec succès' },
-      { status: 201 }
+      { success: true, data: order, warnings, replayed: Boolean(replayed), message: replayed ? 'Vente déjà enregistrée' : 'Vente créée avec succès' },
+      { status: replayed ? 200 : 201 }
     )
   } catch (error) {
     return handleRouteError(error, 'sales.create')

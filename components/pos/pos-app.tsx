@@ -24,6 +24,12 @@ import { matchLabel, useBarcodeLookup } from '@/components/scan/use-barcode-look
 import { scanFeedback } from '@/components/scan/feedback'
 import type { ScanOutcome } from '@/components/scan/barcode-scanner'
 import { orderTitle, variantLabel, type PaidTicket, type PosOrder, type PosOrderItem, type PosState, type PosTable } from './types'
+import { OfflineRegister } from '@/components/offline/offline-register'
+import { OfflineReviewDialog, OfflineStatusBar } from '@/components/offline/offline-status'
+import { useOfflineSales } from '@/components/offline/use-offline-sales'
+import { isNetworkError, reportNetworkFailure, reportNetworkSuccess } from '@/lib/offline/network'
+import { ownerKey } from '@/lib/offline/queue'
+import { claimOwner, loadPosSnapshot, savePosSnapshot, type PosSnapshot } from '@/lib/offline/store'
 
 const CORRECTION_WINDOW_MS = 5 * 60 * 1000
 const DEPOT_KEY = 'bstock.pos.depot'
@@ -54,7 +60,13 @@ export function PosApp() {
   const printer = useTicketPrinter()
   const [btPrint, setBtPrint] = useState(false)
   const [now, setNow] = useState(() => Date.now())
-  const [online, setOnline] = useState(true)
+  // Vente hors ligne : file locale des ventes, catalogue mis en cache sur l'appareil
+  const owner = ownerKey(me)
+  const offlineSales = useOfflineSales(owner)
+  const offline = offlineSales.offline
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [cachedSnapshot, setCachedSnapshot] = useState<PosSnapshot | null>(null)
+  const [stateSavedAt, setStateSavedAt] = useState(() => new Date().toISOString())
 
   // Dépôt mémorisé par appareil ; ticket ouvert repris après un rafraîchissement
   useEffect(() => {
@@ -63,15 +75,7 @@ export function PosApp() {
     const ticket = new URLSearchParams(window.location.search).get('ticket')
     if (ticket) setOrderId(ticket)
     const tick = setInterval(() => setNow(Date.now()), 30_000)
-    const update = () => setOnline(navigator.onLine)
-    update()
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
-    return () => {
-      clearInterval(tick)
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
-    }
+    return () => clearInterval(tick)
   }, [])
 
   useEffect(() => {
@@ -86,7 +90,30 @@ export function PosApp() {
   const { data: state, error: stateError, mutate: mutateState } = useSWR<PosState>(stateKey, fetcher, {
     refreshInterval: 15_000,
     revalidateOnFocus: true,
+    onSuccess: () => reportNetworkSuccess(),
+    onError: (e) => {
+      if (isNetworkError(e)) reportNetworkFailure()
+    },
   })
+
+  // Catalogue, tables et dépôts gardés sur l'appareil à chaque chargement en ligne (vente hors ligne)
+  useEffect(() => {
+    if (!state || !owner) return
+    setStateSavedAt(new Date().toISOString())
+    void claimOwner(owner, { userName: me?.name, companyName: me?.companyName })
+      .then(() => savePosSnapshot(owner, { depotId: state.depotId, depots: state.depots, tables: state.tables, catalog: state.catalog }))
+      .catch(() => {})
+  }, [state, owner, me?.name, me?.companyName])
+
+  // Hors ligne dès l'ouverture (rien en mémoire) : catalogue de l'appareil
+  useEffect(() => {
+    if (!offline || state || !owner) return
+    void loadPosSnapshot(owner, depotId).then(setCachedSnapshot).catch(() => {})
+  }, [offline, state, owner, depotId])
+
+  const offlineSnapshot: PosSnapshot | null = state
+    ? { savedAt: stateSavedAt, depotId: state.depotId, depots: state.depots, tables: state.tables, catalog: state.catalog }
+    : cachedSnapshot
   const { data: order, mutate: mutateOrder } = useSWR<PosOrder>(orderId ? `/api/pos/orders/${orderId}` : null, fetcher, {
     refreshInterval: 10_000,
     onError: (e) => {
@@ -224,7 +251,7 @@ export function PosApp() {
   }
 
   useScannerInput((code) => void scanToTicket(code).then(reportScan), {
-    enabled: Boolean(orderId && order?.status === 'open') && dialog.type === 'none' && !paidTicket,
+    enabled: Boolean(orderId && order?.status === 'open') && dialog.type === 'none' && !paidTicket && !offline,
   })
 
   async function reduceItem(item: PosOrderItem, newQuantity: number, reason?: string) {
@@ -344,7 +371,7 @@ export function PosApp() {
   // Raccourcis : F9 encaisser, Échap retour à la salle
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (dialog.type !== 'none' || paidTicket) return
+      if (dialog.type !== 'none' || paidTicket || offline) return
       // Scanner caméra ou « Code inconnu » ouvert : Échap ferme la boîte, pas le ticket
       if (document.querySelector('[role="dialog"]')) return
       if (e.key === 'F9' && order && order.items.some((i) => i.status === 'active')) {
@@ -373,15 +400,15 @@ export function PosApp() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {!online && (
+          {offline && (
             <span className="flex items-center gap-1.5 rounded-full bg-warning-soft px-3 py-1 text-xs font-medium text-warning-foreground">
               <WifiOff className="h-3.5 w-3.5" aria-hidden="true" /> Hors ligne
             </span>
           )}
-          {online && state && (
+          {!offline && state && (
             <Wifi className="hidden h-4 w-4 text-success sm:block" aria-label="Connecté" />
           )}
-          {state && state.depots.length > 1 && (
+          {state && state.depots.length > 1 && !offline && (
             <Select
               value={state.depotId}
               onValueChange={(value) => {
@@ -407,7 +434,7 @@ export function PosApp() {
               <LayoutGrid aria-hidden="true" /> Salle
             </Button>
           )}
-          {state?.canManage && (
+          {state?.canManage && !offline && (
             <Button variant="ghost" size="icon" onClick={() => setDialog({ type: 'tables' })} aria-label="Ajouter des tables">
               <Settings2 />
             </Button>
@@ -421,8 +448,31 @@ export function PosApp() {
         </div>
       </header>
 
+      <OfflineStatusBar state={offlineSales} onReview={() => setReviewOpen(true)} />
+
       <main className="min-h-0 flex-1">
-        {stateError && !state ? (
+        {offline && owner ? (
+          offlineSnapshot ? (
+            <OfflineRegister
+              key={orderId && order?.status === 'open' ? order.id : 'counter'}
+              owner={owner}
+              snapshot={offlineSnapshot}
+              sales={offlineSales}
+              cashierName={me?.name ?? ''}
+              ticket={orderId && order?.status === 'open' ? order : null}
+              onLeaveTicket={() => setOrderId(null)}
+              onPaid={setPaidTicket}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center p-6">
+              <ErrorState
+                title="Hors ligne"
+                description="Aucun catalogue n’est enregistré sur cet appareil. Ouvrez une fois le point de vente avec du réseau pour pouvoir vendre hors ligne."
+                onRetry={refreshAll}
+              />
+            </div>
+          )
+        ) : stateError && !state ? (
           <div className="flex h-full items-center justify-center p-6">
             <ErrorState
               title="Point de vente indisponible"
@@ -464,7 +514,15 @@ export function PosApp() {
             busyId={busyId}
             canManage={state.canManage}
             onOpenTable={(table: PosTable) => void openOrder({ tableId: table.id }, table.id)}
-            onOpenOrder={(id) => setOrderId(id)}
+            onOpenOrder={(id) => {
+              // Ticket déjà encaissé hors ligne : on attend son envoi (pas de double encaissement)
+              if (offlineSales.pending.some((s) => s.kind === 'pos' && 'posOrderId' in s.payload && s.payload.posOrderId === id)) {
+                toast.info('Ce ticket a été encaissé hors ligne', { description: 'Il sera clos dès l’envoi de la vente (voir « Ventes hors ligne »).' })
+                void offlineSales.syncNow(false)
+                return
+              }
+              setOrderId(id)
+            }}
             onNewCounter={() => void openOrder({ orderType: 'counter' }, 'counter')}
             onSetupTables={() => setDialog({ type: 'tables' })}
           />
@@ -564,6 +622,8 @@ export function PosApp() {
         printingBluetooth={printer.btBusy}
         onClose={finishPaid}
       />
+
+      <OfflineReviewDialog open={reviewOpen} onOpenChange={setReviewOpen} state={offlineSales} />
 
       {barcodeDialog}
       {printer.portal}

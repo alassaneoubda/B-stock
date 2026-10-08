@@ -17,6 +17,8 @@ const productUpdateSchema = z.object({
     sellingPrice: z.number().min(0).optional(),
     imageUrl: z.string().max(2000).optional(),
     isActive: z.boolean().optional(),
+    /** TVA propre au produit (%) ; null = revenir au taux standard de l'entreprise. */
+    vatRate: z.number().min(0).max(100).nullable().optional(),
 })
 
 type Params = { params: Promise<{ id: string }> }
@@ -107,6 +109,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
                     selling_price = COALESCE(${data.sellingPrice ?? null}, selling_price),
                     image_url = COALESCE(${data.imageUrl ?? null}, image_url),
                     is_active = COALESCE(${data.isActive ?? null}, is_active),
+                    vat_rate = CASE WHEN ${data.vatRate !== undefined}::boolean THEN ${data.vatRate ?? null}::numeric ELSE vat_rate END,
                     updated_at = NOW()
                 WHERE id = ${id} AND company_id = ${companyId}
                 RETURNING *

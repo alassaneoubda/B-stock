@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { apiFetch, ApiError, toastError } from '@/lib/api-client'
 import { formatDateShort, formatMoney, formatNumber } from '@/lib/format'
 import { EmptyState, ErrorState, PageSkeleton } from '@/components/states'
+import { formatRate, summarizeVat, VAT_NOT_APPLICABLE } from '@/lib/vat'
 
 type InvoiceItem = {
   id: string
@@ -31,6 +32,9 @@ type InvoiceItem = {
   unit_price: number
   total_price: number
   item_type: string
+  vat_rate: number | string | null
+  amount_ht: number | string | null
+  vat_amount: number | string | null
 }
 
 type InvoiceDetail = {
@@ -38,6 +42,8 @@ type InvoiceDetail = {
   invoice_number: string
   type: 'client' | 'supplier'
   total_amount: number
+  total_ht: number | string | null
+  total_vat: number | string | null
   amount_paid: number
   remaining_amount: number
   status: string
@@ -55,6 +61,7 @@ type InvoiceDetail = {
   company_phone: string | null
   company_address: string | null
   company_email: string | null
+  company_tax_id: string | null
   items: InvoiceItem[]
 }
 
@@ -243,8 +250,25 @@ export default function InvoiceDetailPage() {
 
   const itemSections = [
     { key: 'product', title: 'Produits', fallback: 'Produit', items: productItems },
+    { key: 'service', title: 'Services', fallback: 'Service', items: invoice.items?.filter((i) => i.item_type === 'service') || [] },
     { key: 'packaging', title: 'Emballages', fallback: 'Emballage', items: packagingItems },
   ].filter((s) => s.items.length > 0)
+
+  // TVA figée sur les lignes (facture d'une entreprise assujettie au moment de l'émission)
+  const vatLines = (invoice.items ?? []).filter((i) => i.vat_amount != null)
+  const hasVat = vatLines.length > 0 || invoice.total_vat != null
+  const vatSummary = summarizeVat(
+    vatLines.map((i) => ({
+      rate: Number(i.vat_rate),
+      ht: Number(i.amount_ht),
+      vat: Number(i.vat_amount),
+      ttc: Number(i.total_price),
+    }))
+  )
+  const totalTtc = Number(invoice.total_amount)
+  const totalVat = invoice.total_vat != null ? Number(invoice.total_vat) : vatSummary.totalVat
+  const totalHt = invoice.total_ht != null ? Number(invoice.total_ht) : totalTtc - totalVat
+  const untaxedAmount = Math.round((totalHt - vatSummary.totalHt) * 100) / 100
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -319,6 +343,9 @@ export default function InvoiceDetailPage() {
                   {invoice.company_email && (
                     <p className="text-xs text-muted-foreground">{invoice.company_email}</p>
                   )}
+                  {invoice.company_tax_id && (
+                    <p className="text-xs text-muted-foreground">NCC : {invoice.company_tax_id}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1 text-left sm:text-right">
@@ -375,25 +402,55 @@ export default function InvoiceDetailPage() {
                           <tr className="border-b border-border bg-muted/50 print:bg-white">
                             <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Désignation</th>
                             <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Qté</th>
-                            <th className="hidden px-4 py-2 text-right text-xs font-medium text-muted-foreground sm:table-cell print:table-cell">Prix unitaire</th>
-                            <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Total</th>
+                            {hasVat && section.key !== 'packaging' ? (
+                              <>
+                                <th className="hidden px-4 py-2 text-right text-xs font-medium text-muted-foreground sm:table-cell print:table-cell">PU HT</th>
+                                <th className="hidden px-4 py-2 text-right text-xs font-medium text-muted-foreground sm:table-cell print:table-cell">Total HT</th>
+                                <th className="hidden px-4 py-2 text-right text-xs font-medium text-muted-foreground sm:table-cell print:table-cell">TVA</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Total TTC</th>
+                              </>
+                            ) : (
+                              <>
+                                <th className="hidden px-4 py-2 text-right text-xs font-medium text-muted-foreground sm:table-cell print:table-cell">Prix unitaire</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Total</th>
+                              </>
+                            )}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                          {section.items.map((item) => (
-                            <tr key={item.id}>
-                              <td className="px-4 py-2.5 text-sm text-foreground print:text-black">
-                                {item.product_name || item.description || section.fallback}
-                              </td>
-                              <td className="tabular px-4 py-2.5 text-right text-sm text-muted-foreground">{formatNumber(item.quantity)}</td>
-                              <td className="tabular hidden px-4 py-2.5 text-right text-sm text-muted-foreground sm:table-cell print:table-cell">
-                                {formatCurrency(Number(item.unit_price))}
-                              </td>
-                              <td className="tabular px-4 py-2.5 text-right text-sm font-medium text-foreground print:text-black">
-                                {formatCurrency(Number(item.total_price))}
-                              </td>
-                            </tr>
-                          ))}
+                          {section.items.map((item) => {
+                            const lineHt = item.amount_ht != null ? Number(item.amount_ht) : Number(item.total_price)
+                            const lineVat = item.vat_amount != null ? Number(item.vat_amount) : 0
+                            const qty = Number(item.quantity) || 0
+                            return (
+                              <tr key={item.id}>
+                                <td className="px-4 py-2.5 text-sm text-foreground print:text-black">
+                                  {item.product_name || item.description || section.fallback}
+                                </td>
+                                <td className="tabular px-4 py-2.5 text-right text-sm text-muted-foreground">{formatNumber(item.quantity)}</td>
+                                {hasVat && section.key !== 'packaging' ? (
+                                  <>
+                                    <td className="tabular hidden px-4 py-2.5 text-right text-sm text-muted-foreground sm:table-cell print:table-cell">
+                                      {formatCurrency(qty > 0 ? lineHt / qty : 0)}
+                                    </td>
+                                    <td className="tabular hidden px-4 py-2.5 text-right text-sm text-muted-foreground sm:table-cell print:table-cell">
+                                      {formatCurrency(lineHt)}
+                                    </td>
+                                    <td className="tabular hidden px-4 py-2.5 text-right text-sm text-muted-foreground sm:table-cell print:table-cell">
+                                      {item.vat_rate != null ? `${formatCurrency(lineVat)} (${formatRate(Number(item.vat_rate))})` : '—'}
+                                    </td>
+                                  </>
+                                ) : (
+                                  <td className="tabular hidden px-4 py-2.5 text-right text-sm text-muted-foreground sm:table-cell print:table-cell">
+                                    {formatCurrency(Number(item.unit_price))}
+                                  </td>
+                                )}
+                                <td className="tabular px-4 py-2.5 text-right text-sm font-medium text-foreground print:text-black">
+                                  {formatCurrency(Number(item.total_price))}
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -404,14 +461,27 @@ export default function InvoiceDetailPage() {
               {/* Totaux */}
               <div className="flex justify-end">
                 <dl className="w-full space-y-2 border-t border-border pt-4 text-sm sm:w-72">
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Total HT</dt>
-                    <dd className="tabular font-medium text-foreground print:text-black">{formatCurrency(Number(invoice.total_amount))}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Total TTC</dt>
-                    <dd className="tabular font-semibold text-foreground print:text-black">{formatCurrency(Number(invoice.total_amount))}</dd>
-                  </div>
+                  {hasVat ? (
+                    <>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Total HT</dt>
+                        <dd className="tabular font-medium text-foreground print:text-black">{formatCurrency(totalHt)}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">TVA</dt>
+                        <dd className="tabular font-medium text-foreground print:text-black">{formatCurrency(totalVat)}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Total TTC</dt>
+                        <dd className="tabular font-semibold text-foreground print:text-black">{formatCurrency(totalTtc)}</dd>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Total</dt>
+                      <dd className="tabular font-semibold text-foreground print:text-black">{formatCurrency(totalTtc)}</dd>
+                    </div>
+                  )}
                   <div className="flex justify-between border-t border-border pt-2">
                     <dt className="text-muted-foreground">Montant payé</dt>
                     <dd className="tabular font-medium text-success print:text-black">{formatCurrency(Number(invoice.amount_paid))}</dd>
@@ -424,6 +494,48 @@ export default function InvoiceDetailPage() {
                   )}
                 </dl>
               </div>
+
+              {/* TVA : récapitulatif par taux, ou mention pour une entreprise non assujettie */}
+              {hasVat ? (
+                <div className="border-t border-border pt-4">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Récapitulatif TVA</p>
+                  <table className="w-full text-xs sm:w-96">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="py-1 text-left font-medium">Taux</th>
+                        <th className="py-1 text-right font-medium">Base HT</th>
+                        <th className="py-1 text-right font-medium">TVA</th>
+                        <th className="py-1 text-right font-medium">TTC</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-foreground print:text-black">
+                      {vatSummary.byRate.map((r) => (
+                        <tr key={r.rate}>
+                          <td className="tabular py-1">{formatRate(r.rate)}</td>
+                          <td className="tabular py-1 text-right">{formatCurrency(r.base)}</td>
+                          <td className="tabular py-1 text-right">{formatCurrency(r.vat)}</td>
+                          <td className="tabular py-1 text-right">{formatCurrency(r.ttc)}</td>
+                        </tr>
+                      ))}
+                      {untaxedAmount !== 0 && (
+                        <tr>
+                          <td className="py-1">Hors champ (consignes)</td>
+                          <td className="tabular py-1 text-right">{formatCurrency(untaxedAmount)}</td>
+                          <td className="tabular py-1 text-right">—</td>
+                          <td className="tabular py-1 text-right">{formatCurrency(untaxedAmount)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Les consignes d&apos;emballages ne sont pas soumises à la TVA.
+                  </p>
+                </div>
+              ) : (
+                invoice.type === 'client' && (
+                  <p className="border-t border-border pt-4 text-xs text-muted-foreground">{VAT_NOT_APPLICABLE}</p>
+                )
+              )}
 
               {/* Notes */}
               {invoice.notes && (

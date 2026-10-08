@@ -258,32 +258,6 @@
   font-feature-settings: 'tnum' 1;
 }
 
-/* Ticket de caisse du point de vente : caché à l'écran, seul élément imprimé */
-.pos-receipt {
-  display: none;
-}
-
-@media print {
-  body:has(.pos-receipt) > *:not(.pos-print-root) {
-    display: none !important;
-  }
-  .pos-print-root {
-    display: block !important;
-  }
-  .pos-receipt {
-    display: block;
-    width: 72mm;
-    margin: 0 auto;
-    font: 12px/1.35 ui-monospace, Menlo, monospace;
-    color: #000;
-  }
-  .pos-receipt hr {
-    border: 0;
-    border-top: 1px dashed #000;
-    margin: 6px 0;
-  }
-}
-
 /* Micro-interaction : confirmation d'encaissement */
 @keyframes pos-success-pop {
   0% { transform: scale(0.6); opacity: 0; }

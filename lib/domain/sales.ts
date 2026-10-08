@@ -4,6 +4,9 @@ import { nextDocumentNumber } from '../sequences'
 import { assertOwned } from '../tenant'
 import { recordCashMovement } from '../cash-automation'
 import { addStock, adjustPackagingStock, removeStock, roundCost } from './stock'
+import { assertPeriodOpen } from '../accounting/period-lock'
+import { effectiveRate, loadVariantRates, loadVatSettings, splitTtc, type VatSettings, type VatSplit } from '../vat'
+import { attachSaleRequest, claimSaleRequest } from '../offline/idempotency'
 
 /**
  * Règles métier des ventes (création, statuts, annulation).
@@ -40,11 +43,22 @@ export type CreateSaleInput = {
   notes?: string
   items: SaleItemInput[]
   packagingItems?: SalePackagingInput[]
+  /** Clé d'idempotence générée par l'appareil (vente hors ligne) : la même clé ne crée qu'une vente. */
+  clientRequestId?: string
+  /** Heure de la vente sur l'appareil (vente hors ligne), conservée à titre d'information. */
+  offlineSoldAt?: string
+  /**
+   * Paramètres TVA (optionnel) : lus sur l'entreprise si absents. Les prix
+   * unitaires reçus sont des prix de vente TTC (cf. lib/vat.ts).
+   */
+  vat?: VatSettings
 }
 
 export type CreateSaleResult = {
   order: Record<string, unknown>
   warnings: string[]
+  /** true quand la clé d'idempotence avait déjà servi : `order` est la vente existante. */
+  replayed?: boolean
 }
 
 /** Arrondi monétaire (XOF : pas de centimes en pratique, on garde 2 décimales). */
@@ -70,6 +84,10 @@ export async function createSale(input: CreateSaleInput): Promise<CreateSaleResu
 export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<CreateSaleResult> {
   const { companyId, userId } = input
   const warnings: string[] = []
+
+  // Même clé d'idempotence déjà traitée (vente hors ligne renvoyée) : vente existante, rien n'est rejoué
+  const existing = input.clientRequestId ? await claimSaleRequest(tx, companyId, input.clientRequestId) : null
+  if (existing) return { order: existing, warnings: [], replayed: true }
 
   // ---- Totaux (calculés côté serveur) ----
   const subtotal = money(input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0))
@@ -110,6 +128,9 @@ export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<Cr
         : 0
 
   const order = await (async () => {
+    // ---- Période comptable : une vente est datée d'aujourd'hui ----
+    await assertPeriodOpen(tx.sql, companyId)
+
     // ---- Appartenance de toutes les références à l'entreprise ----
     await assertOwned(tx.sql, companyId, {
       depots: [input.depotId],
@@ -168,6 +189,17 @@ export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<Cr
       variantRows.map((v) => [v.id, v.packaging_name ? `${v.product_name} (${v.packaging_name})` : v.product_name])
     )
 
+    // ---- TVA : décomposition figée par ligne (TTC = prix de vente, arrondi au franc par ligne) ----
+    const vat = input.vat ?? (await loadVatSettings(tx.sql, companyId))
+    const rates = vat.enabled
+      ? await loadVariantRates(tx.sql, input.items.map((i) => i.productVariantId))
+      : new Map<string, number | null>()
+    const lineVat: (VatSplit | null)[] = input.items.map((i) =>
+      vat.enabled ? splitTtc(money(i.quantity * i.unitPrice), effectiveRate(vat, rates.get(i.productVariantId))) : null
+    )
+    const totalVat = money(lineVat.reduce((s, l) => s + (l?.vat ?? 0), 0))
+    const totalHt = money(lineVat.reduce((s, l) => s + (l?.ht ?? 0), 0))
+
     // ---- Commande ----
     const orderNumber = await nextDocumentNumber(tx, companyId, 'sale')
     const [created] = await tx.sql`
@@ -186,9 +218,11 @@ export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<Cr
       RETURNING *
     `
     const orderId = created.id as string
+    if (input.clientRequestId) await attachSaleRequest(tx, orderId, input.clientRequestId, input.offlineSoldAt)
 
     // ---- Lignes produits + sortie de stock (FEFO ou lot imposé) ----
-    for (const item of input.items) {
+    for (const [index, item] of input.items.entries()) {
+      const split = lineVat[index]
       const label = labelOf.get(item.productVariantId)
       const lots = await removeStock(tx, {
         companyId,
@@ -204,16 +238,34 @@ export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<Cr
       })
       // Coût de revient figé au moment de la vente (CMP du dépôt)
       const unitCost = roundCost(lots.reduce((s, l) => s + l.quantity * l.unitCost, 0) / item.quantity)
-      await tx.sql`
-        INSERT INTO sales_order_items (
-          sales_order_id, product_variant_id, quantity, unit_price, total_price, lot_number, unit_cost
-        ) VALUES (
-          ${orderId}, ${item.productVariantId}, ${item.quantity}, ${item.unitPrice},
-          ${money(item.quantity * item.unitPrice)},
-          ${lots.length === 1 ? lots[0].lotNumber : item.lotNumber || null},
-          ${unitCost}
-        )
-      `
+      const lotNumber = lots.length === 1 ? lots[0].lotNumber : item.lotNumber || null
+      if (split) {
+        await tx.sql`
+          INSERT INTO sales_order_items (
+            sales_order_id, product_variant_id, quantity, unit_price, total_price, lot_number, unit_cost,
+            vat_rate, amount_ht, vat_amount
+          ) VALUES (
+            ${orderId}, ${item.productVariantId}, ${item.quantity}, ${item.unitPrice},
+            ${money(item.quantity * item.unitPrice)}, ${lotNumber}, ${unitCost},
+            ${split.rate}, ${split.ht}, ${split.vat}
+          )
+        `
+      } else {
+        await tx.sql`
+          INSERT INTO sales_order_items (
+            sales_order_id, product_variant_id, quantity, unit_price, total_price, lot_number, unit_cost
+          ) VALUES (
+            ${orderId}, ${item.productVariantId}, ${item.quantity}, ${item.unitPrice},
+            ${money(item.quantity * item.unitPrice)}, ${lotNumber}, ${unitCost}
+          )
+        `
+      }
+    }
+    if (vat.enabled) {
+      // Totaux = somme des lignes (produits uniquement : les consignes ne portent pas de TVA)
+      await tx.sql`UPDATE sales_orders SET total_ht = ${totalHt}, total_vat = ${totalVat} WHERE id = ${orderId}`
+      created.total_ht = totalHt
+      created.total_vat = totalVat
     }
 
     // ---- Emballages consignés ----
@@ -309,14 +361,34 @@ export async function createSaleInTx(tx: Tx, input: CreateSaleInput): Promise<Cr
       )
       RETURNING id
     `
-    for (const item of input.items) {
+    if (vat.enabled) {
+      // TTC = montant dû ; HT = dû − TVA (consignes et déduction des vides : hors champ de la TVA)
       await tx.sql`
-        INSERT INTO invoice_items (invoice_id, product_id, description, quantity, unit_price, total_price, item_type)
-        VALUES (
-          ${invoice.id}, ${item.productVariantId}, ${labelOf.get(item.productVariantId) ?? 'Produit'},
-          ${item.quantity}, ${item.unitPrice}, ${money(item.quantity * item.unitPrice)}, 'product'
-        )
+        UPDATE invoices SET total_ht = ${money(amountDue - totalVat)}, total_vat = ${totalVat} WHERE id = ${invoice.id}
       `
+    }
+    for (const [index, item] of input.items.entries()) {
+      const split = lineVat[index]
+      if (split) {
+        await tx.sql`
+          INSERT INTO invoice_items (
+            invoice_id, product_id, description, quantity, unit_price, total_price, item_type,
+            vat_rate, amount_ht, vat_amount
+          ) VALUES (
+            ${invoice.id}, ${item.productVariantId}, ${labelOf.get(item.productVariantId) ?? 'Produit'},
+            ${item.quantity}, ${item.unitPrice}, ${money(item.quantity * item.unitPrice)}, 'product',
+            ${split.rate}, ${split.ht}, ${split.vat}
+          )
+        `
+      } else {
+        await tx.sql`
+          INSERT INTO invoice_items (invoice_id, product_id, description, quantity, unit_price, total_price, item_type)
+          VALUES (
+            ${invoice.id}, ${item.productVariantId}, ${labelOf.get(item.productVariantId) ?? 'Produit'},
+            ${item.quantity}, ${item.unitPrice}, ${money(item.quantity * item.unitPrice)}, 'product'
+          )
+        `
+      }
     }
     if (deduction > 0 && subtotal > 0) {
       const applied = money(Math.min(deduction, subtotal))
@@ -399,6 +471,8 @@ export async function changeSaleStatus(input: {
 
     const current = order.status as SaleStatus
     if (current === input.status) return { order, warnings: [] }
+    // Annuler une vente modifie les documents de son mois (facture, encaissements, stock)
+    if (input.status === 'cancelled') await assertPeriodOpen(tx.sql, input.companyId, order.created_at)
     if (!NEXT_STATUSES[current]?.includes(input.status)) {
       throw new AppError(
         409,
@@ -441,6 +515,9 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
       'HAS_LATER_PAYMENTS'
     )
   }
+
+  // Ce que les retours ont déjà rendu au client (calculé AVANT la réintégration du stock ci-dessous)
+  const alreadyGranted = await returnCreditGranted(tx, order)
 
   // 1. Stock : on réintègre les lots sortis, au coût figé à la vente, SAUF ce qui
   //    est déjà revenu par un retour (sinon la marchandise serait comptée deux fois) :
@@ -531,7 +608,9 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
     `
   }
 
-  // 4. Paiements et caisse : remboursement des espèces encaissées
+  // 4. Paiements et caisse : remboursement de ce qui a été payé, MOINS ce que les
+  //    retours ont déjà rendu au client (avoir porté à son compte ou remboursement
+  //    en espèces du module Retours) : on ne rembourse jamais deux fois.
   await tx.sql`
     UPDATE payments SET status = 'refunded' WHERE sales_order_id = ${order.id} AND company_id = ${companyId}
   `
@@ -540,7 +619,18 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
     WHERE company_id = ${companyId} AND reference_type = 'sales_order' AND reference_id = ${order.id}
       AND movement_type = 'cash_in'
   `
-  const cashToRefund = Number(cashIn.total)
+  const refundDue = money(Math.max(0, Number(order.paid_amount || 0) - alreadyGranted))
+  const cashToRefund = money(Math.min(Number(cashIn.total), refundDue))
+  const otherToRefund = money(refundDue - cashToRefund)
+  if (alreadyGranted > 0 && Number(order.paid_amount || 0) > 0) {
+    warnings.push(
+      `${formatFcfa(Math.min(alreadyGranted, Number(order.paid_amount)))} déjà rendus au client par les retours ` +
+        '(avoir ou remboursement) : déduits du remboursement.'
+    )
+  }
+  if (otherToRefund > 0) {
+    warnings.push(`Remboursez ${formatFcfa(otherToRefund)} au client (paiement hors espèces).`)
+  }
   if (cashToRefund > 0) {
     const movement = await recordCashMovement(tx.sql, {
       companyId,
@@ -557,8 +647,6 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
         `Aucune caisse ouverte : pensez à enregistrer la sortie de ${formatFcfa(cashToRefund)} remboursés au client.`
       )
     }
-  } else if (Number(order.paid_amount) > 0) {
-    warnings.push(`Remboursez ${formatFcfa(Number(order.paid_amount))} au client (paiement hors espèces).`)
   }
 
   // 5. Facture
@@ -568,6 +656,70 @@ async function reverseSale(tx: Tx, order: any, userId: string): Promise<string[]
   `
 
   return warnings
+}
+
+/**
+ * Valeur déjà RENDUE au client par les retours d'une vente, au-delà de la dette
+ * qu'ils ont effacée (FCFA, ≥ 0). À l'annulation, cette part n'est pas
+ * remboursée une seconde fois.
+ *
+ * Un retour crédite le client de R (prix de la vente d'origine) :
+ *  - retour direct (/api/sales/[id]/return) : mouvements de stock 'return'
+ *    référencés sur la vente × prix moyen de la vente, + vides rendus après la
+ *    vente (transactions d'emballages 'returned' postérieures à la vente) ;
+ *  - module Retours avec avoir : avoirs AV (credit_notes < 0) liés à la vente ;
+ *  - module Retours remboursé en espèces : lignes du retour traité.
+ * Une partie A de ce crédit a seulement réduit la dette de la vente (créances
+ * de la vente : total d'origine − total actuel) ; le reste R − A a été rendu
+ * (avoir au compte du client ou espèces).
+ *
+ * Appelée AVANT la réintégration du stock de l'annulation (qui crée elle-même
+ * des mouvements 'return' référencés sur la vente).
+ */
+export async function returnCreditGranted(tx: Tx, order: { id: string; company_id: string }): Promise<number> {
+  const [row] = await tx.sql`
+    SELECT
+      COALESCE((
+        SELECT SUM(ROUND(sm.quantity * COALESCE(sp.avg_price, 0), 2))
+        FROM stock_movements sm
+        LEFT JOIN LATERAL (
+          SELECT SUM(COALESCE(i.total_price, i.quantity * i.unit_price)) / NULLIF(SUM(i.quantity), 0) AS avg_price
+          FROM sales_order_items i
+          WHERE i.sales_order_id = sm.reference_id AND i.product_variant_id = sm.product_variant_id
+        ) sp ON true
+        WHERE sm.company_id = ${order.company_id} AND sm.movement_type = 'return'
+          AND sm.reference_type = 'sales_order' AND sm.reference_id = ${order.id} AND sm.quantity > 0
+      ), 0)
+      + COALESCE((
+        SELECT SUM(COALESCE(pt.total_amount, pt.quantity * pt.unit_price, 0))
+        FROM packaging_transactions pt
+        JOIN sales_orders so ON so.id = pt.sales_order_id
+        WHERE pt.sales_order_id = ${order.id} AND pt.company_id = ${order.company_id}
+          AND pt.transaction_type = 'returned' AND pt.created_at <> so.created_at
+      ), 0)
+      + COALESCE((
+        SELECT SUM(-cn.total_amount) FROM credit_notes cn
+        WHERE cn.sales_order_id = ${order.id} AND cn.company_id = ${order.company_id} AND cn.total_amount < 0
+      ), 0)
+      + COALESCE((
+        SELECT SUM(COALESCE(ri.total_price, ri.quantity * ri.unit_price, 0))
+        FROM returns r JOIN return_items ri ON ri.return_id = r.id
+        WHERE r.sales_order_id = ${order.id} AND r.company_id = ${order.company_id}
+          AND r.return_type = 'client' AND r.status = 'processed' AND r.refund_method = 'cash'
+      ), 0) AS credited,
+      COALESCE((
+        SELECT SUM(
+          CASE WHEN COALESCE(cn.account_type, 'product') = 'packaging'
+               THEN GREATEST(COALESCE(so.packaging_total, 0), 0)
+               ELSE GREATEST(COALESCE(so.subtotal, 0) - GREATEST(-COALESCE(so.packaging_total, 0), 0), 0)
+          END - cn.total_amount)
+        FROM credit_notes cn
+        JOIN sales_orders so ON so.id = cn.sales_order_id
+        WHERE cn.sales_order_id = ${order.id} AND cn.company_id = ${order.company_id}
+          AND cn.total_amount >= 0 AND cn.created_at = so.created_at
+      ), 0) AS applied_to_debt
+  `
+  return money(Math.max(0, Number(row.credited) - Math.max(0, Number(row.applied_to_debt))))
 }
 
 /**

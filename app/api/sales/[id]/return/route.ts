@@ -7,6 +7,7 @@ import { assertOwned, isUuid } from '@/lib/tenant'
 import { addStock, adjustPackagingStock } from '@/lib/domain/stock'
 import { applyCreditToOrderNotes, money } from '@/lib/domain/payments'
 import { saleUnitCost } from '@/lib/domain/sales'
+import { assertPeriodOpen } from '@/lib/accounting/period-lock'
 
 const returnSchema = z.object({
   items: z
@@ -64,6 +65,9 @@ export async function POST(
     }
 
     const credits = await withTransaction(async (tx) => {
+      // Le retour (stock, crédit client) est daté d'aujourd'hui : refusé si le mois est clôturé
+      await assertPeriodOpen(tx.sql, companyId)
+
       // Vente verrouillée : deux retours simultanés ne peuvent pas dépasser la quantité vendue
       const [order] = await tx.sql`
         SELECT id, client_id, depot_id, status, order_number FROM sales_orders

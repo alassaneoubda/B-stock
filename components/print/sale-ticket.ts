@@ -1,4 +1,5 @@
 import type { TicketInput } from './ticket-printer'
+import { summarizeVat } from '@/lib/vat'
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Espèces',
@@ -19,7 +20,7 @@ export type SaleForTicket = {
   total_amount: number | string
   paid_amount: number | string
   payment_method: string | null
-  items: { product_name: string; packaging_name: string | null; quantity: number | string; unit_price: number | string; total_price?: number | string | null }[]
+  items: { product_name: string; packaging_name: string | null; quantity: number | string; unit_price: number | string; total_price?: number | string | null; vat_rate?: number | string | null; amount_ht?: number | string | null; vat_amount?: number | string | null }[]
   packagingItems: { packaging_name: string; quantity_out: number | string; quantity_in: number | string; unit_price: number | string }[]
 }
 
@@ -32,6 +33,11 @@ function label(product: string, packaging: string | null) {
 export function saleToTicket(sale: SaleForTicket): TicketInput {
   const total = Number(sale.total_amount) || 0
   const paid = Number(sale.paid_amount) || 0
+  // TVA figée sur les lignes de la vente (entreprise assujettie au moment de la vente)
+  const vatLines = sale.items.filter((i) => i.vat_amount != null)
+  const summary = vatLines.length
+    ? summarizeVat(vatLines.map((i) => ({ rate: Number(i.vat_rate), ht: Number(i.amount_ht), vat: Number(i.vat_amount), ttc: Number(i.total_price ?? 0) })))
+    : null
   return {
     title: 'Vente',
     number: sale.order_number,
@@ -57,5 +63,8 @@ export function saleToTicket(sale: SaleForTicket): TicketInput {
     paymentLabel: sale.payment_method ? PAYMENT_LABELS[sale.payment_method] ?? sale.payment_method : null,
     change: 0,
     due: Math.max(0, total - paid),
+    vat: summary
+      ? { byRate: summary.byRate.map((r) => ({ rate: r.rate, base: r.base, vat: r.vat })), totalHt: summary.totalHt, totalVat: summary.totalVat }
+      : null,
   }
 }

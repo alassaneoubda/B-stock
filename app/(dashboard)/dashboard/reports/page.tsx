@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { BarChart3, Boxes, CircleAlert, CreditCard, Package, Percent, Receipt, ShoppingCart, Users, Wallet, Warehouse } from 'lucide-react'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
+import { getVatReport } from '@/lib/domain/vat-report'
+import { formatRate as formatVatRate } from '@/lib/vat'
 import {
     defaultPeriod,
     getMarginReport,
@@ -197,11 +199,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
     `) as Array<{ id: string; name: string }>
     const { from, to, depotId, at } = readFilters(await searchParams, new Set(depots.map((d) => d.id)))
 
-    const [margin, stock, side] = await Promise.all([
+    const [margin, stock, side, vat] = await Promise.all([
         getMarginReport(companyId, { from, to, depotId }),
         getStockValuation(companyId, { at, depotId }),
         getSideData(companyId, from, to, depotId),
+        // TVA : toutes les ventes de l'entreprise (déclaration fiscale, sans filtre de dépôt)
+        getVatReport(companyId, { from, to }),
     ])
+    const showVat = vat.settings.enabled || vat.collected.byRate.length > 0 || vat.deductible.byRate.length > 0
 
     const t = margin.totals
     const depotName = depotId ? depots.find((d) => d.id === depotId)?.name : null
@@ -291,6 +296,52 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
                         {formatNumber(t.missingCost)} ligne(s) de vente sans coût de revient connu (produit sans prix d’achat) :
                         elles sont comptées à coût nul, la marge est donc surestimée d’autant.
                     </p>
+                )}
+
+                {/* TVA collectée / déductible */}
+                {showVat && (
+                    <Panel
+                        title="TVA de la période"
+                        description="Montants figés sur les ventes, retours et achats (tous dépôts). Les consignes ne sont pas soumises à la TVA."
+                    >
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
+                                        <th className="px-4 py-2 text-left font-medium">Nature</th>
+                                        <th className="px-4 py-2 text-right font-medium">Taux</th>
+                                        <th className="px-4 py-2 text-right font-medium">Base HT</th>
+                                        <th className="px-4 py-2 text-right font-medium">TVA</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                    {vat.collected.byRate.map((r) => (
+                                        <tr key={'c' + r.rate}>
+                                            <td className="px-4 py-2">TVA collectée (ventes − retours)</td>
+                                            <td className="tabular px-4 py-2 text-right">{formatVatRate(r.rate)}</td>
+                                            <td className="tabular px-4 py-2 text-right">{formatMoney(r.base)}</td>
+                                            <td className="tabular px-4 py-2 text-right">{formatMoney(r.vat)}</td>
+                                        </tr>
+                                    ))}
+                                    {vat.deductible.byRate.map((r) => (
+                                        <tr key={'d' + r.rate}>
+                                            <td className="px-4 py-2">TVA déductible (achats reçus)</td>
+                                            <td className="tabular px-4 py-2 text-right">{formatVatRate(r.rate)}</td>
+                                            <td className="tabular px-4 py-2 text-right">{formatMoney(r.base)}</td>
+                                            <td className="tabular px-4 py-2 text-right">{formatMoney(r.vat)}</td>
+                                        </tr>
+                                    ))}
+                                    <tr className="font-semibold">
+                                        <td className="px-4 py-2" colSpan={3}>{vat.net >= 0 ? 'TVA nette à reverser' : 'Crédit de TVA'}</td>
+                                        <td className="tabular px-4 py-2 text-right">{formatMoney(Math.abs(vat.net))}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p className="px-4 py-3 text-xs text-muted-foreground">
+                            TVA déductible : uniquement les achats saisis avec un taux de TVA. Document d’aide à la déclaration, à valider avec votre comptable.
+                        </p>
+                    </Panel>
                 )}
 
                 {/* Marge par mois */}

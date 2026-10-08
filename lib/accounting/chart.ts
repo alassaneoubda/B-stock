@@ -21,6 +21,9 @@
  *    cabinets préfèrent 585 ou 57x — d'où le paramétrage.
  *  - Avoirs / retours clients : 709 « Rabais, remises et ristournes accordés
  *    par l'entreprise ».
+ *  - TVA (entreprise assujettie, cf. lib/vat.ts) : 4431 « État, TVA facturée sur
+ *    ventes » (TVA collectée, au crédit à la vente, au débit sur les avoirs) et
+ *    4452 « État, TVA récupérable sur achats » (achats portant une TVA).
  *  - Montants sans affectation certaine (encaissement sans mode de paiement,
  *    créance saisie à la main, mouvement de caisse « autre ») : 471
  *    « Débiteurs et créditeurs divers » (compte d'attente à ventiler par le
@@ -41,6 +44,8 @@ export type AccountKey =
   | 'packaging_clients'
   | 'packaging_suppliers'
   | 'suspense'
+  | 'vat_collected'
+  | 'vat_deductible'
   | 'transfers'
   | 'cash_over'
   | 'cash_short'
@@ -60,7 +65,7 @@ export type AccountDefinition = {
   /** Libellé affiché dans l'écran de paramétrage. */
   label: string
   /** Groupe d'affichage. */
-  group: 'tiers' | 'ventes' | 'achats' | 'tresorerie' | 'consignes' | 'charges' | 'divers'
+  group: 'tiers' | 'ventes' | 'achats' | 'tresorerie' | 'consignes' | 'fiscal' | 'charges' | 'divers'
   help?: string
 }
 
@@ -110,6 +115,21 @@ export const ACCOUNT_DEFINITIONS: AccountDefinition[] = [
     label: 'Fournisseurs, créances pour emballages à rendre',
     group: 'consignes',
   },
+  // TVA
+  {
+    key: 'vat_collected',
+    number: '4431',
+    label: 'État, TVA facturée sur ventes (TVA collectée)',
+    group: 'fiscal',
+    help: 'Utilisé uniquement si l’entreprise est assujettie à la TVA.',
+  },
+  {
+    key: 'vat_deductible',
+    number: '4452',
+    label: 'État, TVA récupérable sur achats',
+    group: 'fiscal',
+    help: 'Achats saisis avec un taux de TVA (prix d’achat hors taxe).',
+  },
   // Charges (dépenses de caisse, par catégorie)
   { key: 'expense_fuel', number: '6053', label: 'Dépenses — Carburant (autres énergies)', group: 'charges' },
   { key: 'expense_maintenance', number: '624', label: 'Dépenses — Entretien et réparations', group: 'charges' },
@@ -131,6 +151,7 @@ export const ACCOUNT_GROUP_LABELS: Record<AccountDefinition['group'], string> = 
   achats: 'Achats',
   tresorerie: 'Trésorerie',
   consignes: 'Consignes d’emballages',
+  fiscal: 'TVA',
   charges: 'Charges (dépenses par catégorie)',
   divers: 'Divers',
 }

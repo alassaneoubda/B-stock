@@ -26,6 +26,8 @@ import {
  *    D 411 client / C 4194 consignes (dette envers le client, PAS du chiffre d'affaires)
  *    Vides rendus en plus des sorties (net < 0, déduits du prix) :
  *    D 4194 consignes / C 411 client
+ *    TVA (entreprise assujettie, TVA figée sur les lignes de la vente) :
+ *    D 411 TTC / C 701 HT / C 4431 TVA collectée (consignes : jamais de TVA).
  *    La vente à crédit et la vente au comptant s'écrivent de la même façon :
  *    c'est l'encaissement (ci-dessous) qui solde le 411.
  *
@@ -36,13 +38,16 @@ import {
  *    Mode de paiement inconnu → D 471 compte d'attente (journal OD) + alerte.
  *
  * OD — Avoir AV-… (retour client avec avoir) et retour direct sur vente
- *    Produits   : D 709 RRR accordés / C 411 client
+ *    Produits   : D 709 RRR accordés (HT) [+ D 4431 TVA contenue] / C 411 client (TTC)
  *    Emballages : D 4194 consignes   / C 411 client (remboursement de consigne)
  * OD — Créance saisie à la main (CR-… hors vente) : D 411 / C 471 + alerte.
  *
  * AC — Réception d'achat (pièce = bon ACH-…, date de réception)
  *    D 601 achats / C 401 fournisseur   (quantités reçues en bon état × prix d'achat)
- *    Retour fournisseur : D 401 / C 601.
+ *    Achat avec TVA (taux saisi sur la ligne, prix d'achat HT) :
+ *    D 601 HT / D 4452 TVA récupérable / C 401 TTC.
+ *    Retour fournisseur : D 401 / C 601 (et C 4452 si TVA).
+ *    Facture client manuelle avec TVA : C 701/706 HT + C 4431 TVA.
  *    Facture fournisseur manuelle (hors bon de commande) : D 601 | 4094 | 605 / C 401.
  * BQ / CA / MM — Paiement fournisseur (si la table existe) : D 401 / C trésorerie.
  *
@@ -66,6 +71,8 @@ export type SaleDoc = {
   subtotal: number
   /** Consignes nettes : > 0 consignes facturées, < 0 vides rendus en plus. */
   packagingNet: number
+  /** TVA collectée contenue dans les produits (0 / absent : vente sans TVA). */
+  vat?: number
 }
 
 export type ReceiptDoc = {
@@ -87,6 +94,8 @@ export type ClientCreditDoc = {
   kind: 'avoir' | 'return'
   productAmount: number
   packagingAmount: number
+  /** TVA contenue dans la part produits (TTC) de l'avoir / du retour. */
+  productVat?: number
 }
 
 export type ManualDebtDoc = {
@@ -107,6 +116,8 @@ export type ManualInvoiceDoc = {
   productAmount: number
   packagingAmount: number
   serviceAmount: number
+  /** TVA des lignes produits / services (montants ci-dessus TTC). */
+  vat?: number
 }
 
 export type ExpenseDoc = {
@@ -123,8 +134,11 @@ export type PurchaseDoc = {
   date: string
   piece: string
   supplier: Party
+  /** Montant HT (quantités × prix d'achat). */
   amount: number
   kind: 'reception' | 'return'
+  /** TVA récupérable (achats saisis avec un taux) ; le fournisseur est crédité HT + TVA. */
+  vat?: number
 }
 
 export type SupplierPaymentDoc = {
@@ -361,8 +375,10 @@ export function generateEntries(
     const aux = clientAux(s.client)
     const ref = s.invoiceNumber ? `${s.orderNumber} (${s.invoiceNumber})` : s.orderNumber
     const p = newPiece('VT', s.orderNumber, s.date, `VT|sale|${s.id}`, `Vente ${ref} ${s.client.name}`)
+    const saleVat = toCents(s.vat ?? 0)
     p.debit(acc.clients, subtotal, aux)
-    p.credit(acc.sales, subtotal)
+    p.credit(acc.sales, subtotal - saleVat)
+    p.credit(acc.vat_collected, saleVat, null, `TVA collectée ${s.orderNumber}`)
     if (pkg > 0) {
       const label = `Consignes ${s.orderNumber} ${s.client.name}`
       p.debit(acc.clients, pkg, aux, label)
@@ -392,10 +408,14 @@ export function generateEntries(
     if (inv.type === 'client') {
       const aux = clientAux(inv.party)
       const p = newPiece('VT', inv.piece, inv.date, `VT|invoice|${inv.id}`, `Facture ${inv.piece} ${inv.party.name}`)
+      // TVA répartie au prorata produits / services (montants TTC)
+      const vat = toCents(inv.vat ?? 0)
+      const vatOnProduct = product + service > 0 ? Math.round((vat * product) / (product + service)) : 0
       p.debit(acc.clients, total, aux)
-      p.credit(acc.sales, product)
+      p.credit(acc.sales, product - vatOnProduct)
       p.credit(acc.packaging_clients, packaging)
-      p.credit(acc.services, service)
+      p.credit(acc.services, service - (vat - vatOnProduct))
+      p.credit(acc.vat_collected, vat, null, `TVA collectée ${inv.piece}`)
     } else {
       const aux = supplierAux(inv.party)
       const p = newPiece('AC', inv.piece, inv.date, `AC|invoice|${inv.id}`, `Facture ${inv.piece} ${inv.party.name}`)
@@ -432,7 +452,9 @@ export function generateEntries(
     const title = c.kind === 'avoir' ? 'Avoir' : 'Retour sur vente'
     const p = newPiece('OD', c.piece, c.date, `OD|credit|${c.id}`, `${title} ${c.piece} ${c.client.name}`)
     if (product !== 0) {
-      p.debit(acc.sales_returns, product)
+      const creditVat = toCents(c.productVat ?? 0)
+      p.debit(acc.sales_returns, product - creditVat)
+      p.debit(acc.vat_collected, creditVat, null, `TVA sur avoir ${c.piece}`)
       p.credit(acc.clients, product, aux)
     }
     if (packaging !== 0) {
@@ -465,14 +487,17 @@ export function generateEntries(
       continue
     }
     const aux = supplierAux(a.supplier)
+    const purchaseVat = toCents(a.vat ?? 0)
     if (a.kind === 'reception') {
       const p = newPiece('AC', a.piece, a.date, `AC|purchase|${a.id}`, `Achat ${a.piece} ${a.supplier.name}`)
       p.debit(acc.purchases, amount)
-      p.credit(acc.suppliers, amount, aux)
+      p.debit(acc.vat_deductible, purchaseVat, null, `TVA récupérable ${a.piece}`)
+      p.credit(acc.suppliers, amount + purchaseVat, aux)
     } else {
       const p = newPiece('AC', a.piece, a.date, `AC|preturn|${a.id}`, `Retour fournisseur ${a.piece} ${a.supplier.name}`)
-      p.debit(acc.suppliers, amount, aux)
+      p.debit(acc.suppliers, amount + purchaseVat, aux)
       p.credit(acc.purchases, amount)
+      p.credit(acc.vat_deductible, purchaseVat, null, `TVA récupérable ${a.piece}`)
     }
   }
 

@@ -37,6 +37,8 @@ const purchaseOrderSchema = z.object({
         productVariantId: z.string().uuid(),
         quantityOrdered: z.number().int().positive(),
         unitPrice: z.number().nonnegative(),
+        /** TVA récupérable (%) sur ce prix d'achat HT ; absent = achat sans TVA. */
+        vatRate: z.number().min(0).max(100).nullable().optional(),
         lotNumber: optionalText(100),
         expiryDate: optionalDate,
       })
@@ -220,7 +222,7 @@ async function createPurchaseOrder(body: unknown, companyId: string, userId: str
     `
 
     for (const item of data.items) {
-      await tx.sql`
+      const [poi] = await tx.sql`
         INSERT INTO purchase_order_items (
           purchase_order_id, product_variant_id, quantity_ordered,
           unit_price, lot_number, expiry_date
@@ -228,7 +230,11 @@ async function createPurchaseOrder(body: unknown, companyId: string, userId: str
           ${order.id}, ${item.productVariantId}, ${item.quantityOrdered},
           ${item.unitPrice}, ${item.lotNumber}, ${item.expiryDate}
         )
+        RETURNING id
       `
+      if (item.vatRate != null && item.vatRate > 0) {
+        await tx.sql`UPDATE purchase_order_items SET vat_rate = ${item.vatRate} WHERE id = ${poi.id}`
+      }
     }
 
     return order

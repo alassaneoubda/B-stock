@@ -23,8 +23,22 @@ export type TicketLine = { name: string; quantity: number; unitPrice: number; to
 /** Consignes (emballages sortis / rendus). */
 export type TicketDeposit = { name: string; quantityOut: number; quantityIn: number; unitPrice: number }
 
+/** Récapitulatif TVA d'un ticket (entreprise assujettie). Montants TTC inchangés. */
+export type TicketVat = {
+  byRate: { rate: number; base: number; vat: number }[]
+  totalHt: number
+  totalVat: number
+}
+
 export type TicketData = {
-  company: { name: string; address?: string | null; phone?: string | null; logoUrl?: string | null }
+  company: {
+    name: string
+    address?: string | null
+    phone?: string | null
+    logoUrl?: string | null
+    /** Numéro de compte contribuable (NCC). */
+    taxId?: string | null
+  }
   /** Ex. « Ticket de caisse », « Vente ». */
   title?: string
   number: string
@@ -39,8 +53,16 @@ export type TicketData = {
   change?: number | null
   /** Reste à payer (vente à crédit). */
   due?: number | null
+  /** Décomposition TVA des produits (entreprise assujettie). */
+  vat?: TicketVat | null
+  /** Mention TVA sans décomposition (« TVA non applicable », « Prix TTC, TVA comprise »). */
+  vatMention?: string | null
   /** Mention de bas de ticket. */
   footer?: string | null
+}
+
+function formatTicketRate(rate: number): string {
+  return `${String(Number(rate)).replace('.', ',')}%`
 }
 
 export type TicketRow =
@@ -78,6 +100,7 @@ export function layoutTicket(data: TicketData, opts: { withLogo?: boolean } = {}
   rows.push({ kind: 'center', text: plain(company.name), bold: true, big: true })
   if (company.address) rows.push({ kind: 'center', text: plain(company.address) })
   if (company.phone) rows.push({ kind: 'center', text: `Tél. ${plain(company.phone)}` })
+  if (company.taxId) rows.push({ kind: 'center', text: `NCC ${plain(company.taxId)}` })
   rows.push({ kind: 'rule' })
   rows.push({ kind: 'center', text: `${plain(data.title ?? 'Ticket')} ${plain(data.number)}`, bold: true })
   rows.push({ kind: 'center', text: plain(formatDateTime(data.date)) })
@@ -116,6 +139,18 @@ export function layoutTicket(data: TicketData, opts: { withLogo?: boolean } = {}
   }
   if (data.change != null && data.change > 0) rows.push({ kind: 'pair', left: 'Rendu', right: ticketMoney(data.change) })
   if (data.due != null && data.due > 0) rows.push({ kind: 'pair', left: 'Reste à payer', right: ticketMoney(data.due), bold: true })
+
+  // TVA : récapitulatif par taux (montants ci-dessus TTC) ou simple mention
+  if (data.vat && data.vat.byRate.length > 0) {
+    rows.push({ kind: 'rule' })
+    rows.push({ kind: 'pair', left: 'Total HT produits', right: ticketMoney(data.vat.totalHt) })
+    for (const r of data.vat.byRate) {
+      rows.push({ kind: 'pair', left: `TVA ${formatTicketRate(r.rate)} sur ${ticketMoney(r.base)}`, right: ticketMoney(r.vat) })
+    }
+    if (deposits.length > 0) rows.push({ kind: 'text', text: 'Consignes non soumises à la TVA' })
+  } else if (data.vatMention) {
+    rows.push({ kind: 'center', text: plain(data.vatMention) })
+  }
 
   const footer = plain(data.footer ?? '')
   if (footer) {

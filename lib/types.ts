@@ -13,6 +13,8 @@ export type AlertType =
   | 'packaging_debt'
   | 'payment_overdue'
   | 'supplier_overdue'
+  | 'dormant_stock'
+  | 'cash_variance'
 export type AlertSeverity = 'low' | 'medium' | 'high' | 'critical'
 export type TourStatus = 'planned' | 'loading' | 'in_progress' | 'completed' | 'cancelled'
 export type StopStatus = 'pending' | 'delivered' | 'partial' | 'failed'

@@ -4,6 +4,7 @@ import { nextDocumentNumber } from '../sequences'
 import { assertOwned } from '../tenant'
 import { createSaleInTx, money } from './sales'
 import { lockStockCosts, unpackStock } from './stock'
+import { catalogPriceTtc, loadVatSettings } from '../vat'
 
 /**
  * Point de vente (maquis, bars, comptoir).
@@ -56,10 +57,21 @@ export async function resolvePosDepot(companyId: string, depotId?: string | null
   return depot.id
 }
 
-/** Catalogue vendable avec la disponibilité réelle (stock − réservé par les tickets ouverts). */
+/**
+ * Catalogue vendable avec la disponibilité réelle (stock − réservé par les tickets ouverts).
+ * Prix = prix de vente TTC (converti si l'entreprise saisit ses prix HT, cf. lib/vat.ts).
+ */
 export async function getPosCatalog(companyId: string, depotId: string) {
+  const [vat, rows] = await Promise.all([loadVatSettings(sql, companyId), queryPosCatalog(companyId, depotId)])
+  if (!vat.enabled || vat.pricesIncludeTax) return rows
+  for (const r of rows) r.price = catalogPriceTtc(vat, Number(r.price), r.vat_rate)
+  return rows
+}
+
+async function queryPosCatalog(companyId: string, depotId: string) {
   return sql`
     SELECT pv.id AS variant_id, p.id AS product_id, p.name AS product_name, p.category, p.brand,
+           to_jsonb(p) ->> 'vat_rate' AS vat_rate,
            pt.name AS packaging_name,
            COALESCE(NULLIF(pv.price, 0), p.selling_price, 0)::float AS price,
            COALESCE(st.qty, 0)::int AS stock,
@@ -273,6 +285,7 @@ export async function addPosItems(
     const variantIds = [...new Set(items.map((i) => i.variantId))]
     await assertOwned(tx.sql, actor.companyId, { variants: variantIds })
     let autoUnpack: boolean | null = null
+    let vat: Awaited<ReturnType<typeof loadVatSettings>> | null = null
 
     for (const variantId of variantIds) {
       const quantity = items.filter((i) => i.variantId === variantId).reduce((s, i) => s + i.quantity, 0)
@@ -297,7 +310,8 @@ export async function addPosItems(
           AND o.status = 'open' AND i.status = 'active' AND i.product_variant_id = ${variantId}
       `
       const [variant] = await tx.sql`
-        SELECT p.name, COALESCE(NULLIF(pv.price, 0), p.selling_price, 0) AS price
+        SELECT p.name, COALESCE(NULLIF(pv.price, 0), p.selling_price, 0) AS price,
+               to_jsonb(p) ->> 'vat_rate' AS vat_rate
         FROM product_variants pv JOIN products p ON p.id = pv.product_id
         WHERE pv.id = ${variantId}
       `
@@ -356,7 +370,9 @@ export async function addPosItems(
         )
       }
 
-      const price = money(Number(variant.price))
+      // Prix de vente TTC (converti depuis le HT si l'entreprise saisit ses prix HT)
+      vat ??= await loadVatSettings(tx.sql, actor.companyId)
+      const price = money(catalogPriceTtc(vat, Number(variant.price), variant.vat_rate))
       // Même produit, même prix, ajouté par la même personne il y a peu : on regroupe la ligne
       const [mergeable] = await tx.sql`
         SELECT id FROM pos_order_items
@@ -483,72 +499,78 @@ async function ensureWalkInClient(tx: Tx, companyId: string): Promise<string> {
   return client.id
 }
 
+export type PayPosOrderInput = {
+  paymentMethod: 'cash' | 'mobile_money' | 'credit' | 'mixed'
+  paidAmount: number
+  cashAmount?: number
+  /** Vente hors ligne : clé d'idempotence de l'appareil et heure de la vente (voir lib/offline). */
+  clientRequestId?: string
+  offlineSoldAt?: string
+}
+
 /** Encaisse le ticket : vente (stock, facture, caisse, créance) + clôture, atomiquement. */
-export async function payPosOrder(
-  actor: PosActor,
-  orderId: string,
-  input: {
-    paymentMethod: 'cash' | 'mobile_money' | 'credit' | 'mixed'
-    paidAmount: number
-    cashAmount?: number
+export async function payPosOrder(actor: PosActor, orderId: string, input: PayPosOrderInput) {
+  return withTransaction((tx) => payPosOrderInTx(tx, actor, orderId, input))
+}
+
+/** Même encaissement, dans une transaction fournie (synchronisation des ventes hors ligne). */
+export async function payPosOrderInTx(tx: Tx, actor: PosActor, orderId: string, input: PayPosOrderInput) {
+  const order = await lockOpenOrder(tx, actor.companyId, orderId)
+
+  const items = await tx.sql`
+    SELECT product_variant_id, SUM(quantity)::int AS quantity, unit_price::float AS unit_price
+    FROM pos_order_items WHERE pos_order_id = ${orderId} AND status = 'active'
+    GROUP BY product_variant_id, unit_price
+  `
+  if (items.length === 0) throw new AppError(400, 'Le ticket est vide', 'EMPTY_ORDER')
+
+  const hasRealClient = Boolean(order.client_id)
+  if ((input.paymentMethod === 'credit' || input.paymentMethod === 'mixed') && !hasRealClient) {
+    throw new AppError(
+      400,
+      'Pour une ardoise ou un paiement partiel, rattachez d’abord un client au ticket',
+      'CLIENT_REQUIRED'
+    )
   }
-) {
-  return withTransaction(async (tx) => {
-    const order = await lockOpenOrder(tx, actor.companyId, orderId)
+  const clientId = order.client_id ?? (await ensureWalkInClient(tx, actor.companyId))
 
-    const items = await tx.sql`
-      SELECT product_variant_id, SUM(quantity)::int AS quantity, unit_price::float AS unit_price
-      FROM pos_order_items WHERE pos_order_id = ${orderId} AND status = 'active'
-      GROUP BY product_variant_id, unit_price
-    `
-    if (items.length === 0) throw new AppError(400, 'Le ticket est vide', 'EMPTY_ORDER')
-
-    const hasRealClient = Boolean(order.client_id)
-    if ((input.paymentMethod === 'credit' || input.paymentMethod === 'mixed') && !hasRealClient) {
-      throw new AppError(
-        400,
-        'Pour une ardoise ou un paiement partiel, rattachez d’abord un client au ticket',
-        'CLIENT_REQUIRED'
-      )
-    }
-    const clientId = order.client_id ?? (await ensureWalkInClient(tx, actor.companyId))
-
-    const { order: sale, warnings } = await createSaleInTx(tx, {
-      companyId: actor.companyId,
-      userId: actor.userId,
-      clientId,
-      depotId: order.depot_id,
-      orderSource: 'pos',
-      paymentMethod: input.paymentMethod,
-      paidAmount: input.paidAmount,
-      cashAmount: input.cashAmount,
-      notes: `Ticket ${order.ticket_number}`,
-      items: items.map((i) => ({
-        productVariantId: i.product_variant_id,
-        quantity: i.quantity,
-        unitPrice: i.unit_price,
-      })),
-    })
-
-    // Une vente encaissée au comptoir est remise immédiatement
-    await tx.sql`UPDATE sales_orders SET status = 'delivered' WHERE id = ${sale.id}`
-    // Coût de revient figé sur les lignes du ticket (celui de la vente, CMP du dépôt)
-    await tx.sql`
-      UPDATE pos_order_items i SET unit_cost = c.unit_cost
-      FROM (
-        SELECT product_variant_id, SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS unit_cost
-        FROM sales_order_items WHERE sales_order_id = ${sale.id}
-        GROUP BY product_variant_id
-      ) c
-      WHERE i.pos_order_id = ${orderId} AND i.status = 'active' AND i.product_variant_id = c.product_variant_id
-    `
-    await tx.sql`
-      UPDATE pos_orders SET status = 'paid', sales_order_id = ${sale.id}, closed_by = ${actor.userId},
-             closed_at = NOW(), updated_at = NOW()
-      WHERE id = ${orderId}
-    `
-    return { saleId: sale.id as string, orderNumber: sale.order_number as string, warnings }
+  const { order: sale, warnings } = await createSaleInTx(tx, {
+    companyId: actor.companyId,
+    userId: actor.userId,
+    clientId,
+    depotId: order.depot_id,
+    orderSource: 'pos',
+    paymentMethod: input.paymentMethod,
+    paidAmount: input.paidAmount,
+    cashAmount: input.cashAmount,
+    notes: `Ticket ${order.ticket_number}`,
+    clientRequestId: input.clientRequestId,
+    offlineSoldAt: input.offlineSoldAt,
+    items: items.map((i) => ({
+      productVariantId: i.product_variant_id,
+      quantity: i.quantity,
+      unitPrice: i.unit_price,
+    })),
   })
+
+  // Une vente encaissée au comptoir est remise immédiatement
+  await tx.sql`UPDATE sales_orders SET status = 'delivered' WHERE id = ${sale.id}`
+  // Coût de revient figé sur les lignes du ticket (celui de la vente, CMP du dépôt)
+  await tx.sql`
+    UPDATE pos_order_items i SET unit_cost = c.unit_cost
+    FROM (
+      SELECT product_variant_id, SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS unit_cost
+      FROM sales_order_items WHERE sales_order_id = ${sale.id}
+      GROUP BY product_variant_id
+    ) c
+    WHERE i.pos_order_id = ${orderId} AND i.status = 'active' AND i.product_variant_id = c.product_variant_id
+  `
+  await tx.sql`
+    UPDATE pos_orders SET status = 'paid', sales_order_id = ${sale.id}, closed_by = ${actor.userId},
+           closed_at = NOW(), updated_at = NOW()
+    WHERE id = ${orderId}
+  `
+  return { saleId: sale.id as string, orderNumber: sale.order_number as string, warnings }
 }
 
 export async function cancelPosOrder(actor: PosActor, orderId: string, reason: string) {

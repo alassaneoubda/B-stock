@@ -7,6 +7,7 @@ import { assertOwned } from '@/lib/tenant'
 import { nextDocumentNumber } from '@/lib/sequences'
 import { money } from '@/lib/domain/payments'
 import { assertPeriodOpen } from '@/lib/accounting/period-lock'
+import { DISABLED_VAT, invoiceLineVat, loadProductRates, loadVatSettings } from '@/lib/vat'
 
 const INVOICE_TYPES = ['client', 'supplier'] as const
 const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'partial', 'cancelled'] as const
@@ -95,22 +96,34 @@ export async function POST(request: NextRequest) {
 
     const data = invoiceSchema.parse(await request.json())
 
-    // Totaux recalculés côté serveur à partir des lignes
-    const lines = data.items.map((item) => {
-      const unitPrice = money(item.unitPrice)
-      return { ...item, unitPrice, total: money(item.quantity * unitPrice) }
-    })
-    const totalAmount = money(lines.reduce((s, l) => s + l.total, 0))
-    const paid = money(data.amountPaid)
-    if (paid > totalAmount) {
-      throw new AppError(400, 'Le montant payé dépasse le total de la facture', 'AMOUNT_EXCEEDS_TOTAL')
-    }
-    const remaining = money(totalAmount - paid)
-    const invoiceStatus = totalAmount > 0 && paid >= totalAmount ? 'paid' : paid > 0 ? 'partial' : 'draft'
-
     const invoice = await withTransaction(async (tx) => {
       // Facture datée d'aujourd'hui : refusée si le mois est clôturé
       await assertPeriodOpen(tx.sql, companyId)
+
+      // Totaux recalculés côté serveur à partir des lignes. Facture client d'une
+      // entreprise assujettie : TVA figée par ligne (prix saisis TTC ou HT selon le
+      // réglage ; consignes hors TVA). Factures fournisseurs : sans TVA.
+      const vat = data.type === 'client' ? await loadVatSettings(tx.sql, companyId) : DISABLED_VAT
+      const productRates = vat.enabled ? await loadProductRates(tx.sql, data.items.map((i) => i.productId)) : new Map()
+      const lines = data.items.map((item) => {
+        const unitPrice = money(item.unitPrice)
+        const { total, split } = invoiceLineVat(vat, {
+          itemType: item.itemType,
+          quantity: item.quantity,
+          unitPrice,
+          productRate: item.productId ? productRates.get(item.productId) : null,
+        })
+        return { ...item, unitPrice, total, split }
+      })
+      const totalAmount = money(lines.reduce((s, l) => s + l.total, 0))
+      const totalVat = money(lines.reduce((s, l) => s + (l.split?.vat ?? 0), 0))
+      const paid = money(data.amountPaid)
+      if (paid > totalAmount) {
+        throw new AppError(400, 'Le montant payé dépasse le total de la facture', 'AMOUNT_EXCEEDS_TOTAL')
+      }
+      const remaining = money(totalAmount - paid)
+      const invoiceStatus = totalAmount > 0 && paid >= totalAmount ? 'paid' : paid > 0 ? 'partial' : 'draft'
+
       await assertOwned(tx.sql, companyId, {
         clients: [data.clientId],
         suppliers: [data.supplierId],
@@ -155,8 +168,28 @@ export async function POST(request: NextRequest) {
         )
         RETURNING *
       `
+      if (vat.enabled) {
+        const [withVat] = await tx.sql`
+          UPDATE invoices SET total_ht = ${money(totalAmount - totalVat)}, total_vat = ${totalVat}
+          WHERE id = ${row.id} RETURNING *
+        `
+        Object.assign(row, withVat)
+      }
 
       for (const line of lines) {
+        if (line.split) {
+          await tx.sql`
+            INSERT INTO invoice_items (
+              invoice_id, product_id, description,
+              quantity, unit_price, total_price, item_type, vat_rate, amount_ht, vat_amount
+            ) VALUES (
+              ${row.id}, ${line.productId ?? null}, ${line.description || null},
+              ${line.quantity}, ${line.unitPrice}, ${line.total}, ${line.itemType},
+              ${line.split.rate}, ${line.split.ht}, ${line.split.vat}
+            )
+          `
+          continue
+        }
         await tx.sql`
           INSERT INTO invoice_items (
             invoice_id, product_id, description,

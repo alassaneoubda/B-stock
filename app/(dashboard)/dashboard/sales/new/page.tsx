@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { PageShell } from '@/components/app/blocks'
@@ -41,6 +42,21 @@ import { ScanButton, type ScanOutcome } from '@/components/scan/barcode-scanner'
 import { useScannerInput } from '@/components/scan/use-scanner-input'
 import { matchLabel, useBarcodeLookup, type BarcodeMatch } from '@/components/scan/use-barcode-lookup'
 import { scanFeedback } from '@/components/scan/feedback'
+import { OfflineReviewDialog, OfflineStatusBar } from '@/components/offline/offline-status'
+import { useOfflineSales } from '@/components/offline/use-offline-sales'
+import { isNetworkError, reportNetworkFailure } from '@/lib/offline/network'
+import { localAvailable, newRequestId, ownerKey, pendingQuantities, type OfflineSale, type SalePayload } from '@/lib/offline/queue'
+import {
+    claimOwner,
+    loadClients,
+    loadPackaging,
+    loadSaleCatalog,
+    loadSaleDepots,
+    rememberClients,
+    saveSaleCatalog,
+    saveSaleDepots,
+    savePackaging,
+} from '@/lib/offline/store'
 
 interface Client {
     id: string
@@ -122,6 +138,30 @@ export default function NewSalePage() {
     const preloadClientId = searchParams.get('client')
 
     const [step, setStep] = useState<Step>('client')
+
+    // ----- Vente hors ligne : cache de l'appareil + file locale (lib/offline) -----
+    const { data: session } = useSession()
+    const owner = ownerKey(session?.user)
+    const offlineSales = useOfflineSales(owner)
+    const offline = offlineSales.offline
+    const [reviewOpen, setReviewOpen] = useState(false)
+    // Clé d'idempotence de la vente en cours : la même à chaque nouvel essai (double clic, coupure)
+    const requestIdRef = useRef<string | null>(null)
+    const ownerReady = useRef<Promise<void> | null>(null)
+    useEffect(() => {
+        if (!owner) return
+        ownerReady.current = claimOwner(owner, { userName: session?.user?.name, companyName: session?.user?.companyName }).catch(() => {})
+        // Clients gardés sur l'appareil (recherche hors ligne)
+        void ownerReady.current
+            .then(() => apiFetch('/api/clients?limit=200'))
+            .then(d => rememberClients(owner, (d?.data || []).map(normalizeClient)))
+            .catch(e => { if (isNetworkError(e)) reportNetworkFailure() })
+    }, [owner, session?.user?.name, session?.user?.companyName])
+    /** Écrit dans le cache une fois le compte rattaché à l'appareil. */
+    const cacheWrite = (fn: (o: string) => Promise<unknown>) => {
+        if (!owner) return
+        void (ownerReady.current ?? Promise.resolve()).then(() => fn(owner)).catch(() => {})
+    }
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -163,17 +203,30 @@ export default function NewSalePage() {
 
         // Charger les dépôts
         setLoadingDepots(true)
+        const applyDepots = (list: any[]) => {
+            setDepots(list)
+            const main = list.find((dp: any) => dp.is_main)
+            if (main) setSelectedDepotId(main.id)
+            else if (list.length > 0) setSelectedDepotId(list[0].id)
+        }
         apiFetch('/api/depots')
             .then(d => {
                 const list = d.data || d.depots || []
-                setDepots(list)
-                const main = list.find((dp: any) => dp.is_main)
-                if (main) setSelectedDepotId(main.id)
-                else if (list.length > 0) setSelectedDepotId(list[0].id)
+                applyDepots(list)
+                cacheWrite(o => saveSaleDepots(o, list))
             })
-            .catch(e => toastError(e, 'Impossible de charger les dépôts'))
+            .catch(async e => {
+                // Hors ligne : dépôts gardés sur l'appareil
+                if (isNetworkError(e) && owner) {
+                    reportNetworkFailure()
+                    const cached = await loadSaleDepots(owner)
+                    if (cached?.length) return applyDepots(cached)
+                }
+                toastError(e, 'Impossible de charger les dépôts')
+            })
             .finally(() => setLoadingDepots(false))
-    }, [preloadClientId])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [preloadClientId, owner])
 
     // Rechercher des clients (recherche différée de 300 ms)
     const debouncedClientSearch = useDebouncedValue(clientSearch.trim(), 300)
@@ -184,14 +237,35 @@ export default function NewSalePage() {
         }
         const controller = new AbortController()
         setLoadingClients(true)
-        apiFetch(`/api/clients?search=${encodeURIComponent(debouncedClientSearch)}&limit=50`, { signal: controller.signal })
-            .then(d => setClients((d.data || d.clients || []).map(normalizeClient)))
-            .catch(e => toastError(e, 'Recherche de clients impossible'))
-            .finally(() => {
-                if (!controller.signal.aborted) setLoadingClients(false)
-            })
+        const searchCached = async () => {
+            const q = debouncedClientSearch.toLowerCase()
+            const cached = owner ? await loadClients(owner) : []
+            if (!controller.signal.aborted) {
+                setClients(cached.filter(c => c.name.toLowerCase().includes(q) || c.phone?.includes(q) || c.zone?.toLowerCase().includes(q)).map(normalizeClient))
+            }
+        }
+        const request: Promise<unknown> = offline
+            ? searchCached()
+            : apiFetch(`/api/clients?search=${encodeURIComponent(debouncedClientSearch)}&limit=50`, { signal: controller.signal })
+                .then(d => setClients((d.data || d.clients || []).map(normalizeClient)))
+                .catch(e => {
+                    if (isNetworkError(e)) {
+                        reportNetworkFailure()
+                        return searchCached()
+                    }
+                    toastError(e, 'Recherche de clients impossible')
+                })
+        void request.finally(() => {
+            if (!controller.signal.aborted) setLoadingClients(false)
+        })
         return () => controller.abort()
-    }, [debouncedClientSearch])
+    }, [debouncedClientSearch, offline, owner])
+
+    // Client choisi : gardé en tête des clients récents de l'appareil
+    useEffect(() => {
+        if (selectedClient) cacheWrite(o => rememberClients(o, [selectedClient]))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedClient])
 
     // Charger les produits avec le stock DU DÉPÔT SÉLECTIONNÉ
     // (auparavant le stock de tous les dépôts était additionné).
@@ -222,19 +296,31 @@ export default function NewSalePage() {
                         }
                     })
 
-                    setVariants(Object.values(consolidated))
+                    const list = Object.values(consolidated)
+                    setVariants(list)
+                    cacheWrite(o => saveSaleCatalog(o, selectedDepotId, list))
                 })
-                .catch(e => toastError(e, 'Impossible de charger le stock'))
+                .catch(async e => {
+                    // Hors ligne : produits, prix et stock connus au dernier chargement
+                    if (isNetworkError(e) && owner) {
+                        reportNetworkFailure()
+                        const cached = await loadSaleCatalog(owner, selectedDepotId)
+                        if (cached) {
+                            setVariants(cached.variants.map(v => ({ ...v, unit_type: 'unit' })))
+                            return
+                        }
+                    }
+                    toastError(e, 'Impossible de charger le stock')
+                })
                 .finally(() => setLoadingProducts(false))
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [step, selectedDepotId])
 
     // Charger les emballages
     useEffect(() => {
         if (step === 'packaging') {
-            apiFetch('/api/packaging')
-                .then(d => {
-                    const types: PackagingType[] = d.data || d.packagingTypes || []
+            const applyTypes = (types: PackagingType[]) => {
                     setPackagingTypes(types)
                     if (packagingItems.length === 0 && types.length > 0) {
                         setPackagingItems(types.map(pt => ({
@@ -245,9 +331,22 @@ export default function NewSalePage() {
                             quantityIn: 0,
                         })))
                     }
+            }
+            apiFetch('/api/packaging')
+                .then(d => {
+                    const types: PackagingType[] = d.data || d.packagingTypes || []
+                    applyTypes(types)
+                    cacheWrite(o => savePackaging(o, types))
                 })
-                .catch(e => toastError(e, 'Impossible de charger les emballages'))
+                .catch(async e => {
+                    if (isNetworkError(e) && owner) {
+                        reportNetworkFailure()
+                        return applyTypes((await loadPackaging(owner)).map(t => ({ ...t, is_returnable: t.is_returnable ?? true })))
+                    }
+                    toastError(e, 'Impossible de charger les emballages')
+                })
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [step])
 
     const totalProducts = orderItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0)
@@ -275,6 +374,10 @@ export default function NewSalePage() {
             setPaidAmount(0)
         }
     }, [paymentMethod, totalAmount])
+
+    // Stock affiché : stock connu − ventes hors ligne pas encore envoyées
+    const pendingQty = owner && selectedDepotId ? pendingQuantities(offlineSales.queue, owner, selectedDepotId) : new Map<string, number>()
+    const displayVariants = variants.map(v => ({ ...v, available_stock: localAvailable(v.available_stock, pendingQty.get(v.id) ?? 0) }))
 
     function addItem(variant: ProductVariant) {
         setOrderItems(prev => {
@@ -321,7 +424,7 @@ export default function NewSalePage() {
     /** Ajoute la variante scannée au panier (+1 si déjà présente). */
     function addScanned(match: BarcodeMatch): Exclude<ScanOutcome, void> {
         const label = matchLabel(match)
-        const v = variants.find(x => x.id === match.variant_id)
+        const v = displayVariants.find(x => x.id === match.variant_id)
         if (!v) return { ok: false, message: `${label} : aucun stock dans ce dépôt` }
         if (v.available_stock <= 0) return { ok: false, message: `${label} : rupture de stock` }
         const existing = orderItems.find(i => i.variantId === v.id)
@@ -357,19 +460,86 @@ export default function NewSalePage() {
         { enabled: step === 'products' && !loadingProducts }
     )
 
-    const filteredVariants = variants.filter(v =>
+    const filteredVariants = displayVariants.filter(v =>
         !productSearch || v.product_name.toLowerCase().includes(productSearch.toLowerCase())
     )
 
+    function resetForm() {
+        requestIdRef.current = null
+        setOrderItems([])
+        setPackagingItems(prev => prev.map(p => ({ ...p, quantityOut: 0, quantityIn: 0 })))
+        setNotes('')
+        setSelectedClient(null)
+        setPaymentMethod('cash')
+        setStep('client')
+    }
+
+    /** Vente mise en file sur l'appareil (même clé d'idempotence que l'essai en ligne éventuel). */
+    async function queueOffline(payload: SalePayload) {
+        if (!owner || !selectedClient) return
+        const sale: OfflineSale = {
+            id: payload.clientRequestId,
+            owner,
+            kind: 'sale',
+            createdAt: payload.offlineSoldAt,
+            status: 'pending',
+            attempts: 0,
+            summary: {
+                label: `Vente à ${selectedClient.name}`,
+                depotId: selectedDepotId,
+                depotName: selectedDepotName ?? null,
+                clientName: selectedClient.name,
+                paymentMethod: payload.paymentMethod,
+                total: totalAmount,
+                lines: orderItems.map(i => ({
+                    variantId: i.variantId,
+                    name: i.volume ? `${i.productName} · ${i.volume}` : i.productName,
+                    quantity: i.quantity,
+                    unitPrice: i.unitPrice,
+                })),
+            },
+            payload,
+        }
+        await offlineSales.enqueue(sale)
+        toast.success('Vente enregistrée sur l’appareil', { description: 'Elle sera envoyée automatiquement au retour du réseau.' })
+        resetForm()
+    }
+
     async function handleSubmit() {
         if (!selectedClient) return
+        const cashOnly = paymentMethod === 'cash' || paymentMethod === 'mobile_money'
+        if (offline && !cashOnly) {
+            setError('Hors ligne : seules les ventes au comptant (espèces, Mobile Money) sont possibles. Le crédit exige le réseau.')
+            return
+        }
         setIsLoading(true)
         setError(null)
+        requestIdRef.current ??= newRequestId()
+        const clientRequestId = requestIdRef.current
+        const offlinePayload = (): SalePayload => ({
+            clientRequestId,
+            offlineSoldAt: new Date().toISOString(),
+            clientId: selectedClient.id,
+            depotId: selectedDepotId,
+            orderSource,
+            paymentMethod: paymentMethod as 'cash' | 'mobile_money',
+            paidAmount: totalAmount,
+            notes: notes || undefined,
+            items: orderItems.map(i => ({ productVariantId: i.variantId, quantity: i.quantity, unitPrice: i.unitPrice })),
+            packagingItems: packagingItems
+                .filter(p => p.quantityOut > 0 || p.quantityIn > 0)
+                .map(p => ({ packagingTypeId: p.packagingTypeId, quantityOut: p.quantityOut, quantityIn: p.quantityIn, unitPrice: p.depositPrice })),
+        })
 
         try {
+            if (offline) {
+                await queueOffline(offlinePayload())
+                return
+            }
             const result = await apiFetch('/api/sales', {
                 method: 'POST',
                 body: {
+                    clientRequestId,
                     clientId: selectedClient.id,
                     depotId: selectedDepotId,
                     orderSource,
@@ -393,11 +563,19 @@ export default function NewSalePage() {
                 },
             })
 
+            requestIdRef.current = null
             toast.success(`Vente ${result.data.order_number} enregistrée`)
             toastWarnings(result.warnings)
             router.push(`/dashboard/sales/${result.data.id}`)
             router.refresh()
         } catch (e) {
+            // Coupure pendant l'envoi : la vente part dans la file avec la MÊME clé
+            // (si le serveur l'avait déjà reçue, il renverra la vente existante)
+            if (isNetworkError(e) && cashOnly && owner) {
+                reportNetworkFailure()
+                await queueOffline(offlinePayload()).catch(err => toastError(err, 'Vente non enregistrée'))
+                return
+            }
             setError(errorMessage(e))
             toastError(e, 'Vente non enregistrée')
         } finally {
@@ -436,7 +614,7 @@ export default function NewSalePage() {
                 ) : (
                     <>
                         <Check className="h-5 w-5" aria-hidden="true" />
-                        Valider la vente
+                        {offline ? 'Enregistrer hors ligne' : 'Valider la vente'}
                     </>
                 )}
             </Button>
@@ -453,6 +631,7 @@ export default function NewSalePage() {
     return (
         <div className="flex min-h-screen flex-col">
             <DashboardHeader title="Nouvelle vente" description="Enregistrez une commande client" />
+            <OfflineStatusBar state={offlineSales} onReview={() => setReviewOpen(true)} />
 
             <PageShell>
                 <div className="space-y-4">
@@ -922,18 +1101,21 @@ export default function NewSalePage() {
                                             { value: 'mixed', label: 'Mixte', icon: Split },
                                         ].map(({ value, label, icon: Icon }) => {
                                             const selected = paymentMethod === value
+                                            const needsNetwork = offline && (value === 'credit' || value === 'mixed')
                                             return (
                                                 <button
                                                     key={value}
                                                     type="button"
                                                     role="radio"
                                                     aria-checked={selected}
+                                                    disabled={needsNetwork}
+                                                    title={needsNetwork ? 'Indisponible hors ligne' : undefined}
                                                     onClick={() => {
                                                         setPaymentMethod(value as typeof paymentMethod)
                                                         if (value === 'cash' || value === 'mobile_money') setPaidAmount(totalAmount)
                                                     }}
                                                     className={cn(
-                                                        'flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                                                        'flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
                                                         selected
                                                             ? 'border-primary bg-primary text-primary-foreground'
                                                             : 'border-border bg-card text-foreground hover:bg-muted/60'
@@ -1136,6 +1318,7 @@ export default function NewSalePage() {
             </PageShell>
 
             {barcodeDialog}
+            <OfflineReviewDialog open={reviewOpen} onOpenChange={setReviewOpen} state={offlineSales} />
 
             {/* Barre d'action collante (mobile / tablette) */}
             <div className="sticky bottom-0 z-30 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:hidden">

@@ -19,6 +19,7 @@ import {
 import Link from 'next/link'
 import { canAccessPath } from '@/lib/route-permissions'
 import { formatNumber } from '@/lib/format'
+import { BusinessSettings } from '@/components/settings/business-settings'
 
 // Pas de try/catch : une panne SQL affiche error.tsx plutôt qu'une page vide.
 async function getCompanyInfo(companyId: string) {
@@ -103,6 +104,10 @@ export default async function SettingsPage() {
         canAccessPath(section.href, session.access.permissions)
     )
 
+    const permissions = session.access.permissions
+    const isOwner = session.access.role === 'owner'
+    const canManagePos = permissions.includes('*') || permissions.includes('pos.manage')
+
     const counters = company
         ? [
               { label: 'Utilisateurs actifs', value: company.users_count },
@@ -156,6 +161,22 @@ export default async function SettingsPage() {
                             ))}
                         </dl>
                     </section>
+                )}
+
+                {/* TVA, alertes et point de vente */}
+                {company && (isOwner || canManagePos) && (
+                    <BusinessSettings
+                        isOwner={isOwner}
+                        canManagePos={canManagePos}
+                        initial={{
+                            vatEnabled: company.vat_enabled === true,
+                            vatRate: Number(company.vat_rate ?? 18),
+                            pricesIncludeTax: company.vat_prices_include_tax !== false,
+                            taxId: company.tax_id ?? null,
+                            alertExpiryDays: Number(company.alert_expiry_days ?? 30),
+                            posAutoUnpack: company.pos_auto_unpack === true,
+                        }}
+                    />
                 )}
 
                 {/* Rubriques */}

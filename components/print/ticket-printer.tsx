@@ -17,20 +17,31 @@ import { encodeTicketEscPos } from '@/lib/print/escpos'
 import { DEFAULT_PRINT_SETTINGS, loadPrintSettings, savePrintSettings, type PrintSettings } from '@/lib/print/settings'
 import { isBluetoothPrintingSupported, printBytes } from '@/lib/print/bluetooth'
 import { ThermalTicket } from './thermal-ticket'
+import { VAT_NOT_APPLICABLE } from '@/lib/vat'
 
 /** Ticket sans l'en-tête entreprise : complété automatiquement. */
 export type TicketInput = Omit<TicketData, 'company'> & { company?: TicketData['company'] }
 
-type CompanyInfo = TicketData['company']
+type CompanyInfo = TicketData['company'] & {
+  /** Entreprise assujettie à la TVA (undefined : inconnu, ex. caissier sans accès aux paramètres). */
+  vatEnabled?: boolean
+}
 
 // Coordonnées de l'entreprise : chargées une fois par session de page
 let companyCache: Promise<Partial<CompanyInfo> | null> | null = null
 
 function fetchCompany(): Promise<Partial<CompanyInfo> | null> {
-  companyCache ??= apiFetch<{ data: { name?: string; address?: string | null; phone?: string | null; logo_url?: string | null } }>(
+  companyCache ??= apiFetch<{ data: { name?: string; address?: string | null; phone?: string | null; logo_url?: string | null; tax_id?: string | null; vat_enabled?: boolean } }>(
     '/api/company'
   )
-    .then((r) => ({ name: r.data.name, address: r.data.address, phone: r.data.phone, logoUrl: r.data.logo_url }))
+    .then((r) => ({
+      name: r.data.name,
+      address: r.data.address,
+      phone: r.data.phone,
+      logoUrl: r.data.logo_url,
+      taxId: r.data.tax_id ?? null,
+      vatEnabled: r.data.vat_enabled,
+    }))
     // Les caissiers n'ont pas toujours accès aux paramètres : nom de session en repli
     .catch(() => null)
   return companyCache
@@ -52,6 +63,8 @@ export function useTicketCompany(): CompanyInfo {
     address: info?.address ?? null,
     phone: info?.phone ?? null,
     logoUrl: info?.logoUrl ?? null,
+    taxId: info?.taxId ?? null,
+    vatEnabled: info?.vatEnabled,
   }
 }
 
@@ -103,11 +116,23 @@ export function useTicketPrinter() {
   const [btBusy, setBtBusy] = useState(false)
 
   const complete = useCallback(
-    (input: TicketInput): TicketData => ({
-      ...input,
-      company: input.company ?? company,
-      footer: input.footer ?? settings.footer,
-    }),
+    (input: TicketInput): TicketData => {
+      const { vatEnabled, ...header } = company
+      return {
+        ...input,
+        company: input.company ?? header,
+        // Sans décomposition TVA fournie : mention selon le régime de l'entreprise
+        vatMention:
+          input.vatMention !== undefined || input.vat
+            ? input.vatMention
+            : vatEnabled === false
+              ? VAT_NOT_APPLICABLE
+              : vatEnabled
+                ? 'Prix TTC, TVA comprise'
+                : null,
+        footer: input.footer ?? settings.footer,
+      }
+    },
     [company, settings.footer]
   )
 

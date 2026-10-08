@@ -10,6 +10,9 @@ import { sql } from '../db'
  *   (sales_order_items.unit_cost), moins le coût des marchandises réintégrées
  *   en stock par les retours. Un retour endommagé (non remis en stock) réduit le
  *   chiffre d'affaires sans réduire le coût : c'est une perte réelle.
+ * - TVA : quand la vente portait de la TVA (entreprise assujettie, cf. lib/vat.ts),
+ *   le chiffre d'affaires est le montant HT figé sur la ligne (amount_ht) ; la TVA
+ *   collectée n'est pas une recette. Sans TVA, HT = TTC (comportement inchangé).
  *
  * Valeur du stock :
  * - actuelle = Σ quantité × CMP du dépôt ;
@@ -113,7 +116,7 @@ export async function getMarginReport(
       -- Ventes non annulées : coût figé à la vente
       SELECT so.created_at AS at, so.depot_id, so.client_id, so.agent_id, soi.product_variant_id AS variant_id,
              soi.quantity::numeric AS qty,
-             COALESCE(soi.total_price, soi.quantity * soi.unit_price, 0)::numeric AS revenue,
+             COALESCE(soi.amount_ht, soi.total_price, soi.quantity * soi.unit_price, 0)::numeric AS revenue,
              (soi.quantity * soi.unit_cost)::numeric AS cost,
              (soi.unit_cost IS NULL) AS missing
       FROM sales_order_items soi
@@ -131,7 +134,7 @@ export async function getMarginReport(
       FROM stock_movements sm
       JOIN sales_orders so ON so.id = sm.reference_id AND so.company_id = sm.company_id
       LEFT JOIN LATERAL (
-        SELECT SUM(COALESCE(i.total_price, i.quantity * i.unit_price)) / NULLIF(SUM(i.quantity), 0) AS avg_price
+        SELECT SUM(COALESCE(i.amount_ht, i.total_price, i.quantity * i.unit_price)) / NULLIF(SUM(i.quantity), 0) AS avg_price
         FROM sales_order_items i
         WHERE i.sales_order_id = so.id AND i.product_variant_id = sm.product_variant_id
       ) sp ON true
@@ -143,7 +146,7 @@ export async function getMarginReport(
       -- Retours clients traités (module Retours) : seuls les articles remis en stock réduisent le coût
       SELECT r.processed_at, r.depot_id, r.client_id, so.agent_id, ri.product_variant_id,
              -ri.quantity::numeric,
-             -COALESCE(ri.total_price, ri.quantity * ri.unit_price, 0)::numeric,
+             -COALESCE(ri.amount_ht, ri.total_price, ri.quantity * ri.unit_price, 0)::numeric,
              CASE WHEN ri.condition = 'good' THEN -(ri.quantity * rc.unit_cost) ELSE 0 END::numeric,
              (ri.condition = 'good' AND rc.unit_cost IS NULL)
       FROM return_items ri
